@@ -2,20 +2,118 @@
 """nova-mixer GUI — minimal monitor for ChatMix status."""
 
 import sys
+import subprocess
 import threading
+from pathlib import Path
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QProgressBar, QSystemTrayIcon, QMenu,
+    QLabel, QProgressBar, QSystemTrayIcon, QMenu, QCheckBox,
 )
-from PySide6.QtCore import Qt, Signal, QObject, QTimer
-from PySide6.QtGui import QIcon, QAction
+from PySide6.QtCore import Qt, Signal, QObject, QTimer, QPropertyAnimation, QPoint
+from PySide6.QtGui import QIcon, QAction, QFont, QPainter, QColor
 
 # Import the core mixer
 from nova_mixer_core import NovaMixer, log, GAME_SINK, CHAT_SINK, notify
 
 APP_NAME = "nova-mixer"
 APP_ICON = "audio-headset"
+
+
+SETTINGS_FILE = Path.home() / ".config" / "nova-mixer" / "settings.conf"
+SERVICE_FILE = Path.home() / ".config" / "systemd" / "user" / "nova-mixer.service"
+
+
+def load_settings() -> dict:
+    """Load settings from config file."""
+    defaults = {"overlay": True, "autostart": True}
+    if not SETTINGS_FILE.exists():
+        return defaults
+    try:
+        settings = defaults.copy()
+        for line in SETTINGS_FILE.read_text().strip().split("\n"):
+            if "=" in line:
+                k, v = line.split("=", 1)
+                settings[k.strip()] = v.strip().lower() in ("true", "1", "yes")
+        return settings
+    except Exception:
+        return defaults
+
+
+def save_settings(settings: dict):
+    """Save settings to config file."""
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"{k}={str(v).lower()}" for k, v in settings.items()]
+    SETTINGS_FILE.write_text("\n".join(lines) + "\n")
+
+
+class DialOverlay(QWidget):
+    """Floating overlay that appears briefly when the dial is turned."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setFixedSize(280, 80)
+
+        self.game_vol = 100
+        self.chat_vol = 100
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self._fade_out)
+        self._opacity = 1.0
+
+    def show_volumes(self, game_vol: int, chat_vol: int):
+        """Show overlay with current volumes, auto-hide after 1.5s."""
+        self.game_vol = game_vol
+        self.chat_vol = chat_vol
+        self._opacity = 1.0
+
+        # Position at top-center of screen
+        screen = QApplication.primaryScreen().geometry()
+        x = (screen.width() - self.width()) // 2
+        y = 60
+        self.move(x, y)
+
+        self.update()
+        self.show()
+        self._hide_timer.start(1500)
+
+    def _fade_out(self):
+        self.hide()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setOpacity(self._opacity)
+
+        # Background
+        painter.setBrush(QColor(30, 30, 30, 220))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(self.rect(), 12, 12)
+
+        # Game bar
+        bar_x, bar_w = 70, 190
+        painter.setPen(QColor(200, 200, 200))
+        painter.setFont(QFont("", 11))
+        painter.drawText(10, 30, "🎮 Game")
+        painter.setBrush(QColor(60, 60, 60))
+        painter.drawRoundedRect(bar_x, 18, bar_w, 16, 4, 4)
+        game_w = int(bar_w * self.game_vol / 100)
+        painter.setBrush(QColor(76, 175, 80))
+        painter.drawRoundedRect(bar_x, 18, game_w, 16, 4, 4)
+        painter.drawText(bar_x + bar_w + 5, 30, f"{self.game_vol}%")
+
+        # Chat bar
+        painter.drawText(10, 62, "💬 Chat")
+        painter.setBrush(QColor(60, 60, 60))
+        painter.drawRoundedRect(bar_x, 50, bar_w, 16, 4, 4)
+        chat_w = int(bar_w * self.chat_vol / 100)
+        painter.setBrush(QColor(33, 150, 243))
+        painter.drawRoundedRect(bar_x, 50, chat_w, 16, 4, 4)
+        painter.drawText(bar_x + bar_w + 5, 62, f"{self.chat_vol}%")
+
+        painter.end()
 
 
 class MixerSignals(QObject):
@@ -30,7 +128,7 @@ class MixerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("nova-mixer")
-        self.setFixedSize(320, 200)
+        self.setFixedSize(320, 280)
         self.setWindowIcon(QIcon.fromTheme(APP_ICON))
 
         # Signals bridge between mixer thread and GUI
@@ -40,6 +138,8 @@ class MixerGUI(QMainWindow):
         self.signals.chatmix_changed.connect(self._on_chatmix)
         self.signals.status_message.connect(self._on_status)
 
+        self.settings = load_settings()
+        self.overlay = DialOverlay()
         self._build_ui()
         self._build_tray()
         self._start_mixer()
@@ -100,6 +200,21 @@ class MixerGUI(QMainWindow):
         self.dial_label.setStyleSheet("font-size: 11px; color: #888;")
         layout.addWidget(self.dial_label)
 
+        # Settings
+        settings_layout = QVBoxLayout()
+        settings_layout.setSpacing(6)
+
+        self.overlay_check = QCheckBox("Show overlay when dial is turned")
+        self.overlay_check.setChecked(self.settings.get("overlay", True))
+        self.overlay_check.toggled.connect(self._toggle_overlay)
+        settings_layout.addWidget(self.overlay_check)
+
+        self.autostart_check = QCheckBox("Start with system")
+        self.autostart_check.setChecked(self.settings.get("autostart", True))
+        self.autostart_check.toggled.connect(self._toggle_autostart)
+        settings_layout.addWidget(self.autostart_check)
+
+        layout.addLayout(settings_layout)
         layout.addStretch()
 
     # ── System Tray ─────────────────────────────────────
@@ -170,6 +285,31 @@ class MixerGUI(QMainWindow):
         else:
             pos = f"💬 Chat +{-diff}"
         self.dial_label.setText(pos)
+
+        # Show overlay
+        if self.settings.get("overlay", True):
+            self.overlay.show_volumes(game_vol, chat_vol)
+
+    def _toggle_overlay(self, checked):
+        self.settings["overlay"] = checked
+        save_settings(self.settings)
+
+    def _toggle_autostart(self, checked):
+        self.settings["autostart"] = checked
+        save_settings(self.settings)
+        try:
+            if checked:
+                subprocess.run(
+                    ["systemctl", "--user", "enable", "nova-mixer"],
+                    capture_output=True, timeout=5
+                )
+            else:
+                subprocess.run(
+                    ["systemctl", "--user", "disable", "nova-mixer"],
+                    capture_output=True, timeout=5
+                )
+        except Exception:
+            pass
 
     def _on_status(self, msg):
         self.status_label.setText(msg)
