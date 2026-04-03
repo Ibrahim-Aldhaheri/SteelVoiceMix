@@ -63,8 +63,14 @@ systemctl --user enable nova-mixer --now
 ## Usage
 
 ```bash
-# Manual run (if not using systemd)
-python3 nova-chatmix.py
+# Headless daemon (default)
+nova-mixer
+
+# With GUI monitor
+nova-mixer --gui
+
+# Disable desktop notifications
+nova-mixer --no-notify
 
 # Check service status
 systemctl --user status nova-mixer
@@ -75,6 +81,20 @@ Once running, two new audio sinks appear:
 - **NovaChat** — route Discord, TeamSpeak, etc. here
 
 The physical dial on the base station controls the balance between them.
+
+### GUI
+
+The `--gui` flag opens a small monitor window showing:
+- Connection status (connected/disconnected)
+- Game and Chat volume bars (updated in real-time as you turn the dial)
+- Dial position indicator (Game-heavy, Chat-heavy, or Balanced)
+
+The window minimizes to the system tray — click the tray icon to reopen it. Closing the window hides it to tray instead of quitting.
+
+**Extra dependency for GUI:**
+```bash
+sudo dnf install python3-pyside6   # Fedora/KDE
+```
 
 ## Disclaimer
 

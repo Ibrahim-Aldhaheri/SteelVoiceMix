@@ -263,30 +263,6 @@ class DeviceNotFoundException(Exception):
     pass
 
 
-def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="nova-mixer — ChatMix for Arctis Nova Pro Wireless")
-    parser.add_argument("--gui", action="store_true", help="Launch with GUI monitor")
-    parser.add_argument("--no-notify", action="store_true", help="Disable desktop notifications")
-    args = parser.parse_args()
-
-    if args.no_notify:
-        global NOTIFY_ENABLED
-        NOTIFY_ENABLED = False
-
-    if args.gui:
-        try:
-            from nova_mixer_gui import main as gui_main
-            gui_main()
-        except ImportError:
-            print("GUI requires PySide6. Install it:")
-            print("  Fedora: sudo dnf install python3-pyside6")
-            print("  pip:    pip install PySide6")
-            sys.exit(1)
-    else:
-        mixer = NovaMixer()
-        mixer.run()
-
-
 if __name__ == "__main__":
-    main()
+    mixer = NovaMixer()
+    mixer.run()
