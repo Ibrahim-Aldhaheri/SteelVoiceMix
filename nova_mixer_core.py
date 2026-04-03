@@ -60,6 +60,12 @@ OPT_VOLUME = 0x25         # Volume attenuation (0=max, 56=mute)
 OPT_CHATMIX = 0x45        # ChatMix data (game_vol, chat_vol)
 OPT_EQ_PRESET = 0x2E      # EQ preset selection (0-18)
 OPT_EQ = 0x31             # Custom EQ band control
+OPT_BATTERY = 0xB0        # Battery status request
+
+# Battery status bytes (response[15])
+BATTERY_OFFLINE = 0x01
+BATTERY_CHARGING = 0x02
+BATTERY_ONLINE = 0x08
 
 # ── PipeWire Sink Names ─────────────────────────────────
 GAME_SINK = "NovaGame"
@@ -141,6 +147,32 @@ class NovaMixer:
         self._send(TX, OPT_CHATMIX_ENABLE, 1)
         self._send(TX, OPT_SONAR_ICON, 1)
         log.info("ChatMix enabled on base station")
+
+    def get_battery(self) -> dict | None:
+        """Query battery status. Returns {level, status} or None."""
+        if not self.dev:
+            return None
+        try:
+            self._send(TX, OPT_BATTERY)
+            # Read response (may need a few attempts as other messages come in)
+            for _ in range(10):
+                msg = self.dev.read(MSG_LEN, 500)
+                if not msg or len(msg) < 16:
+                    continue
+                if msg[1] == OPT_BATTERY:
+                    raw_level = msg[6]  # 0-8 range
+                    level = min(100, int(raw_level * 100 / 8))
+                    status_byte = msg[15]
+                    if status_byte == BATTERY_OFFLINE:
+                        status = "offline"
+                    elif status_byte == BATTERY_CHARGING:
+                        status = "charging"
+                    else:
+                        status = "active"
+                    return {"level": level, "status": status}
+            return None
+        except OSError:
+            return None
 
     def _disable_chatmix(self):
         """Disable ChatMix mode and Sonar icon."""

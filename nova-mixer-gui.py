@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QLabel, QProgressBar, QSystemTrayIcon, QMenu, QCheckBox,
 )
 from PySide6.QtCore import Qt, Signal, QObject, QTimer, QPropertyAnimation, QPoint
-from PySide6.QtGui import QIcon, QAction, QFont, QPainter, QColor
+from PySide6.QtGui import QIcon, QAction, QFont, QPainter, QColor, QKeySequence, QShortcut
 
 # Import the core mixer
 from nova_mixer_core import NovaMixer, log, GAME_SINK, CHAT_SINK, notify
@@ -87,17 +87,23 @@ class DialOverlay(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setOpacity(self._opacity)
 
+        # Use system palette for theme awareness
+        palette = QApplication.palette()
+        bg_color = palette.window().color()
+        bg_color.setAlpha(220)
+        text_color = palette.windowText().color()
+
         # Background
-        painter.setBrush(QColor(30, 30, 30, 220))
+        painter.setBrush(bg_color)
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(self.rect(), 12, 12)
 
         # Game bar
         bar_x, bar_w = 70, 190
-        painter.setPen(QColor(200, 200, 200))
+        painter.setPen(text_color)
         painter.setFont(QFont("", 11))
         painter.drawText(10, 30, "🎮 Game")
-        painter.setBrush(QColor(60, 60, 60))
+        painter.setBrush(QColor(60, 60, 60, 100))
         painter.drawRoundedRect(bar_x, 18, bar_w, 16, 4, 4)
         game_w = int(bar_w * self.game_vol / 100)
         painter.setBrush(QColor(76, 175, 80))
@@ -106,7 +112,7 @@ class DialOverlay(QWidget):
 
         # Chat bar
         painter.drawText(10, 62, "💬 Chat")
-        painter.setBrush(QColor(60, 60, 60))
+        painter.setBrush(QColor(60, 60, 60, 100))
         painter.drawRoundedRect(bar_x, 50, bar_w, 16, 4, 4)
         chat_w = int(bar_w * self.chat_vol / 100)
         painter.setBrush(QColor(33, 150, 243))
@@ -122,13 +128,14 @@ class MixerSignals(QObject):
     disconnected = Signal()
     chatmix_changed = Signal(int, int)  # game_vol, chat_vol
     status_message = Signal(str)
+    battery_updated = Signal(int, str)  # level, status
 
 
 class MixerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("nova-mixer")
-        self.setFixedSize(320, 280)
+        self.setFixedSize(320, 320)
         self.setWindowIcon(QIcon.fromTheme(APP_ICON))
 
         # Signals bridge between mixer thread and GUI
@@ -137,6 +144,7 @@ class MixerGUI(QMainWindow):
         self.signals.disconnected.connect(self._on_disconnected)
         self.signals.chatmix_changed.connect(self._on_chatmix)
         self.signals.status_message.connect(self._on_status)
+        self.signals.battery_updated.connect(self._on_battery)
 
         self.settings = load_settings()
         self.overlay = DialOverlay()
@@ -199,6 +207,24 @@ class MixerGUI(QMainWindow):
         self.dial_label.setAlignment(Qt.AlignCenter)
         self.dial_label.setStyleSheet("font-size: 11px; color: #888;")
         layout.addWidget(self.dial_label)
+
+        # Battery
+        battery_row = QHBoxLayout()
+        self.battery_label = QLabel("🔋 Battery")
+        self.battery_label.setFixedWidth(90)
+        self.battery_label.setStyleSheet("font-size: 12px;")
+        self.battery_bar = QProgressBar()
+        self.battery_bar.setRange(0, 100)
+        self.battery_bar.setValue(0)
+        self.battery_bar.setTextVisible(True)
+        self.battery_bar.setFormat("—")
+        self.battery_bar.setStyleSheet("""
+            QProgressBar { border: 1px solid #555; border-radius: 4px; height: 22px; }
+            QProgressBar::chunk { background: #FF9800; border-radius: 3px; }
+        """)
+        battery_row.addWidget(self.battery_label)
+        battery_row.addWidget(self.battery_bar)
+        layout.addLayout(battery_row)
 
         # Settings
         settings_layout = QVBoxLayout()
@@ -290,6 +316,26 @@ class MixerGUI(QMainWindow):
         if self.settings.get("overlay", True):
             self.overlay.show_volumes(game_vol, chat_vol)
 
+    def _on_battery(self, level, status):
+        self.battery_bar.setValue(level)
+        if status == "charging":
+            self.battery_bar.setFormat(f"⚡ {level}%")
+            self.battery_bar.setStyleSheet("""
+                QProgressBar { border: 1px solid #555; border-radius: 4px; height: 22px; }
+                QProgressBar::chunk { background: #4CAF50; border-radius: 3px; }
+            """)
+        elif status == "offline":
+            self.battery_bar.setFormat("Offline")
+            self.battery_bar.setValue(0)
+        else:
+            self.battery_bar.setFormat(f"{level}%")
+            color = "#4CAF50" if level > 50 else "#FF9800" if level > 20 else "#f44336"
+            self.battery_bar.setStyleSheet(f"""
+                QProgressBar {{ border: 1px solid #555; border-radius: 4px; height: 22px; }}
+                QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}
+            """)
+        self.tray.setToolTip(f"nova-mixer — 🔋 {level}% ({status})")
+
     def _toggle_overlay(self, checked):
         self.settings["overlay"] = checked
         save_settings(self.settings)
@@ -357,12 +403,21 @@ class GUIMixer(NovaMixer):
                 self._cleanup_device()
                 continue
 
+            # Poll battery on connect
+            self._poll_battery()
+
             log.info("Listening for ChatMix dial events...")
             reconnect_needed = False
+            battery_timer = 0
             while self.running and not reconnect_needed:
                 try:
                     msg = self.dev.read(64, 1000)
                     if not msg:
+                        # Poll battery every ~60 seconds (60 * 1s timeout)
+                        battery_timer += 1
+                        if battery_timer >= 60:
+                            self._poll_battery()
+                            battery_timer = 0
                         continue
                     if msg[1] == 0x45:  # OPT_CHATMIX
                         game_vol = msg[2]
@@ -380,11 +435,21 @@ class GUIMixer(NovaMixer):
         self._destroy_sinks()
         log.info("nova-mixer stopped")
 
+    def _poll_battery(self):
+        """Query battery and emit signal."""
+        result = self.get_battery()
+        if result:
+            self.signals.battery_updated.emit(result["level"], result["status"])
+
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    app.setDesktopFileName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)  # Keep running in tray
+
+    # Follow system theme (KDE Breeze, etc.)
+    app.setStyle("fusion")  # Fallback — KDE will override with Breeze if available
 
     window = MixerGUI()
     window.show()
