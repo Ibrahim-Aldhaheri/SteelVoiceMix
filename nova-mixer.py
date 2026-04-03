@@ -26,6 +26,23 @@ LOG_FMT = "%(asctime)s [%(levelname)s] %(message)s"
 logging.basicConfig(format=LOG_FMT, level=logging.INFO)
 log = logging.getLogger("nova-mixer")
 
+# ── Desktop Notifications ───────────────────────────────
+NOTIFY_ENABLED = True
+APP_ICON = "audio-headset"  # Standard KDE/freedesktop icon
+
+
+def notify(summary: str, body: str = "", icon: str = APP_ICON):
+    """Send a desktop notification via notify-send (works on KDE/GNOME/etc)."""
+    if not NOTIFY_ENABLED:
+        return
+    try:
+        cmd = ["notify-send", "-a", "nova-mixer", "-i", icon, summary]
+        if body:
+            cmd.append(body)
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        pass  # notify-send not installed, silently skip
+
 # ── USB IDs ──────────────────────────────────────────────
 VENDOR_ID = 0x1038   # SteelSeries
 PRODUCT_ID = 0x12E0  # Arctis Nova Pro Wireless base station
@@ -190,6 +207,7 @@ class NovaMixer:
             try:
                 self._enable_chatmix()
                 self._create_sinks(output_sink)
+                notify("🎧 ChatMix Active", "NovaGame and NovaChat sinks ready.\nUse the dial to control balance.")
             except ConnectionError:
                 log.warning("Lost connection during setup")
                 self._cleanup_device()
@@ -210,6 +228,7 @@ class NovaMixer:
                         self._set_volume(CHAT_SINK, chat_vol)
                 except OSError:
                     log.warning("Device disconnected")
+                    notify("🎧 Base Station Disconnected", "Waiting for reconnect...", "audio-headset")
                     reconnect_needed = True
 
             # Cleanup and retry
