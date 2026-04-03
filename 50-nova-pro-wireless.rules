@@ -1,0 +1,2 @@
+# SteelSeries Arctis Nova Pro Wireless — allow non-root access to base station
+KERNEL=="hidraw*", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12e0", MODE="0666"
