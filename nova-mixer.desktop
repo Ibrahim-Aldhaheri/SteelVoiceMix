@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Nova Mixer
+Comment=ChatMix for SteelSeries Arctis Nova Pro Wireless
+Exec=nova-mixer --gui
+Icon=audio-headset
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Mixer;
+Keywords=steelseries;arctis;nova;chatmix;headset;audio;mixer;
+StartupNotify=false

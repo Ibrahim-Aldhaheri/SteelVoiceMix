@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.ibrahimaldhaheri.nova-mixer</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Nova Mixer</name>
+  <summary>ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux</summary>
+  <description>
+    <p>
+      Nova Mixer brings ChatMix functionality to Linux for the SteelSeries Arctis Nova Pro Wireless headset.
+      It creates virtual PipeWire audio sinks (Game and Chat) that are controlled by the hardware dial
+      on the base station, replacing the Windows-only SteelSeries Sonar software.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Hardware ChatMix dial controls Game/Chat audio balance</li>
+      <li>Optional GUI with real-time volume bars and battery indicator</li>
+      <li>Desktop notifications on connect/disconnect</li>
+      <li>Auto-reconnect when device sleeps or is unplugged</li>
+      <li>Follows KDE/GNOME system theme</li>
+    </ul>
+  </description>
+  <url type="homepage">https://github.com/Ibrahim-Aldhaheri/Nova-mixer</url>
+  <url type="bugtracker">https://github.com/Ibrahim-Aldhaheri/Nova-mixer/issues</url>
+  <developer id="dev.ibrahimaldhaheri">
+    <name>Ibrahim Aldhaheri</name>
+  </developer>
+  <provides>
+    <modalias>usb:v1038p12E0*</modalias>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-04-04">
+      <description>
+        <p>Initial release with ChatMix support, GUI monitor, and battery indicator.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

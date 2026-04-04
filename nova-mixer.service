@@ -5,7 +5,7 @@ Wants=pipewire.service
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/nova-mixer
+ExecStart=/usr/bin/nova-mixer
 Restart=on-failure
 RestartSec=5
 
