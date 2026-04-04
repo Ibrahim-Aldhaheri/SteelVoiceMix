@@ -96,6 +96,17 @@ The window minimizes to the system tray — click the tray icon to reopen it. Cl
 sudo dnf install python3-pyside6   # Fedora/KDE
 ```
 
+## Uninstall
+
+```bash
+./uninstall.sh
+```
+
+Removes the service, binary, config, and udev rules. To switch back to the original nova-chatmix-linux:
+```bash
+systemctl --user enable nova-chatmix --now
+```
+
 ## Disclaimer
 
 ⚠️ **USE AT YOUR OWN RISK.** This project has no association with SteelSeries. The author is not responsible for any damage to your hardware, bricked devices, or voided warranties. If your base station starts playing elevator music on its own, that's between you and the universe.
