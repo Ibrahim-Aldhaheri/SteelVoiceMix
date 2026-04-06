@@ -4,6 +4,16 @@ Linux ChatMix implementation for the **SteelSeries Arctis Nova Pro Wireless**. U
 
 Replaces the ChatMix functionality of SteelSeries Sonar (Windows-only) on Linux.
 
+## Debug Mode
+
+Run the installer with verbose output to troubleshoot issues:
+
+```bash
+DEBUG=1 ./install.sh
+# or
+./install.sh --debug
+```
+
 ## Features
 
 - 🎮 **ChatMix dial support** — physical dial controls Game/Chat audio balance
