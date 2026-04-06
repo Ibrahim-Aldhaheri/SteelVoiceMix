@@ -1,4 +1,5 @@
 mod audio;
+mod display;
 mod hid;
 mod mixer;
 mod protocol;
@@ -163,7 +164,7 @@ fn main() {
     }
 
     // Start mixer thread
-    let mixer = Mixer::new(
+    let mut mixer = Mixer::new(
         running.clone(),
         state.clone(),
         subscribers.clone(),
