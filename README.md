@@ -8,17 +8,44 @@ Replaces the ChatMix functionality of SteelSeries Sonar (Windows-only) on Linux.
 
 - 🎮 **ChatMix dial support** — physical dial controls Game/Chat audio balance
 - 🔊 **PipeWire virtual sinks** — creates NovaGame and NovaChat sinks automatically
-- 🔌 **Plug and play** — auto-detects the base station
+- 🔋 **Battery monitoring** — polls battery level and charging status
+- 🔌 **Plug and play** — auto-detects the base station, auto-reconnects with exponential backoff
 - 🖥️ **KDE/GNOME compatible** — sinks appear in system audio settings
 - 🐧 **Systemd service** — runs on boot, no manual startup needed
+- 🖼️ **Optional GUI** — PySide6 system tray app with overlay, battery display
+
+## Architecture
+
+The project is split into two parts:
+
+1. **Rust daemon** (`nova-mixer`) — handles HID communication, creates PipeWire sinks, reads the ChatMix dial, adjusts volumes. Runs as a systemd user service.
+2. **Python GUI** (`nova-mixer-gui`) — optional PySide6 app that connects to the daemon over a Unix socket (`$XDG_RUNTIME_DIR/nova-mixer.sock`) for real-time status display.
+
+### Socket Protocol
+
+The daemon exposes a JSON-over-Unix-socket API:
+
+```json
+// Client → Daemon
+{"cmd": "subscribe"}     // Stream all events
+{"cmd": "status"}        // One-shot status query
+
+// Daemon → Client (events)
+{"event": "chatmix", "game": 80, "chat": 60}
+{"event": "battery", "level": 75, "status": "active"}
+{"event": "connected"}
+{"event": "disconnected"}
+{"event": "status", "connected": true, "game_vol": 80, "chat_vol": 60, "battery": {"level": 75, "status": "active"}}
+```
 
 ## How It Works
 
 The Arctis Nova Pro Wireless base station communicates via USB HID. This tool:
 
 1. Sends HID commands to enable ChatMix mode on the base station
-2. Creates two virtual PipeWire sinks (Game + Chat)
-3. Listens for dial position changes and adjusts sink volumes in real-time
+2. Creates two virtual PipeWire sinks (Game + Chat) via `pw-loopback`
+3. Listens for dial position changes and adjusts sink volumes in real-time via `pactl`
+4. Polls battery status every 60 seconds
 
 Route your game audio to **NovaGame** and Discord/comms to **NovaChat** — the dial does the rest.
 
@@ -26,35 +53,50 @@ Route your game audio to **NovaGame** and Discord/comms to **NovaChat** — the 
 
 - SteelSeries Arctis Nova Pro Wireless (base station connected via USB)
 - PipeWire (default on Fedora 34+, Ubuntu 22.10+)
-- Python 3.8+
-- `python-hidapi`, `pactl`
+- Rust toolchain (for building)
+- `pactl`, `pw-loopback`, `hidapi`
 
 ## Installation
 
-### Fedora
+### Build Dependencies
+
 ```bash
-sudo dnf install pulseaudio-utils python3 python3-hidapi
+# Fedora
+sudo dnf install cargo hidapi-devel pulseaudio-utils libnotify
+
+# Ubuntu/Debian
+sudo apt install cargo libhidapi-dev pulseaudio-utils libnotify-bin
 ```
 
-### Ubuntu/Debian
+### Quick Install
+
 ```bash
-sudo apt install pulseaudio-utils python3 python3-hid
+git clone https://github.com/Ibrahim-Aldhaheri/Nova-mixer.git
+cd Nova-mixer
+./install.sh
 ```
 
-### Setup
+The install script will:
+1. Check runtime dependencies (fails if `pw-loopback` is missing)
+2. Build the Rust binary with `cargo build --release`
+3. Install udev rules for non-root HID access
+4. Install the binary to `~/.local/bin/`
+5. Enable the systemd user service
+
+### Manual Install
 
 ```bash
-git clone https://github.com/Ibrahim-Aldhaheri/nova-mixer.git
-cd nova-mixer
+cargo build --release
 
-# udev rules (required for non-root access)
+# udev rules
 sudo cp 50-nova-pro-wireless.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules
-sudo udevadm trigger
+sudo udevadm control --reload-rules && sudo udevadm trigger
 
-# Install as systemd user service (auto-start on login)
-mkdir -p ~/.local/bin ~/.config/systemd/user
-cp nova-chatmix.py ~/.local/bin/nova-mixer
+# Binary
+cp target/release/nova-mixer ~/.local/bin/
+
+# Systemd service
+mkdir -p ~/.config/systemd/user
 cp nova-mixer.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable nova-mixer --now
@@ -66,14 +108,20 @@ systemctl --user enable nova-mixer --now
 # Headless daemon (default)
 nova-mixer
 
-# With GUI monitor
-nova-mixer --gui
-
 # Disable desktop notifications
 nova-mixer --no-notify
 
+# Disable Unix socket (no GUI support)
+nova-mixer --no-socket
+
+# Launch GUI (requires PySide6, daemon must be running)
+nova-mixer-gui
+
 # Check service status
 systemctl --user status nova-mixer
+
+# View logs
+journalctl --user -u nova-mixer -f
 ```
 
 Once running, two new audio sinks appear:
@@ -84,27 +132,25 @@ The physical dial on the base station controls the balance between them.
 
 ### GUI
 
-The `--gui` flag opens a small monitor window showing:
+The GUI (`nova-mixer-gui`) connects to the running daemon and shows:
 - Connection status (connected/disconnected)
-- Game and Chat volume bars (updated in real-time as you turn the dial)
+- Game and Chat volume bars (updated in real-time)
+- Battery level and charging status
 - Dial position indicator (Game-heavy, Chat-heavy, or Balanced)
+- Floating overlay on dial turn
 
-The window minimizes to the system tray — click the tray icon to reopen it. Closing the window hides it to tray instead of quitting.
+The window minimizes to the system tray.
 
 **Extra dependency for GUI:**
 ```bash
 sudo dnf install python3-pyside6   # Fedora/KDE
+pip install PySide6                 # pip
 ```
 
 ## Uninstall
 
 ```bash
 ./uninstall.sh
-```
-
-Removes the service, binary, config, and udev rules. To switch back to the original nova-chatmix-linux:
-```bash
-systemctl --user enable nova-chatmix --now
 ```
 
 ## Disclaimer

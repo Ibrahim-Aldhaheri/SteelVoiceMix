@@ -1,6 +1,9 @@
 #!/usr/bin/python3
-"""nova-mixer GUI — minimal monitor for ChatMix status."""
+"""nova-mixer GUI — connects to the Rust daemon over a Unix socket."""
 
+import json
+import os
+import socket
 import sys
 import subprocess
 import threading
@@ -10,22 +13,24 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QProgressBar, QSystemTrayIcon, QMenu, QCheckBox,
 )
-from PySide6.QtCore import Qt, Signal, QObject, QTimer, QPropertyAnimation, QPoint
-from PySide6.QtGui import QIcon, QAction, QFont, QPainter, QColor, QKeySequence, QShortcut
-
-# Import the core mixer
-from nova_mixer_core import NovaMixer, log, GAME_SINK, CHAT_SINK, notify
+from PySide6.QtCore import Qt, Signal, QObject, QTimer
+from PySide6.QtGui import QIcon, QAction, QFont, QPainter, QColor
 
 APP_NAME = "nova-mixer"
 APP_ICON = "audio-headset"
 
-
 SETTINGS_FILE = Path.home() / ".config" / "nova-mixer" / "settings.conf"
-SERVICE_FILE = Path.home() / ".config" / "systemd" / "user" / "nova-mixer.service"
+
+
+def socket_path() -> str:
+    """Get the daemon socket path (must match Rust daemon)."""
+    xdg = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg:
+        return os.path.join(xdg, "nova-mixer.sock")
+    return f"/tmp/nova-mixer-{os.getuid()}.sock"
 
 
 def load_settings() -> dict:
-    """Load settings from config file."""
     defaults = {"overlay": True, "autostart": True}
     if not SETTINGS_FILE.exists():
         return defaults
@@ -41,7 +46,6 @@ def load_settings() -> dict:
 
 
 def save_settings(settings: dict):
-    """Save settings to config file."""
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     lines = [f"{k}={str(v).lower()}" for k, v in settings.items()]
     SETTINGS_FILE.write_text("\n".join(lines) + "\n")
@@ -61,15 +65,11 @@ class DialOverlay(QWidget):
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self._fade_out)
-        self._opacity = 1.0
 
     def show_volumes(self, game_vol: int, chat_vol: int):
-        """Show overlay with current volumes, auto-hide after 1.5s."""
         self.game_vol = game_vol
         self.chat_vol = chat_vol
-        self._opacity = 1.0
 
-        # Position at top-center of screen
         screen = QApplication.primaryScreen().geometry()
         x = (screen.width() - self.width()) // 2
         y = 60
@@ -85,23 +85,21 @@ class DialOverlay(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setOpacity(self._opacity)
 
-        # Use system palette for theme awareness
         palette = QApplication.palette()
         bg_color = palette.window().color()
         bg_color.setAlpha(220)
         text_color = palette.windowText().color()
 
-        # Background
         painter.setBrush(bg_color)
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(self.rect(), 12, 12)
 
-        # Game bar
         bar_x, bar_w = 70, 190
         painter.setPen(text_color)
         painter.setFont(QFont("", 11))
+
+        # Game bar
         painter.drawText(10, 30, "🎮 Game")
         painter.setBrush(QColor(60, 60, 60, 100))
         painter.drawRoundedRect(bar_x, 18, bar_w, 16, 4, 4)
@@ -122,13 +120,107 @@ class DialOverlay(QWidget):
         painter.end()
 
 
-class MixerSignals(QObject):
-    """Signals emitted from the mixer thread to update the GUI."""
+class DaemonSignals(QObject):
+    """Signals emitted from the socket reader thread to update the GUI."""
     connected = Signal()
     disconnected = Signal()
-    chatmix_changed = Signal(int, int)  # game_vol, chat_vol
+    chatmix_changed = Signal(int, int)
     status_message = Signal(str)
-    battery_updated = Signal(int, str)  # level, status
+    battery_updated = Signal(int, str)
+
+
+class DaemonClient:
+    """Connects to the Rust daemon over a Unix socket and subscribes to events."""
+
+    def __init__(self, signals: DaemonSignals):
+        self.signals = signals
+        self.running = True
+        self._sock = None
+
+    def run(self):
+        """Connect and read events in a loop. Reconnects on failure."""
+        while self.running:
+            try:
+                self._connect_and_subscribe()
+            except Exception:
+                pass
+
+            if self.running:
+                self.signals.status_message.emit("🔍 Connecting to daemon...")
+                import time
+                time.sleep(2)
+
+    def _connect_and_subscribe(self):
+        path = socket_path()
+        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._sock.settimeout(5)
+        self._sock.connect(path)
+        self._sock.settimeout(None)
+
+        # Subscribe to events
+        self._sock.sendall(b'{"cmd":"subscribe"}\n')
+
+        buf = b""
+        while self.running:
+            try:
+                self._sock.settimeout(2)
+                data = self._sock.recv(4096)
+                if not data:
+                    break
+                buf += data
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    if line.strip():
+                        self._handle_event(json.loads(line))
+            except socket.timeout:
+                continue
+            except Exception:
+                break
+
+        try:
+            self._sock.close()
+        except Exception:
+            pass
+
+    def _handle_event(self, event: dict):
+        ev_type = event.get("event", "")
+
+        if ev_type == "chatmix":
+            game = event.get("game", 0)
+            chat = event.get("chat", 0)
+            self.signals.chatmix_changed.emit(game, chat)
+
+        elif ev_type == "battery":
+            level = event.get("level", 0)
+            status = event.get("status", "offline")
+            self.signals.battery_updated.emit(level, status)
+
+        elif ev_type == "connected":
+            self.signals.connected.emit()
+
+        elif ev_type == "disconnected":
+            self.signals.disconnected.emit()
+
+        elif ev_type == "status":
+            # Initial status on subscribe
+            if event.get("connected"):
+                self.signals.connected.emit()
+                game = event.get("game_vol", 100)
+                chat = event.get("chat_vol", 100)
+                self.signals.chatmix_changed.emit(game, chat)
+                bat = event.get("battery")
+                if bat:
+                    self.signals.battery_updated.emit(bat["level"], bat["status"])
+            else:
+                self.signals.disconnected.emit()
+
+    def stop(self):
+        self.running = False
+        if self._sock:
+            try:
+                self._sock.close()
+            except Exception:
+                pass
 
 
 class MixerGUI(QMainWindow):
@@ -138,8 +230,7 @@ class MixerGUI(QMainWindow):
         self.setFixedSize(320, 320)
         self.setWindowIcon(QIcon.fromTheme(APP_ICON))
 
-        # Signals bridge between mixer thread and GUI
-        self.signals = MixerSignals()
+        self.signals = DaemonSignals()
         self.signals.connected.connect(self._on_connected)
         self.signals.disconnected.connect(self._on_disconnected)
         self.signals.chatmix_changed.connect(self._on_chatmix)
@@ -150,9 +241,8 @@ class MixerGUI(QMainWindow):
         self.overlay = DialOverlay()
         self._build_ui()
         self._build_tray()
-        self._start_mixer()
+        self._start_daemon_client()
 
-    # ── UI ──────────────────────────────────────────────
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
@@ -160,8 +250,7 @@ class MixerGUI(QMainWindow):
         layout.setSpacing(12)
         layout.setContentsMargins(16, 16, 16, 16)
 
-        # Status
-        self.status_label = QLabel("🔍 Looking for base station...")
+        self.status_label = QLabel("🔍 Connecting to daemon...")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet("font-size: 13px; font-weight: bold;")
         layout.addWidget(self.status_label)
@@ -202,7 +291,6 @@ class MixerGUI(QMainWindow):
         chat_row.addWidget(self.chat_bar)
         layout.addLayout(chat_row)
 
-        # Dial position indicator
         self.dial_label = QLabel("⚖️ Balanced")
         self.dial_label.setAlignment(Qt.AlignCenter)
         self.dial_label.setStyleSheet("font-size: 11px; color: #888;")
@@ -243,7 +331,6 @@ class MixerGUI(QMainWindow):
         layout.addLayout(settings_layout)
         layout.addStretch()
 
-    # ── System Tray ─────────────────────────────────────
     def _build_tray(self):
         self.tray = QSystemTrayIcon(QIcon.fromTheme(APP_ICON), self)
         self.tray.setToolTip("nova-mixer")
@@ -270,23 +357,20 @@ class MixerGUI(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-    # ── Minimize to tray instead of closing ─────────────
     def closeEvent(self, event):
         event.ignore()
         self.hide()
         self.tray.showMessage("nova-mixer", "Minimized to tray", QSystemTrayIcon.Information, 2000)
 
     def _quit(self):
-        self.mixer.running = False
+        self.daemon_client.stop()
         QApplication.quit()
 
-    # ── Mixer Thread ────────────────────────────────────
-    def _start_mixer(self):
-        self.mixer = GUIMixer(self.signals)
-        self.mixer_thread = threading.Thread(target=self.mixer.run, daemon=True)
-        self.mixer_thread.start()
+    def _start_daemon_client(self):
+        self.daemon_client = DaemonClient(self.signals)
+        self.daemon_thread = threading.Thread(target=self.daemon_client.run, daemon=True)
+        self.daemon_thread.start()
 
-    # ── Signal Handlers ─────────────────────────────────
     def _on_connected(self):
         self.status_label.setText("🟢 Connected — ChatMix Active")
         self.status_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #4CAF50;")
@@ -302,7 +386,6 @@ class MixerGUI(QMainWindow):
         self.game_bar.setValue(game_vol)
         self.chat_bar.setValue(chat_vol)
 
-        # Describe dial position
         diff = game_vol - chat_vol
         if abs(diff) < 10:
             pos = "⚖️ Balanced"
@@ -312,7 +395,6 @@ class MixerGUI(QMainWindow):
             pos = f"💬 Chat +{-diff}"
         self.dial_label.setText(pos)
 
-        # Show overlay
         if self.settings.get("overlay", True):
             self.overlay.show_volumes(game_vol, chat_vol)
 
@@ -361,95 +443,12 @@ class MixerGUI(QMainWindow):
         self.status_label.setText(msg)
 
 
-class GUIMixer(NovaMixer):
-    """Extended mixer that emits Qt signals for GUI updates."""
-
-    def __init__(self, signals: MixerSignals):
-        super().__init__()
-        self.signals = signals
-
-    def _enable_chatmix(self):
-        super()._enable_chatmix()
-        self.signals.connected.emit()
-
-    def _cleanup_device(self):
-        self.signals.disconnected.emit()
-        super()._cleanup_device()
-
-    def _set_volume(self, sink, volume):
-        super()._set_volume(sink, volume)
-
-    def run(self):
-        """Override to emit chatmix signals."""
-        log.info("nova-mixer GUI starting...")
-
-        while self.running:
-            output_sink = self._find_output_sink()
-            if not output_sink:
-                self.signals.status_message.emit("🔍 Looking for base station...")
-                self._wait_reconnect()
-                continue
-
-            if not self._open_device():
-                self.signals.status_message.emit("🔍 Base station not found...")
-                self._wait_reconnect()
-                continue
-
-            try:
-                self._enable_chatmix()
-                self._create_sinks(output_sink)
-                notify("🎧 ChatMix Active", "NovaGame and NovaChat sinks ready.")
-            except ConnectionError:
-                self._cleanup_device()
-                continue
-
-            # Poll battery on connect
-            self._poll_battery()
-
-            log.info("Listening for ChatMix dial events...")
-            reconnect_needed = False
-            battery_timer = 0
-            while self.running and not reconnect_needed:
-                try:
-                    msg = self.dev.read(64, 1000)
-                    if not msg:
-                        # Poll battery every ~60 seconds (60 * 1s timeout)
-                        battery_timer += 1
-                        if battery_timer >= 60:
-                            self._poll_battery()
-                            battery_timer = 0
-                        continue
-                    if msg[1] == 0x45:  # OPT_CHATMIX
-                        game_vol = msg[2]
-                        chat_vol = msg[3]
-                        self._set_volume(GAME_SINK, game_vol)
-                        self._set_volume(CHAT_SINK, chat_vol)
-                        self.signals.chatmix_changed.emit(game_vol, chat_vol)
-                except OSError:
-                    log.warning("Device disconnected")
-                    notify("🎧 Disconnected", "Waiting for reconnect...")
-                    reconnect_needed = True
-
-            self._cleanup_device()
-
-        self._destroy_sinks()
-        log.info("nova-mixer stopped")
-
-    def _poll_battery(self):
-        """Query battery and emit signal."""
-        result = self.get_battery()
-        if result:
-            self.signals.battery_updated.emit(result["level"], result["status"])
-
-
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setDesktopFileName(APP_NAME)
-    app.setQuitOnLastWindowClosed(False)  # Keep running in tray
-
-    # Follow system theme (KDE Breeze, etc.)
-    app.setStyle("fusion")  # Fallback — KDE will override with Breeze if available
+    app.setQuitOnLastWindowClosed(False)
+    app.setStyle("fusion")
 
     window = MixerGUI()
     window.show()
