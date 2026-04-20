@@ -121,10 +121,16 @@ fn main() {
     // Parse args
     let mut no_notify = false;
     let mut no_socket = false;
+    let mut debug = false;
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--no-notify" => no_notify = true,
             "--no-socket" => no_socket = true,
+            "--debug" | "-d" => debug = true,
+            "--version" | "-V" => {
+                println!("nova-mixer {}", env!("CARGO_PKG_VERSION"));
+                return;
+            }
             "--help" | "-h" => {
                 println!("nova-mixer — ChatMix daemon for SteelSeries Arctis Nova Pro Wireless");
                 println!();
@@ -133,6 +139,8 @@ fn main() {
                 println!("Options:");
                 println!("  --no-notify   Disable desktop notifications");
                 println!("  --no-socket   Disable Unix socket server (no GUI support)");
+                println!("  -d, --debug   Enable debug logging (equivalent to RUST_LOG=debug)");
+                println!("  -V, --version Print version and exit");
                 println!("  -h, --help    Show this help");
                 return;
             }
@@ -143,8 +151,9 @@ fn main() {
         }
     }
 
-    // Init logging
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+    // Init logging — default info, overridable by RUST_LOG, forced debug by --debug
+    let default_level = if debug { "debug" } else { "info" };
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
         .format_timestamp_secs()
         .init();
 

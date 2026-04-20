@@ -209,8 +209,11 @@ class DaemonClient:
                 chat = event.get("chat_vol", 100)
                 self.signals.chatmix_changed.emit(game, chat)
                 bat = event.get("battery")
-                if bat:
-                    self.signals.battery_updated.emit(bat["level"], bat["status"])
+                if isinstance(bat, dict):
+                    self.signals.battery_updated.emit(
+                        bat.get("level", 0),
+                        bat.get("status", "offline"),
+                    )
             else:
                 self.signals.disconnected.emit()
 

@@ -29,5 +29,3 @@ fi
 
 echo ""
 echo "✅ nova-mixer uninstalled"
-echo "   To re-enable the old nova-chatmix:"
-echo "   systemctl --user enable nova-chatmix --now"

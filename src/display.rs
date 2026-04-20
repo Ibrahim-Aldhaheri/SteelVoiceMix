@@ -94,13 +94,6 @@ impl ChatMixGauge {
             warn!("OLED clear failed: {e}");
         }
     }
-
-    /// Set display brightness (0-10).
-    pub fn set_brightness(&mut self, value: u8) {
-        if let Err(e) = self.device.set_brightness(value) {
-            warn!("OLED set brightness failed: {e}");
-        }
-    }
 }
 
 fn fill_rect(bmp: &mut Bitmap, x: usize, y: usize, w: usize, h: usize, value: bool) {

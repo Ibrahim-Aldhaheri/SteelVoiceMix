@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use log::{info, warn};
+use log::{debug, info, warn};
 
 use crate::audio::{SinkManager, CHAT_SINK, GAME_SINK};
 use crate::display::ChatMixGauge;
@@ -42,7 +42,6 @@ pub struct Mixer {
     state: Arc<Mutex<MixerState>>,
     subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
     notify_enabled: bool,
-    display: Option<ChatMixGauge>,
 }
 
 impl Mixer {
@@ -52,22 +51,11 @@ impl Mixer {
         subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
         notify_enabled: bool,
     ) -> Self {
-        let display = match ChatMixGauge::new() {
-            Ok(d) => {
-                info!("OLED display initialized");
-                Some(d)
-            }
-            Err(e) => {
-                warn!("OLED display not available: {e}");
-                None
-            }
-        };
         Mixer {
             running,
             state,
             subscribers,
             notify_enabled,
-            display,
         }
     }
 
@@ -95,13 +83,21 @@ impl Mixer {
 
     /// Main run loop. Blocks until `running` is set to false.
     pub fn run(&mut self) {
-        info!("nova-mixer starting...");
+        info!(
+            "nova-mixer v{} starting (notify={}, RUST_LOG={})",
+            env!("CARGO_PKG_VERSION"),
+            self.notify_enabled,
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
+        );
         let mut reconnect_wait = RECONNECT_BASE;
 
         while self.running.load(Ordering::Relaxed) {
             // Find output sink
             let output_sink = match SinkManager::find_output_sink() {
-                Some(s) => s,
+                Some(s) => {
+                    info!("Detected headset output sink: {s}");
+                    s
+                }
                 None => {
                     warn!("Output sink not found — is the headset connected?");
                     self.wait(reconnect_wait);
@@ -130,6 +126,19 @@ impl Mixer {
                 continue;
             }
             info!("Base station connected, ChatMix enabled");
+
+            // Attach to the OLED display now that the device is present.
+            // Scoped to this connection — dropped on disconnect, re-opened on reconnect.
+            let mut display = match ChatMixGauge::new() {
+                Ok(d) => {
+                    info!("OLED display initialized");
+                    Some(d)
+                }
+                Err(e) => {
+                    warn!("OLED display not available: {e}");
+                    None
+                }
+            };
 
             // Create sinks
             let mut sinks = SinkManager::new();
@@ -170,6 +179,7 @@ impl Mixer {
                 match dev.read(1000) {
                     Ok(Some(msg)) => match NovaDevice::parse_event(&msg) {
                         HidEvent::ChatMix { game_vol, chat_vol } => {
+                            debug!("dial: game={game_vol}% chat={chat_vol}%");
                             SinkManager::set_volume(GAME_SINK, game_vol);
                             SinkManager::set_volume(CHAT_SINK, chat_vol);
                             {
@@ -177,7 +187,7 @@ impl Mixer {
                                 st.game_vol = game_vol;
                                 st.chat_vol = chat_vol;
                             }
-                            if let Some(ref mut d) = self.display {
+                            if let Some(ref mut d) = display {
                                 d.show(game_vol, chat_vol);
                             }
                             self.broadcast(DaemonEvent::ChatMix {
@@ -186,6 +196,7 @@ impl Mixer {
                             });
                         }
                         HidEvent::Battery(bat) => {
+                            debug!("battery: {}% ({})", bat.level, bat.status);
                             {
                                 let mut st = self.state.lock().unwrap();
                                 st.battery = Some(bat.clone());
@@ -221,9 +232,10 @@ impl Mixer {
             }
 
             // Cleanup
-            if let Some(ref mut d) = self.display {
+            if let Some(ref mut d) = display {
                 d.clear();
             }
+            drop(display);
             let _ = dev.disable_chatmix();
             sinks.destroy_sinks();
             {
@@ -243,24 +255,11 @@ impl Mixer {
         info!("nova-mixer stopped");
     }
 
-    /// Clean up OLED display on drop.
-    fn cleanup_display(&mut self) {
-        if let Some(ref mut d) = self.display {
-            d.clear();
-        }
-    }
-
     /// Wait for a duration, checking `running` every second.
     fn wait(&self, duration: Duration) {
         let start = Instant::now();
         while self.running.load(Ordering::Relaxed) && start.elapsed() < duration {
             thread::sleep(Duration::from_secs(1));
         }
-    }
-}
-
-impl Drop for Mixer {
-    fn drop(&mut self) {
-        self.cleanup_display();
     }
 }
