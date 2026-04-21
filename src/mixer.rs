@@ -144,15 +144,47 @@ impl Mixer {
             let mut sinks = SinkManager::new();
             sinks.create_sinks(&output_sink);
 
+            // Ask the device for the current dial position. If the firmware
+            // doesn't answer, fall back to the last-known state so a brief
+            // disconnect doesn't clobber whatever the user had dialed in.
+            let (init_game, init_chat) = match dev.get_chatmix() {
+                Ok(Some(v)) => {
+                    info!("Initial dial position: game={}% chat={}%", v.0, v.1);
+                    v
+                }
+                _ => {
+                    let st = self.state.lock().unwrap();
+                    let fallback = (st.game_vol, st.chat_vol);
+                    info!(
+                        "Dial position query silent — using last-known {}%/{}%",
+                        fallback.0, fallback.1
+                    );
+                    fallback
+                }
+            };
+
+            // Apply to the new sinks so they match what the GUI/OLED will show.
+            SinkManager::set_volume(GAME_SINK, init_game);
+            SinkManager::set_volume(CHAT_SINK, init_chat);
+
             // Update state
             {
                 let mut st = self.state.lock().unwrap();
                 st.connected = true;
-                st.game_vol = 100;
-                st.chat_vol = 100;
+                st.game_vol = init_game;
+                st.chat_vol = init_chat;
             }
 
             self.broadcast(DaemonEvent::Connected);
+            // Re-broadcast the current dial so GUIs that were watching a
+            // Disconnected event update their bars immediately.
+            self.broadcast(DaemonEvent::ChatMix {
+                game: init_game,
+                chat: init_chat,
+            });
+            if let Some(ref mut d) = display {
+                d.show(init_game, init_chat);
+            }
             self.notify(
                 "🎧 ChatMix Active",
                 "NovaGame and NovaChat sinks ready.\nUse the dial to control balance.",
@@ -176,7 +208,9 @@ impl Mixer {
             let mut disconnected = false;
 
             while self.running.load(Ordering::Relaxed) && !disconnected {
-                match dev.read(1000) {
+                // Short timeout keeps dial-to-update latency low; battery
+                // polling still triggers every BATTERY_POLL_INTERVAL.
+                match dev.read(100) {
                     Ok(Some(msg)) => match NovaDevice::parse_event(&msg) {
                         HidEvent::ChatMix { game_vol, chat_vol } => {
                             debug!("dial: game={game_vol}% chat={chat_vol}%");

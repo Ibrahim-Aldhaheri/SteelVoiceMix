@@ -171,4 +171,19 @@ impl NovaDevice {
         }
         Ok(None)
     }
+
+    /// Best-effort query of the current ChatMix dial position.
+    /// Not all firmware revisions respond to this — returns `Ok(None)` if the
+    /// device stays silent, and the caller should fall back to last-known state.
+    pub fn get_chatmix(&self) -> Result<Option<(u8, u8)>, HidError> {
+        self.send(&[TX, OPT_CHATMIX])?;
+        for _ in 0..5 {
+            if let Some(msg) = self.read(200)? {
+                if let HidEvent::ChatMix { game_vol, chat_vol } = Self::parse_event(&msg) {
+                    return Ok(Some((game_vol, chat_vol)));
+                }
+            }
+        }
+        Ok(None)
+    }
 }

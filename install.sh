@@ -149,6 +149,32 @@ LAUNCHER
 chmod +x ~/.local/bin/nova-mixer-gui
 echo "✅ Installed to ~/.local/bin/nova-mixer"
 
+# Register the GUI in the user's app menu (KDE/GNOME will pick it up)
+echo "Registering application menu entry..."
+mkdir -p ~/.local/share/applications
+cp nova-mixer.desktop ~/.local/share/applications/
+if command -v update-desktop-database >/dev/null; then
+    debug "Running: update-desktop-database ~/.local/share/applications"
+    update-desktop-database ~/.local/share/applications 2>/dev/null || true
+fi
+echo "✅ Menu entry installed"
+
+# Autostart the GUI on login (user can remove this file to disable)
+echo "Enabling GUI autostart on login..."
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/nova-mixer-gui.desktop << 'AUTOSTART'
+[Desktop Entry]
+Type=Application
+Name=Nova Mixer GUI
+Comment=ChatMix tray app for Nova Pro Wireless
+Exec=nova-mixer-gui
+Icon=audio-headset
+Terminal=false
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+AUTOSTART
+echo "✅ Autostart enabled (remove ~/.config/autostart/nova-mixer-gui.desktop to disable)"
+
 # Install systemd service
 echo "Installing systemd service..."
 mkdir -p ~/.config/systemd/user

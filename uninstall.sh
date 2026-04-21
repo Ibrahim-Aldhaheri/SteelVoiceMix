@@ -12,9 +12,15 @@ systemctl --user disable nova-mixer 2>/dev/null || true
 # Remove files
 echo "Removing files..."
 rm -f ~/.local/bin/nova-mixer
+rm -f ~/.local/bin/nova-mixer-gui
 rm -rf ~/.local/lib/nova-mixer
 rm -f ~/.config/systemd/user/nova-mixer.service
 rm -rf ~/.config/nova-mixer
+rm -f ~/.local/share/applications/nova-mixer.desktop
+rm -f ~/.config/autostart/nova-mixer-gui.desktop
+if command -v update-desktop-database >/dev/null; then
+    update-desktop-database ~/.local/share/applications 2>/dev/null || true
+fi
 
 # Reload systemd
 systemctl --user daemon-reload 2>/dev/null || true

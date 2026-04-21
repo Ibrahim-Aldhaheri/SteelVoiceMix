@@ -3,6 +3,7 @@
 
 import json
 import os
+import signal
 import socket
 import sys
 import subprocess
@@ -30,8 +31,11 @@ def socket_path() -> str:
     return f"/tmp/nova-mixer-{os.getuid()}.sock"
 
 
+OVERLAY_POSITIONS = ("top-right", "top-left", "bottom-right", "bottom-left", "center")
+
+
 def load_settings() -> dict:
-    defaults = {"overlay": True, "autostart": True}
+    defaults = {"overlay": True, "autostart": True, "overlay_position": "top-right"}
     if not SETTINGS_FILE.exists():
         return defaults
     try:
@@ -66,13 +70,26 @@ class DialOverlay(QWidget):
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self._fade_out)
 
-    def show_volumes(self, game_vol: int, chat_vol: int):
+    def show_volumes(self, game_vol: int, chat_vol: int, position: str = "top-right"):
         self.game_vol = game_vol
         self.chat_vol = chat_vol
 
         screen = QApplication.primaryScreen().geometry()
-        x = (screen.width() - self.width()) // 2
-        y = 60
+        margin = 24
+        if position == "top-left":
+            x, y = margin, margin
+        elif position == "bottom-right":
+            x = screen.width() - self.width() - margin
+            y = screen.height() - self.height() - margin
+        elif position == "bottom-left":
+            x = margin
+            y = screen.height() - self.height() - margin
+        elif position == "center":
+            x = (screen.width() - self.width()) // 2
+            y = (screen.height() - self.height()) // 2
+        else:  # top-right (default)
+            x = screen.width() - self.width() - margin
+            y = margin
         self.move(x, y)
 
         self.update()
@@ -399,7 +416,10 @@ class MixerGUI(QMainWindow):
         self.dial_label.setText(pos)
 
         if self.settings.get("overlay", True):
-            self.overlay.show_volumes(game_vol, chat_vol)
+            pos = self.settings.get("overlay_position", "top-right")
+            if pos not in OVERLAY_POSITIONS:
+                pos = "top-right"
+            self.overlay.show_volumes(game_vol, chat_vol, pos)
 
     def _on_battery(self, level, status):
         self.battery_bar.setValue(level)
@@ -452,6 +472,15 @@ def main():
     app.setDesktopFileName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
     app.setStyle("fusion")
+
+    # Make Ctrl+C in the launching terminal quit cleanly. Python signal
+    # handlers only run when the interpreter gets a chance between Qt events,
+    # so nudge it every 250 ms.
+    signal.signal(signal.SIGINT, lambda *_: QApplication.quit())
+    signal.signal(signal.SIGTERM, lambda *_: QApplication.quit())
+    interpreter_nudge = QTimer()
+    interpreter_nudge.start(250)
+    interpreter_nudge.timeout.connect(lambda: None)
 
     window = MixerGUI()
     window.show()
