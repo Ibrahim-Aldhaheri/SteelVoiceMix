@@ -87,7 +87,16 @@ sudo dnf install cargo hidapi-devel pulseaudio-utils libnotify
 sudo apt install cargo libhidapi-dev pulseaudio-utils libnotify-bin
 ```
 
-### Quick Install
+### Fedora (COPR — recommended)
+
+```bash
+sudo dnf copr enable abokhalil/steelvoicemix
+sudo dnf install steelvoicemix
+systemctl --user daemon-reload
+systemctl --user enable --now steelvoicemix steelvoicemix-gui
+```
+
+### From source
 
 ```bash
 git clone https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix.git
