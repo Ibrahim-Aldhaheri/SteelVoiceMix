@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QProgressBar, QSystemTrayIcon, QMenu, QCheckBox,
+    QLabel, QProgressBar, QSystemTrayIcon, QMenu, QCheckBox, QComboBox,
 )
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
 from PySide6.QtGui import QIcon, QAction, QFont, QPainter, QColor
@@ -32,10 +32,16 @@ def socket_path() -> str:
 
 
 OVERLAY_POSITIONS = ("top-right", "top-left", "bottom-right", "bottom-left", "center")
+OVERLAY_ORIENTATIONS = ("horizontal", "vertical")
 
 
 def load_settings() -> dict:
-    defaults = {"overlay": True, "autostart": True, "overlay_position": "top-right"}
+    defaults = {
+        "overlay": True,
+        "autostart": True,
+        "overlay_position": "top-right",
+        "overlay_orientation": "horizontal",
+    }
     if not SETTINGS_FILE.exists():
         return defaults
     try:
@@ -62,6 +68,8 @@ class DialOverlay(QWidget):
         super().__init__(parent, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
+
+        self.orientation = "horizontal"
         self.setFixedSize(280, 80)
 
         self.game_vol = 100
@@ -69,6 +77,16 @@ class DialOverlay(QWidget):
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self._fade_out)
+
+    def set_orientation(self, orientation: str):
+        if orientation not in OVERLAY_ORIENTATIONS:
+            orientation = "horizontal"
+        self.orientation = orientation
+        if orientation == "vertical":
+            self.setFixedSize(170, 230)
+        else:
+            self.setFixedSize(280, 80)
+        self.update()
 
     def show_volumes(self, game_vol: int, chat_vol: int, position: str = "top-right"):
         self.game_vol = game_vol
@@ -112,11 +130,18 @@ class DialOverlay(QWidget):
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(self.rect(), 12, 12)
 
+        if self.orientation == "vertical":
+            self._paint_vertical(painter, text_color)
+        else:
+            self._paint_horizontal(painter, text_color)
+
+        painter.end()
+
+    def _paint_horizontal(self, painter, text_color):
         bar_x, bar_w = 70, 190
         painter.setPen(text_color)
         painter.setFont(QFont("", 11))
 
-        # Game bar
         painter.drawText(10, 30, "🎮 Game")
         painter.setBrush(QColor(60, 60, 60, 100))
         painter.drawRoundedRect(bar_x, 18, bar_w, 16, 4, 4)
@@ -125,7 +150,6 @@ class DialOverlay(QWidget):
         painter.drawRoundedRect(bar_x, 18, game_w, 16, 4, 4)
         painter.drawText(bar_x + bar_w + 5, 30, f"{self.game_vol}%")
 
-        # Chat bar
         painter.drawText(10, 62, "💬 Chat")
         painter.setBrush(QColor(60, 60, 60, 100))
         painter.drawRoundedRect(bar_x, 50, bar_w, 16, 4, 4)
@@ -134,7 +158,39 @@ class DialOverlay(QWidget):
         painter.drawRoundedRect(bar_x, 50, chat_w, 16, 4, 4)
         painter.drawText(bar_x + bar_w + 5, 62, f"{self.chat_vol}%")
 
-        painter.end()
+    def _paint_vertical(self, painter, text_color):
+        bar_w = 26
+        bar_h = 140
+        bar_top = 40
+        game_x = 30
+        chat_x = self.width() - game_x - bar_w
+
+        painter.setPen(text_color)
+        painter.setFont(QFont("", 11))
+        painter.drawText(game_x - 14, 22, "🎮 Game")
+        painter.drawText(chat_x - 14, 22, "💬 Chat")
+
+        # Game column — fills bottom-up
+        painter.setBrush(QColor(60, 60, 60, 100))
+        painter.drawRoundedRect(game_x, bar_top, bar_w, bar_h, 5, 5)
+        game_fill = int(bar_h * self.game_vol / 100)
+        painter.setBrush(QColor(76, 175, 80))
+        painter.drawRoundedRect(
+            game_x, bar_top + bar_h - game_fill, bar_w, game_fill, 5, 5
+        )
+
+        # Chat column
+        painter.setBrush(QColor(60, 60, 60, 100))
+        painter.drawRoundedRect(chat_x, bar_top, bar_w, bar_h, 5, 5)
+        chat_fill = int(bar_h * self.chat_vol / 100)
+        painter.setBrush(QColor(33, 150, 243))
+        painter.drawRoundedRect(
+            chat_x, bar_top + bar_h - chat_fill, bar_w, chat_fill, 5, 5
+        )
+
+        painter.setPen(text_color)
+        painter.drawText(game_x - 6, bar_top + bar_h + 22, f"{self.game_vol}%")
+        painter.drawText(chat_x - 6, bar_top + bar_h + 22, f"{self.chat_vol}%")
 
 
 class DaemonSignals(QObject):
@@ -247,7 +303,7 @@ class MixerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("nova-mixer")
-        self.setFixedSize(320, 320)
+        self.setFixedSize(360, 420)
         self.setWindowIcon(QIcon.fromTheme(APP_ICON))
 
         self.signals = DaemonSignals()
@@ -259,6 +315,9 @@ class MixerGUI(QMainWindow):
 
         self.settings = load_settings()
         self.overlay = DialOverlay()
+        self.overlay.set_orientation(
+            self.settings.get("overlay_orientation", "horizontal")
+        )
         self._build_ui()
         self._build_tray()
         self._start_daemon_client()
@@ -342,6 +401,32 @@ class MixerGUI(QMainWindow):
         self.overlay_check.setChecked(self.settings.get("overlay", True))
         self.overlay_check.toggled.connect(self._toggle_overlay)
         settings_layout.addWidget(self.overlay_check)
+
+        position_row = QHBoxLayout()
+        position_row.addWidget(QLabel("Overlay position:"))
+        self.position_combo = QComboBox()
+        self.position_combo.addItems(
+            ["Top-right", "Top-left", "Bottom-right", "Bottom-left", "Center"]
+        )
+        current_pos = self.settings.get("overlay_position", "top-right")
+        idx = self.position_combo.findText(current_pos.replace("-", " ").title())
+        if idx >= 0:
+            self.position_combo.setCurrentIndex(idx)
+        self.position_combo.currentTextChanged.connect(self._change_position)
+        position_row.addWidget(self.position_combo, 1)
+        settings_layout.addLayout(position_row)
+
+        orient_row = QHBoxLayout()
+        orient_row.addWidget(QLabel("Overlay style:"))
+        self.orient_combo = QComboBox()
+        self.orient_combo.addItems(["Horizontal", "Vertical"])
+        current_orient = self.settings.get("overlay_orientation", "horizontal")
+        idx = self.orient_combo.findText(current_orient.capitalize())
+        if idx >= 0:
+            self.orient_combo.setCurrentIndex(idx)
+        self.orient_combo.currentTextChanged.connect(self._change_orientation)
+        orient_row.addWidget(self.orient_combo, 1)
+        settings_layout.addLayout(orient_row)
 
         self.autostart_check = QCheckBox("Start with system")
         self.autostart_check.setChecked(self.settings.get("autostart", True))
@@ -445,22 +530,40 @@ class MixerGUI(QMainWindow):
         self.settings["overlay"] = checked
         save_settings(self.settings)
 
+    def _change_position(self, text):
+        key = text.lower().replace(" ", "-")
+        if key not in OVERLAY_POSITIONS:
+            return
+        self.settings["overlay_position"] = key
+        save_settings(self.settings)
+        # Flash a preview so the user sees where it will appear
+        self.overlay.show_volumes(self.game_bar.value(), self.chat_bar.value(), key)
+
+    def _change_orientation(self, text):
+        key = text.lower()
+        if key not in OVERLAY_ORIENTATIONS:
+            return
+        self.settings["overlay_orientation"] = key
+        save_settings(self.settings)
+        self.overlay.set_orientation(key)
+        self.overlay.show_volumes(
+            self.game_bar.value(),
+            self.chat_bar.value(),
+            self.settings.get("overlay_position", "top-right"),
+        )
+
     def _toggle_autostart(self, checked):
         self.settings["autostart"] = checked
         save_settings(self.settings)
-        try:
-            if checked:
+        verb = "enable" if checked else "disable"
+        for unit in ("nova-mixer", "nova-mixer-gui"):
+            try:
                 subprocess.run(
-                    ["systemctl", "--user", "enable", "nova-mixer"],
-                    capture_output=True, timeout=5
+                    ["systemctl", "--user", verb, unit],
+                    capture_output=True, timeout=5,
                 )
-            else:
-                subprocess.run(
-                    ["systemctl", "--user", "disable", "nova-mixer"],
-                    capture_output=True, timeout=5
-                )
-        except Exception:
-            pass
+            except Exception:
+                pass
 
     def _on_status(self, msg):
         self.status_label.setText(msg)

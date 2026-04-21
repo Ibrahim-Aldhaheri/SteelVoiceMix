@@ -159,21 +159,23 @@ if command -v update-desktop-database >/dev/null; then
 fi
 echo "✅ Menu entry installed"
 
-# Autostart the GUI on login (user can remove this file to disable)
-echo "Enabling GUI autostart on login..."
-mkdir -p ~/.config/autostart
-cat > ~/.config/autostart/nova-mixer-gui.desktop << 'AUTOSTART'
-[Desktop Entry]
-Type=Application
-Name=Nova Mixer GUI
-Comment=ChatMix tray app for Nova Pro Wireless
-Exec=nova-mixer-gui
-Icon=audio-headset
-Terminal=false
-X-GNOME-Autostart-enabled=true
-NoDisplay=true
-AUTOSTART
-echo "✅ Autostart enabled (remove ~/.config/autostart/nova-mixer-gui.desktop to disable)"
+# Clean up any stale .desktop autostart from previous installs
+rm -f ~/.config/autostart/nova-mixer-gui.desktop
+
+# Install the GUI as a user service bound to the graphical session
+echo "Installing GUI autostart service..."
+debug "Copying: nova-mixer-gui.service → ~/.config/systemd/user/"
+cp nova-mixer-gui.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+debug "Running: systemctl --user enable nova-mixer-gui"
+systemctl --user enable nova-mixer-gui
+# Start it now if a graphical session is active so the user doesn't have to
+# log out and back in.
+if systemctl --user is-active --quiet graphical-session.target; then
+    debug "Running: systemctl --user start nova-mixer-gui"
+    systemctl --user start nova-mixer-gui 2>/dev/null || true
+fi
+echo "✅ GUI will start automatically on login"
 
 # Install systemd service
 echo "Installing systemd service..."
