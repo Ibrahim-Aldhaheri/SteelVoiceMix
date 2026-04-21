@@ -1,12 +1,12 @@
 [package]
-name = "nova-mixer"
+name = "steelvoicemix"
 version = "0.2.0"
 edition = "2021"
 description = "ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux"
 license = "MIT"
 
 [[bin]]
-name = "nova-mixer"
+name = "steelvoicemix"
 path = "src/main.rs"
 
 [dependencies]

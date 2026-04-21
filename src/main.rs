@@ -19,10 +19,10 @@ use protocol::{ClientCommand, DaemonEvent};
 fn socket_path() -> PathBuf {
     // Use XDG_RUNTIME_DIR if available, fallback to /tmp
     if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        PathBuf::from(dir).join("nova-mixer.sock")
+        PathBuf::from(dir).join("steelvoicemix.sock")
     } else {
         PathBuf::from("/tmp")
-            .join(format!("nova-mixer-{}.sock", unsafe { libc::getuid() }))
+            .join(format!("steelvoicemix-{}.sock", unsafe { libc::getuid() }))
     }
 }
 
@@ -128,13 +128,13 @@ fn main() {
             "--no-socket" => no_socket = true,
             "--debug" | "-d" => debug = true,
             "--version" | "-V" => {
-                println!("nova-mixer {}", env!("CARGO_PKG_VERSION"));
+                println!("steelvoicemix {}", env!("CARGO_PKG_VERSION"));
                 return;
             }
             "--help" | "-h" => {
-                println!("nova-mixer — ChatMix daemon for SteelSeries Arctis Nova Pro Wireless");
+                println!("steelvoicemix — ChatMix daemon for SteelSeries Arctis Nova Pro Wireless");
                 println!();
-                println!("Usage: nova-mixer [OPTIONS]");
+                println!("Usage: steelvoicemix [OPTIONS]");
                 println!();
                 println!("Options:");
                 println!("  --no-notify   Disable desktop notifications");

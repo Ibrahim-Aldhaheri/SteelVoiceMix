@@ -1,4 +1,4 @@
-# nova-mixer 🎧
+# SteelVoiceMix 🎧
 
 Linux ChatMix implementation for the **SteelSeries Arctis Nova Pro Wireless**. Uses PipeWire virtual sinks controlled by the hardware dial on the base station.
 
@@ -28,8 +28,8 @@ DEBUG=1 ./install.sh
 
 The project is split into two parts:
 
-1. **Rust daemon** (`nova-mixer`) — handles HID communication, creates PipeWire sinks, reads the ChatMix dial, adjusts volumes. Runs as a systemd user service.
-2. **Python GUI** (`nova-mixer-gui`) — optional PySide6 app that connects to the daemon over a Unix socket (`$XDG_RUNTIME_DIR/nova-mixer.sock`) for real-time status display.
+1. **Rust daemon** (`steelvoicemix`) — handles HID communication, creates PipeWire sinks, reads the ChatMix dial, adjusts volumes. Runs as a systemd user service.
+2. **Python GUI** (`steelvoicemix-gui`) — optional PySide6 app that connects to the daemon over a Unix socket (`$XDG_RUNTIME_DIR/steelvoicemix.sock`) for real-time status display.
 
 ### Socket Protocol
 
@@ -81,8 +81,8 @@ sudo apt install cargo libhidapi-dev pulseaudio-utils libnotify-bin
 ### Quick Install
 
 ```bash
-git clone https://github.com/Ibrahim-Aldhaheri/Nova-mixer.git
-cd Nova-mixer
+git clone https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix.git
+cd SteelVoiceMix
 ./install.sh
 ```
 
@@ -103,35 +103,35 @@ sudo cp 50-nova-pro-wireless.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 
 # Binary
-cp target/release/nova-mixer ~/.local/bin/
+cp target/release/steelvoicemix ~/.local/bin/
 
 # Systemd service
 mkdir -p ~/.config/systemd/user
-cp nova-mixer.service ~/.config/systemd/user/
+cp steelvoicemix.service ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable nova-mixer --now
+systemctl --user enable steelvoicemix --now
 ```
 
 ## Usage
 
 ```bash
 # Headless daemon (default)
-nova-mixer
+steelvoicemix
 
 # Disable desktop notifications
-nova-mixer --no-notify
+steelvoicemix --no-notify
 
 # Disable Unix socket (no GUI support)
-nova-mixer --no-socket
+steelvoicemix --no-socket
 
 # Launch GUI (requires PySide6, daemon must be running)
-nova-mixer-gui
+steelvoicemix-gui
 
 # Check service status
-systemctl --user status nova-mixer
+systemctl --user status steelvoicemix
 
 # View logs
-journalctl --user -u nova-mixer -f
+journalctl --user -u steelvoicemix -f
 ```
 
 Once running, two new audio sinks appear:
@@ -142,7 +142,7 @@ The physical dial on the base station controls the balance between them.
 
 ### GUI
 
-The GUI (`nova-mixer-gui`) connects to the running daemon and shows:
+The GUI (`steelvoicemix-gui`) connects to the running daemon and shows:
 - Connection status (connected/disconnected)
 - Game and Chat volume bars (updated in real-time)
 - Battery level and charging status

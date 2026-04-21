@@ -1,19 +1,19 @@
 #!/bin/bash
 set -e
 
-echo "🎧 nova-mixer uninstaller"
+echo "🎧 SteelVoiceMix uninstaller"
 echo "========================="
 
 # Stop and disable services
 echo "Stopping services..."
-systemctl --user stop nova-mixer-gui 2>/dev/null || true
-systemctl --user disable nova-mixer-gui 2>/dev/null || true
-systemctl --user stop nova-mixer 2>/dev/null || true
-systemctl --user disable nova-mixer 2>/dev/null || true
+systemctl --user stop steelvoicemix-gui 2>/dev/null || true
+systemctl --user disable steelvoicemix-gui 2>/dev/null || true
+systemctl --user stop steelvoicemix 2>/dev/null || true
+systemctl --user disable steelvoicemix 2>/dev/null || true
 
 # Kill any manually-launched processes that systemd doesn't know about
-pkill -f nova-mixer-gui.py 2>/dev/null || true
-pkill -x nova-mixer 2>/dev/null || true
+pkill -f steelvoicemix-gui.py 2>/dev/null || true
+pkill -x steelvoicemix 2>/dev/null || true
 
 # Unload any Nova null-sink / loopback modules left behind in PipeWire.
 # The daemon normally unloads them on shutdown, but a crash or manual
@@ -27,14 +27,14 @@ fi
 
 # Remove files
 echo "Removing files..."
-rm -f ~/.local/bin/nova-mixer
-rm -f ~/.local/bin/nova-mixer-gui
-rm -rf ~/.local/lib/nova-mixer
-rm -f ~/.config/systemd/user/nova-mixer.service
-rm -f ~/.config/systemd/user/nova-mixer-gui.service
-rm -rf ~/.config/nova-mixer
-rm -f ~/.local/share/applications/nova-mixer.desktop
-rm -f ~/.config/autostart/nova-mixer-gui.desktop
+rm -f ~/.local/bin/steelvoicemix
+rm -f ~/.local/bin/steelvoicemix-gui
+rm -rf ~/.local/lib/steelvoicemix
+rm -f ~/.config/systemd/user/steelvoicemix.service
+rm -f ~/.config/systemd/user/steelvoicemix-gui.service
+rm -rf ~/.config/steelvoicemix
+rm -f ~/.local/share/applications/steelvoicemix.desktop
+rm -f ~/.config/autostart/steelvoicemix-gui.desktop
 if command -v update-desktop-database >/dev/null; then
     update-desktop-database ~/.local/share/applications 2>/dev/null || true
 fi
@@ -51,4 +51,4 @@ if [ -f /etc/udev/rules.d/50-nova-pro-wireless.rules ]; then
 fi
 
 echo ""
-echo "✅ nova-mixer uninstalled"
+echo "✅ SteelVoiceMix uninstalled"

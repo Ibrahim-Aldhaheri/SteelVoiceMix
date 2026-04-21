@@ -1,11 +1,11 @@
 [Unit]
-Description=Nova Mixer GUI (ChatMix tray + overlay)
+Description=SteelVoiceMix GUI (ChatMix tray + overlay)
 PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/nova-mixer-gui
+ExecStart=%h/.local/bin/steelvoicemix-gui
 Restart=on-failure
 RestartSec=3
 

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""nova-mixer GUI — connects to the Rust daemon over a Unix socket."""
+"""SteelVoiceMix GUI — connects to the Rust daemon over a Unix socket."""
 
 import json
 import os
@@ -17,18 +17,18 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
 from PySide6.QtGui import QIcon, QAction, QFont, QPainter, QColor, QCursor
 
-APP_NAME = "nova-mixer"
+APP_NAME = "steelvoicemix"
 APP_ICON = "audio-headset"
 
-SETTINGS_FILE = Path.home() / ".config" / "nova-mixer" / "settings.conf"
+SETTINGS_FILE = Path.home() / ".config" / "steelvoicemix" / "settings.conf"
 
 
 def socket_path() -> str:
     """Get the daemon socket path (must match Rust daemon)."""
     xdg = os.environ.get("XDG_RUNTIME_DIR")
     if xdg:
-        return os.path.join(xdg, "nova-mixer.sock")
-    return f"/tmp/nova-mixer-{os.getuid()}.sock"
+        return os.path.join(xdg, "steelvoicemix.sock")
+    return f"/tmp/steelvoicemix-{os.getuid()}.sock"
 
 
 OVERLAY_POSITIONS = ("top-right", "top-left", "bottom-right", "bottom-left", "center")
@@ -345,7 +345,7 @@ class DaemonClient:
 class MixerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("nova-mixer")
+        self.setWindowTitle("SteelVoiceMix")
         self.setFixedSize(360, 420)
         self.setWindowIcon(QIcon.fromTheme(APP_ICON))
 
@@ -481,7 +481,7 @@ class MixerGUI(QMainWindow):
 
     def _build_tray(self):
         self.tray = QSystemTrayIcon(QIcon.fromTheme(APP_ICON), self)
-        self.tray.setToolTip("nova-mixer")
+        self.tray.setToolTip("SteelVoiceMix")
 
         menu = QMenu()
         show_action = QAction("Show", self)
@@ -508,7 +508,7 @@ class MixerGUI(QMainWindow):
     def closeEvent(self, event):
         event.ignore()
         self.hide()
-        self.tray.showMessage("nova-mixer", "Minimized to tray", QSystemTrayIcon.Information, 2000)
+        self.tray.showMessage("SteelVoiceMix", "Minimized to tray", QSystemTrayIcon.Information, 2000)
 
     def _quit(self):
         self.daemon_client.stop()
@@ -567,7 +567,7 @@ class MixerGUI(QMainWindow):
                 QProgressBar {{ border: 1px solid #555; border-radius: 4px; height: 22px; }}
                 QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}
             """)
-        self.tray.setToolTip(f"nova-mixer — 🔋 {level}% ({status})")
+        self.tray.setToolTip(f"SteelVoiceMix — 🔋 {level}% ({status})")
 
     def _toggle_overlay(self, checked):
         self.settings["overlay"] = checked
@@ -599,7 +599,7 @@ class MixerGUI(QMainWindow):
         self.settings["autostart"] = checked
         save_settings(self.settings)
         verb = "enable" if checked else "disable"
-        for unit in ("nova-mixer", "nova-mixer-gui"):
+        for unit in ("steelvoicemix", "steelvoicemix-gui"):
             try:
                 subprocess.run(
                     ["systemctl", "--user", verb, unit],

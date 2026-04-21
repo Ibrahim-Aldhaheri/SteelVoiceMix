@@ -71,7 +71,7 @@ impl Mixer {
             return;
         }
         let mut cmd = std::process::Command::new("notify-send");
-        cmd.args(["-a", "nova-mixer", "-i", "audio-headset", summary]);
+        cmd.args(["-a", "steelvoicemix", "-i", "audio-headset", summary]);
         if !body.is_empty() {
             cmd.arg(body);
         }
@@ -84,7 +84,7 @@ impl Mixer {
     /// Main run loop. Blocks until `running` is set to false.
     pub fn run(&mut self) {
         info!(
-            "nova-mixer v{} starting (notify={}, RUST_LOG={})",
+            "steelvoicemix v{} starting (notify={}, RUST_LOG={})",
             env!("CARGO_PKG_VERSION"),
             self.notify_enabled,
             std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
@@ -298,7 +298,7 @@ impl Mixer {
             }
         }
 
-        info!("nova-mixer stopped");
+        info!("steelvoicemix stopped");
     }
 
     /// Wait for a duration, checking `running` every second.

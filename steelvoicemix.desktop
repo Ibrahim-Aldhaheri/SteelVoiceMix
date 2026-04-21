@@ -1,7 +1,7 @@
 [Desktop Entry]
-Name=Nova Mixer
+Name=SteelVoiceMix
 Comment=ChatMix for SteelSeries Arctis Nova Pro Wireless
-Exec=nova-mixer-gui
+Exec=steelvoicemix-gui
 Icon=audio-headset
 Terminal=false
 Type=Application

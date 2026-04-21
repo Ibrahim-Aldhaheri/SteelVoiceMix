@@ -291,21 +291,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nova-mixer"
-version = "0.2.0"
-dependencies = [
- "ctrlc",
- "env_logger",
- "ggoled_lib",
- "hidapi",
- "libc",
- "log",
- "serde",
- "serde_json",
- "signal-hook",
-]
-
-[[package]]
 name = "objc2"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -470,6 +455,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c07347b7c0301b9adba4350bdcf09c039d0e7160922050db0439b3c6723c8ab"
 dependencies = [
  "windows-sys",
+]
+
+[[package]]
+name = "steelvoicemix"
+version = "0.2.0"
+dependencies = [
+ "ctrlc",
+ "env_logger",
+ "ggoled_lib",
+ "hidapi",
+ "libc",
+ "log",
+ "serde",
+ "serde_json",
+ "signal-hook",
 ]
 
 [[package]]

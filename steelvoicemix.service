@@ -1,11 +1,11 @@
 [Unit]
-Description=nova-mixer — ChatMix for Arctis Nova Pro Wireless
+Description=SteelVoiceMix — ChatMix for Arctis Nova Pro Wireless
 After=pipewire.service
 Wants=pipewire.service
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/nova-mixer
+ExecStart=%h/.local/bin/steelvoicemix
 Restart=on-failure
 RestartSec=5
 Environment=RUST_LOG=info

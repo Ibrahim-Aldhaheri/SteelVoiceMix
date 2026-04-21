@@ -1,4 +1,4 @@
 # SteelSeries Arctis Nova Pro Wireless — grant the active seat user access to
-# the base-station HID interface so nova-mixer can run without root.
+# the base-station HID interface so steelvoicemix can run without root.
 # uaccess is the modern logind-friendly replacement for MODE="0666".
 KERNEL=="hidraw*", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12e0", TAG+="uaccess"
