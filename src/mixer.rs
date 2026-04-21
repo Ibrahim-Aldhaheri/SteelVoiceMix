@@ -183,7 +183,10 @@ impl Mixer {
                 chat: init_chat,
             });
             if let Some(ref mut d) = display {
-                d.show(init_game, init_chat);
+                if !d.show(init_game, init_chat) {
+                    warn!("OLED gauge failing — disabling for this session");
+                    display = None;
+                }
             }
             self.notify(
                 "🎧 ChatMix Active",
@@ -221,13 +224,22 @@ impl Mixer {
                                 st.game_vol = game_vol;
                                 st.chat_vol = chat_vol;
                             }
-                            if let Some(ref mut d) = display {
-                                d.show(game_vol, chat_vol);
-                            }
+                            // Broadcast to GUI/overlay first — the OLED draw
+                            // can stall on firmware that rejects feature
+                            // reports, and we don't want GUI updates waiting
+                            // for it.
                             self.broadcast(DaemonEvent::ChatMix {
                                 game: game_vol,
                                 chat: chat_vol,
                             });
+                            if let Some(ref mut d) = display {
+                                if !d.show(game_vol, chat_vol) {
+                                    warn!(
+                                        "OLED gauge failing — disabling for this session"
+                                    );
+                                    display = None;
+                                }
+                            }
                         }
                         HidEvent::Battery(bat) => {
                             debug!("battery: {}% ({})", bat.level, bat.status);

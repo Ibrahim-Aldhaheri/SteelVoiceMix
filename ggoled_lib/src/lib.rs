@@ -269,12 +269,15 @@ impl Device {
     }
 
     fn retry_report(&self, data: &[u8]) -> anyhow::Result<()> {
+        // Cap total retry time to ~5 ms. Non-transient errors (EINVAL on
+        // wireless firmware) are not worth spinning on, and the event-loop
+        // caller disables the OLED after the first failure anyway.
         let mut i: u64 = 0;
         loop {
             match self.dev.oled().send_feature_report(data) {
                 Ok(_) => return Ok(()),
                 Err(err) => {
-                    if i == 10 {
+                    if i == 2 {
                         return Err(err.into());
                     }
                     i += 1;
