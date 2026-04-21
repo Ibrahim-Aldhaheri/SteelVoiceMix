@@ -141,9 +141,14 @@ cp target/release/nova-mixer ~/.local/bin/nova-mixer
 debug "Copying: nova-mixer-gui.py → ~/.local/lib/nova-mixer/nova-mixer-gui.py"
 cp nova-mixer-gui.py ~/.local/lib/nova-mixer/nova-mixer-gui.py
 
-# Create GUI launcher
+# Create GUI launcher. Forcing XCB keeps overlay positioning working on
+# Wayland sessions: KWin (and wlroots, mutter) ignore client-side move()
+# calls on ordinary widgets, which would pin the overlay to screen centre
+# no matter what the user picks. XWayland gives us X11 semantics with
+# zero behavioural cost for a tray + overlay app.
 cat > ~/.local/bin/nova-mixer-gui << 'LAUNCHER'
 #!/bin/bash
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
 exec python3 "$HOME/.local/lib/nova-mixer/nova-mixer-gui.py" "$@"
 LAUNCHER
 chmod +x ~/.local/bin/nova-mixer-gui

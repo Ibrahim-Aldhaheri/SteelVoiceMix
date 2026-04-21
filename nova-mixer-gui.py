@@ -35,6 +35,9 @@ OVERLAY_POSITIONS = ("top-right", "top-left", "bottom-right", "bottom-left", "ce
 OVERLAY_ORIENTATIONS = ("horizontal", "vertical")
 
 
+BOOL_KEYS = {"overlay", "autostart"}
+
+
 def load_settings() -> dict:
     defaults = {
         "overlay": True,
@@ -47,9 +50,14 @@ def load_settings() -> dict:
     try:
         settings = defaults.copy()
         for line in SETTINGS_FILE.read_text().strip().split("\n"):
-            if "=" in line:
-                k, v = line.split("=", 1)
-                settings[k.strip()] = v.strip().lower() in ("true", "1", "yes")
+            if "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            key, val = k.strip(), v.strip()
+            if key in BOOL_KEYS:
+                settings[key] = val.lower() in ("true", "1", "yes")
+            else:
+                settings[key] = val
         return settings
     except Exception:
         return defaults
@@ -57,7 +65,12 @@ def load_settings() -> dict:
 
 def save_settings(settings: dict):
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f"{k}={str(v).lower()}" for k, v in settings.items()]
+    lines = []
+    for k, v in settings.items():
+        if isinstance(v, bool):
+            lines.append(f"{k}={str(v).lower()}")
+        else:
+            lines.append(f"{k}={v}")
     SETTINGS_FILE.write_text("\n".join(lines) + "\n")
 
 

@@ -56,8 +56,8 @@ impl SinkManager {
     /// Create the two virtual sinks routing to the given output sink.
     pub fn create_sinks(&mut self, output_sink: &str) {
         self.destroy_sinks();
-        self.game = create_sink_pair(output_sink, GAME_SINK, "Nova ChatMix — Game");
-        self.chat = create_sink_pair(output_sink, CHAT_SINK, "Nova ChatMix — Chat");
+        self.game = create_sink_pair(output_sink, GAME_SINK, "Nova Game");
+        self.chat = create_sink_pair(output_sink, CHAT_SINK, "Nova Chat");
 
         if self.game.is_some() && self.chat.is_some() {
             info!("Created sinks: {GAME_SINK}, {CHAT_SINK}");
@@ -100,10 +100,15 @@ impl Drop for SinkManager {
 }
 
 fn create_sink_pair(target: &str, name: &str, description: &str) -> Option<SinkModules> {
+    // Both device.description (device/card side) and node.description
+    // (node side, what plasma-pa actually displays) need the label, or
+    // KDE falls back to just "Nova" from the sink_name prefix.
     let null_sink_id = load_module(&[
         "module-null-sink",
         &format!("sink_name={name}"),
-        &format!("sink_properties=device.description='{description}'"),
+        &format!(
+            "sink_properties=device.description='{description}' node.description='{description}'"
+        ),
     ])?;
 
     match load_module(&[
