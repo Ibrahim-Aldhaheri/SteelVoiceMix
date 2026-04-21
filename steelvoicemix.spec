@@ -1,5 +1,5 @@
 Name:           steelvoicemix
-Version:        0.2.0
+Version:        0.2.1
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta)
 
@@ -91,6 +91,14 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
+* Wed Apr 22 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.1-1
+- Ship app icon (data/icons/hicolor/scalable/apps/steelvoicemix.svg)
+  and README screenshots — v0.2.0 tag pre-dated those commits and
+  its COPR build failed on the missing icon during %install.
+- Flag the Summary as "(beta)" and add type="development" to the
+  AppStream release entry so dnf / GNOME Software / Discover show
+  the pre-release status.
+
 * Tue Apr 21 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.0-1
 - Initial SteelVoiceMix release (formerly nova-mixer).
 - Rust daemon with a Unix-socket event stream for the optional Qt GUI.
