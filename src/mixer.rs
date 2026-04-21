@@ -60,6 +60,7 @@ pub struct Mixer {
     state: Arc<Mutex<MixerState>>,
     subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
     notify_enabled: bool,
+    notify_available: bool,
 }
 
 impl Mixer {
@@ -69,11 +70,30 @@ impl Mixer {
         subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
         notify_enabled: bool,
     ) -> Self {
+        // Probe notify-send once. Missing on headless servers and some
+        // minimal DEs — we skip silently rather than spawning a failing
+        // subprocess for every event.
+        let notify_available = notify_enabled
+            && std::process::Command::new("notify-send")
+                .arg("--version")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+        if notify_enabled && !notify_available {
+            warn!(
+                "notify-send not available — desktop notifications disabled \
+                 (install libnotify / libnotify-bin to enable)"
+            );
+        }
+
         Mixer {
             running,
             state,
             subscribers,
             notify_enabled,
+            notify_available,
         }
     }
 
@@ -85,7 +105,7 @@ impl Mixer {
 
     /// Send a desktop notification via notify-send.
     fn notify(&self, summary: &str, body: &str) {
-        if !self.notify_enabled {
+        if !self.notify_enabled || !self.notify_available {
             return;
         }
         let mut cmd = std::process::Command::new("notify-send");

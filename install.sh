@@ -138,8 +138,11 @@ mkdir -p ~/.local/bin ~/.local/lib/steelvoicemix
 
 debug "Copying: target/release/steelvoicemix → ~/.local/bin/steelvoicemix"
 cp target/release/steelvoicemix ~/.local/bin/steelvoicemix
-debug "Copying: steelvoicemix-gui.py → ~/.local/lib/steelvoicemix/steelvoicemix-gui.py"
+debug "Copying: steelvoicemix-gui.py → ~/.local/lib/steelvoicemix/"
 cp steelvoicemix-gui.py ~/.local/lib/steelvoicemix/steelvoicemix-gui.py
+debug "Copying: gui/ package → ~/.local/lib/steelvoicemix/gui/"
+rm -rf ~/.local/lib/steelvoicemix/gui
+cp -r gui ~/.local/lib/steelvoicemix/gui
 
 # Create GUI launcher. Forcing XCB keeps overlay positioning working on
 # Wayland sessions: KWin (and wlroots, mutter) ignore client-side move()
