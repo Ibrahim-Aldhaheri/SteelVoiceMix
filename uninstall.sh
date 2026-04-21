@@ -15,6 +15,16 @@ systemctl --user disable nova-mixer 2>/dev/null || true
 pkill -f nova-mixer-gui.py 2>/dev/null || true
 pkill -x nova-mixer 2>/dev/null || true
 
+# Unload any Nova null-sink / loopback modules left behind in PipeWire.
+# The daemon normally unloads them on shutdown, but a crash or manual
+# test can orphan them — they'd otherwise linger until the user logs
+# out or manually runs pactl unload-module.
+if command -v pactl >/dev/null; then
+    pactl list modules 2>/dev/null \
+        | awk '/^Module #/ {id=$2; sub("#", "", id)} /^\tArgument:.*(sink_name=Nova|source=Nova)/ {print id}' \
+        | xargs -r -n1 pactl unload-module 2>/dev/null || true
+fi
+
 # Remove files
 echo "Removing files..."
 rm -f ~/.local/bin/nova-mixer
