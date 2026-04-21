@@ -87,21 +87,23 @@ sudo dnf install cargo hidapi-devel pulseaudio-utils libnotify
 sudo apt install cargo libhidapi-dev pulseaudio-utils libnotify-bin
 ```
 
-### Fedora (COPR — recommended)
+> ⚠️ **COPR install is currently broken (0.2.1).** The shipped systemd unit points at `%h/.local/bin/steelvoicemix`, which the RPM doesn't populate, so the service restart-loops with `status=203/EXEC`. A fix (0.2.2) is ready on `main` and will be pushed to COPR shortly. Use the source install below in the meantime.
+
+### From source (use this for now)
+
+```bash
+git clone https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix.git
+cd SteelVoiceMix
+./install.sh
+```
+
+### Fedora (COPR) — coming back once 0.2.2 lands
 
 ```bash
 sudo dnf copr enable abokhalil/steelvoicemix
 sudo dnf install steelvoicemix
 systemctl --user daemon-reload
 systemctl --user enable --now steelvoicemix steelvoicemix-gui
-```
-
-### From source
-
-```bash
-git clone https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix.git
-cd SteelVoiceMix
-./install.sh
 ```
 
 The install script will:
