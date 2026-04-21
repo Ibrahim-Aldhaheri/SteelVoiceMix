@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QLabel, QProgressBar, QSystemTrayIcon, QMenu, QCheckBox, QComboBox,
 )
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
-from PySide6.QtGui import QIcon, QAction, QFont, QPainter, QColor
+from PySide6.QtGui import QIcon, QAction, QFont, QPainter, QColor, QCursor
 
 APP_NAME = "nova-mixer"
 APP_ICON = "audio-headset"
@@ -105,22 +105,33 @@ class DialOverlay(QWidget):
         self.game_vol = game_vol
         self.chat_vol = chat_vol
 
-        screen = QApplication.primaryScreen().geometry()
+        # Pick the screen the mouse cursor is on; fall back to the primary.
+        # move() uses global virtual-desktop coordinates, so using the raw
+        # screen dimensions alone puts the overlay at the monitor junction
+        # on multi-display setups — we need the screen's absolute offset too.
+        cursor_pos = QCursor.pos() if QApplication.instance() else None
+        screen_obj = (
+            QApplication.screenAt(cursor_pos) if cursor_pos is not None else None
+        ) or QApplication.primaryScreen()
+        g = screen_obj.geometry()
+
         margin = 24
+        left = g.x()
+        top = g.y()
+        right = g.x() + g.width() - self.width()
+        bottom = g.y() + g.height() - self.height()
+
         if position == "top-left":
-            x, y = margin, margin
+            x, y = left + margin, top + margin
         elif position == "bottom-right":
-            x = screen.width() - self.width() - margin
-            y = screen.height() - self.height() - margin
+            x, y = right - margin, bottom - margin
         elif position == "bottom-left":
-            x = margin
-            y = screen.height() - self.height() - margin
+            x, y = left + margin, bottom - margin
         elif position == "center":
-            x = (screen.width() - self.width()) // 2
-            y = (screen.height() - self.height()) // 2
+            x = g.x() + (g.width() - self.width()) // 2
+            y = g.y() + (g.height() - self.height()) // 2
         else:  # top-right (default)
-            x = screen.width() - self.width() - margin
-            y = margin
+            x, y = right - margin, top + margin
         self.move(x, y)
 
         self.update()
