@@ -11,6 +11,10 @@ systemctl --user disable nova-mixer-gui 2>/dev/null || true
 systemctl --user stop nova-mixer 2>/dev/null || true
 systemctl --user disable nova-mixer 2>/dev/null || true
 
+# Kill any manually-launched processes that systemd doesn't know about
+pkill -f nova-mixer-gui.py 2>/dev/null || true
+pkill -x nova-mixer 2>/dev/null || true
+
 # Remove files
 echo "Removing files..."
 rm -f ~/.local/bin/nova-mixer
