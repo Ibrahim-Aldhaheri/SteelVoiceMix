@@ -1,8 +1,7 @@
 //! HID communication with the SteelSeries Arctis Nova Pro Wireless base station.
 
-use std::fmt;
-
 use hidapi::{HidApi, HidDevice};
+use thiserror::Error;
 
 // USB IDs
 pub const VENDOR_ID: u16 = 0x1038;  // SteelSeries
@@ -39,26 +38,17 @@ pub enum HidEvent {
 }
 
 /// Error type for HID operations.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum HidError {
+    #[error("Base station not found")]
     DeviceNotFound,
+    #[error("Failed to open device: {0}")]
     OpenFailed(String),
+    #[error("Device disconnected")]
     Disconnected,
+    #[error("HID API error: {0}")]
     ApiError(String),
 }
-
-impl fmt::Display for HidError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            HidError::DeviceNotFound => write!(f, "Base station not found"),
-            HidError::OpenFailed(e) => write!(f, "Failed to open device: {e}"),
-            HidError::Disconnected => write!(f, "Device disconnected"),
-            HidError::ApiError(e) => write!(f, "HID API error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for HidError {}
 
 /// Wrapper around an open HID device.
 pub struct NovaDevice {
@@ -185,5 +175,117 @@ impl NovaDevice {
             }
         }
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pad64(prefix: &[u8]) -> Vec<u8> {
+        let mut buf = vec![0u8; MSG_LEN];
+        buf[..prefix.len()].copy_from_slice(prefix);
+        buf
+    }
+
+    #[test]
+    fn parse_chatmix_event_decodes_both_channels() {
+        // Frame layout: [RX, OPT_CHATMIX, game, chat, ...padding]
+        let msg = pad64(&[RX, OPT_CHATMIX, 80, 35]);
+        match NovaDevice::parse_event(&msg) {
+            HidEvent::ChatMix { game_vol, chat_vol } => {
+                assert_eq!(game_vol, 80);
+                assert_eq!(chat_vol, 35);
+            }
+            other => panic!("expected ChatMix, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_chatmix_handles_zero_and_full_positions() {
+        let full = pad64(&[RX, OPT_CHATMIX, 100, 0]);
+        let zero = pad64(&[RX, OPT_CHATMIX, 0, 100]);
+        assert!(matches!(
+            NovaDevice::parse_event(&full),
+            HidEvent::ChatMix { game_vol: 100, chat_vol: 0 }
+        ));
+        assert!(matches!(
+            NovaDevice::parse_event(&zero),
+            HidEvent::ChatMix { game_vol: 0, chat_vol: 100 }
+        ));
+    }
+
+    #[test]
+    fn parse_battery_scales_raw_to_percent_and_decodes_status() {
+        // level byte at index 6, status byte at index 15.
+        // raw=8 → 100%, raw=4 → 50%, raw=0 → 0%.
+        let mut msg = pad64(&[RX, OPT_BATTERY]);
+        msg[6] = 8;
+        msg[15] = 0x02; // charging
+        match NovaDevice::parse_event(&msg) {
+            HidEvent::Battery(b) => {
+                assert_eq!(b.level, 100);
+                assert_eq!(b.status, "charging");
+            }
+            other => panic!("expected Battery, got {other:?}"),
+        }
+
+        msg[6] = 4;
+        msg[15] = 0x01; // offline
+        match NovaDevice::parse_event(&msg) {
+            HidEvent::Battery(b) => {
+                assert_eq!(b.level, 50);
+                assert_eq!(b.status, "offline");
+            }
+            _ => panic!("expected Battery"),
+        }
+
+        msg[6] = 0;
+        msg[15] = 0x00; // active (default)
+        match NovaDevice::parse_event(&msg) {
+            HidEvent::Battery(b) => {
+                assert_eq!(b.level, 0);
+                assert_eq!(b.status, "active");
+            }
+            _ => panic!("expected Battery"),
+        }
+    }
+
+    #[test]
+    fn parse_battery_clamps_raw_levels_above_scale() {
+        // Some firmware revisions have briefly reported raw > 8; we want
+        // the decoded percentage capped at 100 rather than overflowing.
+        let mut msg = pad64(&[RX, OPT_BATTERY]);
+        msg[6] = 12;
+        match NovaDevice::parse_event(&msg) {
+            HidEvent::Battery(b) => assert_eq!(b.level, 100),
+            _ => panic!("expected Battery"),
+        }
+    }
+
+    #[test]
+    fn parse_event_rejects_short_frames() {
+        assert!(matches!(NovaDevice::parse_event(&[]), HidEvent::Unknown));
+        assert!(matches!(
+            NovaDevice::parse_event(&[RX, OPT_CHATMIX, 50]),
+            HidEvent::Unknown
+        ));
+    }
+
+    #[test]
+    fn parse_event_returns_unknown_for_unrecognised_opcodes() {
+        let msg = pad64(&[RX, 0xFF, 1, 2]);
+        assert!(matches!(NovaDevice::parse_event(&msg), HidEvent::Unknown));
+    }
+
+    #[test]
+    fn battery_needs_full_16_byte_frame_to_decode() {
+        // Short battery frames (< 16 bytes) must fall through to Unknown
+        // so we don't read past the slice.
+        let short = vec![RX, OPT_BATTERY, 0, 0, 0, 0, 8];
+        assert!(matches!(
+            NovaDevice::parse_event(&short),
+            HidEvent::Unknown
+        ));
     }
 }
