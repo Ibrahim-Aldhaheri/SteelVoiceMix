@@ -1,7 +1,7 @@
 Name:           steelvoicemix
 Version:        0.2.0
 Release:        1%{?dist}
-Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux
+Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta)
 
 License:        MIT
 URL:            https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix

@@ -39,7 +39,7 @@
     <modalias>usb:v1038p12E0*</modalias>
   </provides>
   <releases>
-    <release version="0.2.0" date="2026-04-06">
+    <release version="0.2.0" date="2026-04-06" type="development">
       <description>
         <p>Daemon rewritten in Rust for performance and reliability. GUI now talks to the daemon over a Unix socket. OLED base-station display shows a live ChatMix gauge. Includes exponential-backoff reconnection and a volume-control bugfix.</p>
       </description>
