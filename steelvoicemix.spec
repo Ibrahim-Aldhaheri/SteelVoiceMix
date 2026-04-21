@@ -35,8 +35,10 @@ cargo build --release
 # Daemon binary
 install -Dm755 target/release/steelvoicemix %{buildroot}%{_bindir}/steelvoicemix
 
-# GUI
+# GUI entry shim + package
 install -Dm644 steelvoicemix-gui.py %{buildroot}%{_datadir}/%{name}/steelvoicemix-gui.py
+install -d %{buildroot}%{_datadir}/%{name}/gui
+install -Dm644 gui/*.py %{buildroot}%{_datadir}/%{name}/gui/
 
 # GUI launcher — force XCB so overlay positioning works under Wayland
 cat > %{buildroot}%{_bindir}/steelvoicemix-gui << 'EOF'
@@ -85,19 +87,14 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_metainfodir}/dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml
 
 %changelog
-* Mon Apr 21 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.0-1
-- Rename project to SteelVoiceMix
-- Switch virtual sinks from pw-loopback to pactl null-sink + loopback
-  (now visible in KDE Plasma's audio applet)
-- GUI autostart via user systemd service bound to graphical-session.target
-- Overlay: configurable position + horizontal/vertical orientation
+* Tue Apr 21 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.0-1
+- Initial SteelVoiceMix release (formerly nova-mixer).
+- Rust daemon with a Unix-socket event stream for the optional Qt GUI.
+- Virtual sinks via pactl null-sink + loopback so KDE Plasma's audio
+  applet lists them as first-class output devices.
+- GUI: tray icon, dial overlay (horizontal or vertical, configurable
+  screen position), battery indicator, About dialog with disclaimer.
+- systemd user services for the daemon and the GUI.
 - OLED gauge disables itself gracefully on wireless firmware that
-  rejects feature reports
-
-* Mon Apr 06 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.0-1
-- Rewrite daemon in Rust for performance and reliability
-- GUI communicates with daemon over Unix socket
-- Fix volume control bug (was using input.{sink} instead of sink name)
-- Add battery polling to core daemon
-- Consolidate duplicate Python code into single Rust binary
-- Add exponential backoff for reconnection
+  rejects feature reports.
+- Exponential-backoff reconnect when the base station is unplugged.
