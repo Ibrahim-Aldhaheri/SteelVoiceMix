@@ -180,10 +180,14 @@ echo "✅ Icon installed"
 # Clean up any stale .desktop autostart from previous installs
 rm -f ~/.config/autostart/steelvoicemix-gui.desktop
 
-# Install the GUI as a user service bound to the graphical session
+# Install the GUI as a user service bound to the graphical session.
+# The master unit ships with ExecStart=/usr/bin/steelvoicemix-gui for RPM
+# installs; rewrite to the per-user bin path for this source install.
 echo "Installing GUI autostart service..."
 debug "Copying: steelvoicemix-gui.service → ~/.config/systemd/user/"
 cp steelvoicemix-gui.service ~/.config/systemd/user/
+sed -i "s|^ExecStart=/usr/bin/|ExecStart=$HOME/.local/bin/|" \
+    ~/.config/systemd/user/steelvoicemix-gui.service
 systemctl --user daemon-reload
 debug "Running: systemctl --user enable steelvoicemix-gui"
 systemctl --user enable steelvoicemix-gui
@@ -200,6 +204,8 @@ echo "Installing systemd service..."
 mkdir -p ~/.config/systemd/user
 debug "Copying: steelvoicemix.service → ~/.config/systemd/user/"
 cp steelvoicemix.service ~/.config/systemd/user/
+sed -i "s|^ExecStart=/usr/bin/|ExecStart=$HOME/.local/bin/|" \
+    ~/.config/systemd/user/steelvoicemix.service
 debug "Running: systemctl --user daemon-reload"
 systemctl --user daemon-reload
 debug "Running: systemctl --user enable steelvoicemix --now"

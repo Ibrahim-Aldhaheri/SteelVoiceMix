@@ -14,7 +14,7 @@ from typing import Any
 
 APP_NAME = "steelvoicemix"
 DISPLAY_NAME = "SteelVoiceMix"
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.2.2"
 
 CONFIG_DIR = Path.home() / ".config" / APP_NAME
 SETTINGS_FILE = CONFIG_DIR / "settings.json"

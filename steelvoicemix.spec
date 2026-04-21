@@ -1,5 +1,5 @@
 Name:           steelvoicemix
-Version:        0.2.1
+Version:        0.2.2
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta)
 
@@ -91,6 +91,14 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
+* Wed Apr 22 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.2-1
+- Fix systemd user units under RPM install. The 0.2.1 service files
+  used ExecStart=%%h/.local/bin/steelvoicemix, which resolves to a
+  per-user path that the RPM never populates — the service would
+  restart-loop with status=203/EXEC. Switched the master units to
+  ExecStart=/usr/bin/steelvoicemix; install.sh rewrites the path
+  back to %%h/.local/bin/ for source installs.
+
 * Wed Apr 22 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.1-1
 - Ship app icon (data/icons/hicolor/scalable/apps/steelvoicemix.svg)
   and README screenshots — v0.2.0 tag pre-dated those commits and
