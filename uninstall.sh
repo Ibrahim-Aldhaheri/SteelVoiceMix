@@ -34,6 +34,10 @@ rm -f ~/.config/systemd/user/steelvoicemix.service
 rm -f ~/.config/systemd/user/steelvoicemix-gui.service
 rm -rf ~/.config/steelvoicemix
 rm -f ~/.local/share/applications/steelvoicemix.desktop
+rm -f ~/.local/share/icons/hicolor/scalable/apps/steelvoicemix.svg
+if command -v gtk-update-icon-cache >/dev/null; then
+    gtk-update-icon-cache -f ~/.local/share/icons/hicolor 2>/dev/null || true
+fi
 rm -f ~/.config/autostart/steelvoicemix-gui.desktop
 if command -v update-desktop-database >/dev/null; then
     update-desktop-database ~/.local/share/applications 2>/dev/null || true

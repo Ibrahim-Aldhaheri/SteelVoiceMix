@@ -61,6 +61,9 @@ install -Dm644 steelvoicemix.desktop %{buildroot}%{_datadir}/applications/steelv
 # AppStream metadata
 install -Dm644 dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml %{buildroot}%{_metainfodir}/dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml
 
+# App icon (hicolor/scalable)
+install -Dm644 data/icons/hicolor/scalable/apps/steelvoicemix.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
+
 %post
 %systemd_user_post steelvoicemix.service
 %systemd_user_post steelvoicemix-gui.service
@@ -85,6 +88,7 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_udevrulesdir}/50-nova-pro-wireless.rules
 %{_datadir}/applications/steelvoicemix.desktop
 %{_metainfodir}/dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml
+%{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
 * Tue Apr 21 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.0-1

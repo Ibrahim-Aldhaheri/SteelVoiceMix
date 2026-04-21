@@ -25,7 +25,9 @@ ISSUES_URL = "https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/issues"
 def make_about_dialog(parent=None) -> QDialog:
     dialog = QDialog(parent)
     dialog.setWindowTitle(f"About {DISPLAY_NAME}")
-    dialog.setWindowIcon(QIcon.fromTheme("audio-headset"))
+    dialog.setWindowIcon(
+        QIcon.fromTheme("steelvoicemix", QIcon.fromTheme("audio-headset"))
+    )
     dialog.setMinimumWidth(420)
 
     layout = QVBoxLayout(dialog)

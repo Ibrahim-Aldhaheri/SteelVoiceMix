@@ -2,7 +2,7 @@
 ###############################################################################
 #                              DISCLAIMER                                     #
 #                        USE AT YOUR OWN RISK                                 #
-# steelvoicemix has NO ASSOCIATION with SteelSeries.                             #
+# steelvoicemix has NO ASSOCIATION with SteelSeries.                          #
 # The author is NOT RESPONSIBLE for bricked devices, voided warranties,       #
 # or any damage caused by this software.                                      #
 # If your base station starts playing elevator music, that's between you      #
@@ -166,6 +166,16 @@ if command -v update-desktop-database >/dev/null; then
     update-desktop-database ~/.local/share/applications 2>/dev/null || true
 fi
 echo "✅ Menu entry installed"
+
+# Install the app icon into the user's hicolor theme so KDE/GNOME pick it up
+echo "Installing app icon..."
+mkdir -p ~/.local/share/icons/hicolor/scalable/apps
+cp data/icons/hicolor/scalable/apps/steelvoicemix.svg ~/.local/share/icons/hicolor/scalable/apps/
+if command -v gtk-update-icon-cache >/dev/null; then
+    debug "Running: gtk-update-icon-cache ~/.local/share/icons/hicolor"
+    gtk-update-icon-cache -f ~/.local/share/icons/hicolor 2>/dev/null || true
+fi
+echo "✅ Icon installed"
 
 # Clean up any stale .desktop autostart from previous installs
 rm -f ~/.config/autostart/steelvoicemix-gui.desktop

@@ -38,9 +38,16 @@ from .settings import (
     save as save_settings,
 )
 
-APP_ICON = "audio-headset"
+APP_ICON = "steelvoicemix"
+APP_ICON_FALLBACK = "audio-headset"
 
 log = logging.getLogger(__name__)
+
+
+def _app_icon() -> QIcon:
+    """Return our installed icon, falling back to the generic theme icon
+    when running from a source checkout that hasn't been installed yet."""
+    return QIcon.fromTheme(APP_ICON, QIcon.fromTheme(APP_ICON_FALLBACK))
 
 
 class MixerGUI(QMainWindow):
@@ -48,7 +55,7 @@ class MixerGUI(QMainWindow):
         super().__init__()
         self.setWindowTitle(DISPLAY_NAME)
         self.setFixedSize(360, 440)
-        self.setWindowIcon(QIcon.fromTheme(APP_ICON))
+        self.setWindowIcon(_app_icon())
 
         self.signals = DaemonSignals()
         self.signals.connected.connect(self._on_connected)
@@ -233,7 +240,7 @@ class MixerGUI(QMainWindow):
         return bar
 
     def _build_tray(self):
-        self.tray = QSystemTrayIcon(QIcon.fromTheme(APP_ICON), self)
+        self.tray = QSystemTrayIcon(_app_icon(), self)
         self.tray.setToolTip(DISPLAY_NAME)
 
         menu = QMenu()

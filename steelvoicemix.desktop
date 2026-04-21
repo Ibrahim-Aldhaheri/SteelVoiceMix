@@ -2,7 +2,7 @@
 Name=SteelVoiceMix
 Comment=ChatMix for SteelSeries Arctis Nova Pro Wireless
 Exec=steelvoicemix-gui
-Icon=audio-headset
+Icon=steelvoicemix
 Terminal=false
 Type=Application
 Categories=AudioVideo;Audio;Mixer;

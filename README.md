@@ -167,6 +167,8 @@ pip install PySide6                 # pip
 
 ⚠️ **USE AT YOUR OWN RISK.** This project has no association with SteelSeries. The author is not responsible for any damage to your hardware, bricked devices, or voided warranties. If your base station starts playing elevator music on its own, that's between you and the universe.
 
+🧪 **Tested on Fedora KDE only.** Other distributions and desktop environments may work but haven't been verified. If you run it elsewhere and hit problems, please open an issue with your setup details.
+
 ## Acknowledgments
 
 Inspired by [nova-chatmix-linux](https://github.com/Dymstro/nova-chatmix-linux) by Dymstro, who reverse-engineered the Arctis Nova Pro Wireless USB HID protocol.

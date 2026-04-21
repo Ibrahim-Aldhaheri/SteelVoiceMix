@@ -22,6 +22,16 @@
   </description>
   <url type="homepage">https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix</url>
   <url type="bugtracker">https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Main window — connection status, Game/Chat volumes, battery, and overlay settings</caption>
+      <image>https://raw.githubusercontent.com/Ibrahim-Aldhaheri/SteelVoiceMix/main/screenshots/main-window.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Dial overlay — vertical style, flashes briefly when you turn the hardware dial</caption>
+      <image>https://raw.githubusercontent.com/Ibrahim-Aldhaheri/SteelVoiceMix/main/screenshots/dial-overlay.png</image>
+    </screenshot>
+  </screenshots>
   <developer id="dev.ibrahimaldhaheri">
     <name>Ibrahim Aldhaheri</name>
   </developer>
