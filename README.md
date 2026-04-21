@@ -169,7 +169,7 @@ pip install PySide6                 # pip
 
 ## Acknowledgments
 
-Inspired by [nova-chatmix-linux](https://git.dymstro.nl/Dymstro/nova-chatmix-linux) by Dymstro, who reverse-engineered the Arctis Nova Pro Wireless USB HID protocol.
+Inspired by [nova-chatmix-linux](https://github.com/Dymstro/nova-chatmix-linux) by Dymstro, who reverse-engineered the Arctis Nova Pro Wireless USB HID protocol.
 
 ## License
 
