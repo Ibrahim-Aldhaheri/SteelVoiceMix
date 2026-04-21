@@ -96,9 +96,9 @@ class DialOverlay(QWidget):
             orientation = "horizontal"
         self.orientation = orientation
         if orientation == "vertical":
-            self.setFixedSize(170, 230)
+            self.setFixedSize(140, 170)
         else:
-            self.setFixedSize(280, 80)
+            self.setFixedSize(340, 80)
         self.update()
 
     def show_volumes(self, game_vol: int, chat_vol: int, position: str = "top-right"):
@@ -162,59 +162,78 @@ class DialOverlay(QWidget):
         painter.end()
 
     def _paint_horizontal(self, painter, text_color):
-        bar_x, bar_w = 70, 190
         painter.setPen(text_color)
         painter.setFont(QFont("", 11))
 
-        painter.drawText(10, 30, "🎮 Game")
+        bar_x, bar_w = 95, 200
+        label_w = 85  # room for "🎮 Game" without truncation
+        val_w = 34
+
+        # Game row (top half)
+        painter.drawText(8, 10, label_w, 22,
+                         Qt.AlignLeft | Qt.AlignVCenter, "🎮 Game")
         painter.setBrush(QColor(60, 60, 60, 100))
-        painter.drawRoundedRect(bar_x, 18, bar_w, 16, 4, 4)
+        painter.drawRoundedRect(bar_x, 14, bar_w, 16, 4, 4)
         game_w = int(bar_w * self.game_vol / 100)
         painter.setBrush(QColor(76, 175, 80))
-        painter.drawRoundedRect(bar_x, 18, game_w, 16, 4, 4)
-        painter.drawText(bar_x + bar_w + 5, 30, f"{self.game_vol}%")
+        painter.drawRoundedRect(bar_x, 14, game_w, 16, 4, 4)
+        painter.setPen(text_color)
+        painter.drawText(bar_x + bar_w + 4, 10, val_w, 22,
+                         Qt.AlignLeft | Qt.AlignVCenter, f"{self.game_vol}%")
 
-        painter.drawText(10, 62, "💬 Chat")
+        # Chat row (bottom half)
+        painter.drawText(8, 44, label_w, 22,
+                         Qt.AlignLeft | Qt.AlignVCenter, "💬 Chat")
         painter.setBrush(QColor(60, 60, 60, 100))
-        painter.drawRoundedRect(bar_x, 50, bar_w, 16, 4, 4)
+        painter.drawRoundedRect(bar_x, 48, bar_w, 16, 4, 4)
         chat_w = int(bar_w * self.chat_vol / 100)
         painter.setBrush(QColor(33, 150, 243))
-        painter.drawRoundedRect(bar_x, 50, chat_w, 16, 4, 4)
-        painter.drawText(bar_x + bar_w + 5, 62, f"{self.chat_vol}%")
+        painter.drawRoundedRect(bar_x, 48, chat_w, 16, 4, 4)
+        painter.setPen(text_color)
+        painter.drawText(bar_x + bar_w + 4, 44, val_w, 22,
+                         Qt.AlignLeft | Qt.AlignVCenter, f"{self.chat_vol}%")
 
     def _paint_vertical(self, painter, text_color):
-        bar_w = 26
-        bar_h = 140
-        bar_top = 40
-        game_x = 30
-        chat_x = self.width() - game_x - bar_w
-
         painter.setPen(text_color)
-        painter.setFont(QFont("", 11))
-        painter.drawText(game_x - 14, 22, "🎮 Game")
-        painter.drawText(chat_x - 14, 22, "💬 Chat")
+        painter.setFont(QFont("", 10))
 
-        # Game column — fills bottom-up
+        col_w = self.width() // 2
+        bar_w = 20
+        bar_h = 95
+        bar_top = 30
+        game_bar_x = col_w // 2 - bar_w // 2
+        chat_bar_x = col_w + col_w // 2 - bar_w // 2
+
+        # Labels centred in each column
+        painter.drawText(0, 4, col_w, 22,
+                         Qt.AlignCenter, "🎮 Game")
+        painter.drawText(col_w, 4, col_w, 22,
+                         Qt.AlignCenter, "💬 Chat")
+
+        # Game bar (fills bottom-up)
         painter.setBrush(QColor(60, 60, 60, 100))
-        painter.drawRoundedRect(game_x, bar_top, bar_w, bar_h, 5, 5)
+        painter.drawRoundedRect(game_bar_x, bar_top, bar_w, bar_h, 4, 4)
         game_fill = int(bar_h * self.game_vol / 100)
         painter.setBrush(QColor(76, 175, 80))
         painter.drawRoundedRect(
-            game_x, bar_top + bar_h - game_fill, bar_w, game_fill, 5, 5
+            game_bar_x, bar_top + bar_h - game_fill, bar_w, game_fill, 4, 4
         )
 
-        # Chat column
+        # Chat bar
         painter.setBrush(QColor(60, 60, 60, 100))
-        painter.drawRoundedRect(chat_x, bar_top, bar_w, bar_h, 5, 5)
+        painter.drawRoundedRect(chat_bar_x, bar_top, bar_w, bar_h, 4, 4)
         chat_fill = int(bar_h * self.chat_vol / 100)
         painter.setBrush(QColor(33, 150, 243))
         painter.drawRoundedRect(
-            chat_x, bar_top + bar_h - chat_fill, bar_w, chat_fill, 5, 5
+            chat_bar_x, bar_top + bar_h - chat_fill, bar_w, chat_fill, 4, 4
         )
 
+        # Percentages centred under each column
         painter.setPen(text_color)
-        painter.drawText(game_x - 6, bar_top + bar_h + 22, f"{self.game_vol}%")
-        painter.drawText(chat_x - 6, bar_top + bar_h + 22, f"{self.chat_vol}%")
+        painter.drawText(0, bar_top + bar_h + 4, col_w, 20,
+                         Qt.AlignCenter, f"{self.game_vol}%")
+        painter.drawText(col_w, bar_top + bar_h + 4, col_w, 20,
+                         Qt.AlignCenter, f"{self.chat_vol}%")
 
 
 class DaemonSignals(QObject):
