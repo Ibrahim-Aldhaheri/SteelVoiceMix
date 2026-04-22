@@ -18,7 +18,7 @@ env_logger = "0.11"
 signal-hook = "0.3"
 ctrlc = "3.4"
 libc = "0.2"
-thiserror = "1"
+thiserror = "2"
 
 [dependencies.ggoled_lib]
 path = "ggoled_lib"
