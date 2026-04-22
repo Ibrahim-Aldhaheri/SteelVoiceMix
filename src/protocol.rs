@@ -13,6 +13,10 @@ pub enum ClientCommand {
     Subscribe,
     #[serde(rename = "status")]
     Status,
+    #[serde(rename = "add-media-sink")]
+    AddMediaSink,
+    #[serde(rename = "remove-media-sink")]
+    RemoveMediaSink,
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -40,7 +44,13 @@ pub enum DaemonEvent {
         game_vol: u8,
         chat_vol: u8,
         battery: Option<BatteryStatus>,
+        media_sink_enabled: bool,
     },
+
+    /// Fired whenever the daemon adds or removes the SteelMedia sink —
+    /// either from a CLI flag / runtime toggle, or from a GUI command.
+    #[serde(rename = "media-sink-changed")]
+    MediaSinkChanged { enabled: bool },
 }
 
 #[cfg(test)]
@@ -111,6 +121,7 @@ mod tests {
                 level: 80,
                 status: "active".into(),
             }),
+            media_sink_enabled: true,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -119,14 +130,37 @@ mod tests {
         assert_eq!(json["chat_vol"], 40);
         assert_eq!(json["battery"]["level"], 80);
         assert_eq!(json["battery"]["status"], "active");
+        assert_eq!(json["media_sink_enabled"], true);
 
         let without_bat = DaemonEvent::Status {
             connected: false,
             game_vol: 100,
             chat_vol: 100,
             battery: None,
+            media_sink_enabled: false,
         };
         let json: Value = from_str(&to_string(&without_bat).unwrap()).unwrap();
         assert!(json["battery"].is_null());
+        assert_eq!(json["media_sink_enabled"], false);
+    }
+
+    #[test]
+    fn client_command_media_sink_variants_parse() {
+        assert!(matches!(
+            from_str::<ClientCommand>(r#"{"cmd":"add-media-sink"}"#).unwrap(),
+            ClientCommand::AddMediaSink
+        ));
+        assert!(matches!(
+            from_str::<ClientCommand>(r#"{"cmd":"remove-media-sink"}"#).unwrap(),
+            ClientCommand::RemoveMediaSink
+        ));
+    }
+
+    #[test]
+    fn media_sink_changed_event_shape() {
+        let ev = DaemonEvent::MediaSinkChanged { enabled: true };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "media-sink-changed");
+        assert_eq!(json["enabled"], true);
     }
 }

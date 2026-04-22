@@ -21,7 +21,7 @@ Recommends:     python3-pyside6
 
 %description
 Linux ChatMix implementation for the SteelSeries Arctis Nova Pro Wireless.
-Rust daemon that creates virtual PipeWire sinks (NovaGame/NovaChat) controlled
+Rust daemon that creates virtual PipeWire sinks (SteelGame/SteelChat) controlled
 by the hardware dial on the base station. Includes optional PySide6 GUI monitor
 with battery indicator that communicates with the daemon over a Unix socket.
 

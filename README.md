@@ -26,7 +26,7 @@ DEBUG=1 ./install.sh
 ## Features
 
 - 🎮 **ChatMix dial support** — physical dial controls Game/Chat audio balance
-- 🔊 **PipeWire virtual sinks** — creates NovaGame and NovaChat sinks automatically
+- 🔊 **PipeWire virtual sinks** — creates SteelGame and SteelChat sinks automatically
 - 🔋 **Battery monitoring** — polls battery level and charging status
 - 🔌 **Plug and play** — auto-detects the base station, auto-reconnects with exponential backoff
 - 🖥️ **KDE/GNOME compatible** — sinks appear in system audio settings
@@ -66,7 +66,7 @@ The Arctis Nova Pro Wireless base station communicates via USB HID. This tool:
 3. Listens for dial position changes and adjusts sink volumes in real-time via `pactl`
 4. Polls battery status every 60 seconds
 
-Route your game audio to **NovaGame** and Discord/comms to **NovaChat** — the dial does the rest.
+Route your game audio to **SteelGame** and Discord/comms to **SteelChat** — the dial does the rest.
 
 ## Requirements
 
@@ -111,6 +111,14 @@ The install script will:
 4. Install the binary to `~/.local/bin/`
 5. Enable the systemd user service
 
+**Headless install (no GUI, tray, or overlay)** — for GNOME without tray extensions, Sway/i3, or servers:
+
+```bash
+./install.sh --no-gui
+```
+
+Only the daemon, systemd service, and udev rule get installed. The ChatMix dial still works end-to-end; you manage audio routing from your DE's audio settings or `pavucontrol`.
+
 ### Manual Install
 
 ```bash
@@ -153,8 +161,8 @@ journalctl --user -u steelvoicemix -f
 ```
 
 Once running, two new audio sinks appear:
-- **NovaGame** — route games, music, browser here
-- **NovaChat** — route Discord, TeamSpeak, etc. here
+- **SteelGame** — route games, music, browser here
+- **SteelChat** — route Discord, TeamSpeak, etc. here
 
 The physical dial on the base station controls the balance between them.
 

@@ -54,7 +54,7 @@ class MixerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(DISPLAY_NAME)
-        self.setFixedSize(360, 440)
+        self.setFixedSize(360, 480)
         self.setWindowIcon(_app_icon())
 
         self.signals = DaemonSignals()
@@ -63,6 +63,11 @@ class MixerGUI(QMainWindow):
         self.signals.chatmix_changed.connect(self._on_chatmix)
         self.signals.status_message.connect(self._on_status)
         self.signals.battery_updated.connect(self._on_battery)
+        self.signals.media_sink_changed.connect(self._on_media_sink_changed)
+        # Track the daemon's reported media-sink state so the toggle button
+        # renders correctly. Daemon default is "off until the user opts in"
+        # so we start with False; the first status event corrects it.
+        self._media_sink_enabled = False
 
         self.settings = load_settings()
         self.overlay = DialOverlay()
@@ -200,6 +205,15 @@ class MixerGUI(QMainWindow):
         settings_layout.addWidget(self.autostart_check)
 
         layout.addLayout(settings_layout)
+
+        # Media sink toggle — add or remove the SteelMedia virtual output
+        # without restarting the daemon. Independent of the dial.
+        media_row = QHBoxLayout()
+        media_row.addWidget(QLabel("Media sink:"))
+        self.media_btn = QPushButton("Add Media")
+        self.media_btn.clicked.connect(self._toggle_media_sink)
+        media_row.addWidget(self.media_btn, 1)
+        layout.addLayout(media_row)
 
         # About button — row aligned right
         about_row = QHBoxLayout()
@@ -399,3 +413,28 @@ class MixerGUI(QMainWindow):
     def _show_about(self):
         dialog = make_about_dialog(self)
         dialog.exec()
+
+    def _on_media_sink_changed(self, enabled: bool):
+        self._media_sink_enabled = enabled
+        self.media_btn.setText("Remove Media" if enabled else "Add Media")
+        self.media_btn.setToolTip(
+            "Destroy the SteelMedia virtual sink"
+            if enabled
+            else "Create a SteelMedia virtual sink that bypasses the ChatMix dial"
+        )
+
+    def _toggle_media_sink(self):
+        cmd = "remove-media-sink" if self._media_sink_enabled else "add-media-sink"
+        self.daemon_client.send_command(cmd)
+        # Disable the button until the daemon confirms the change so quick
+        # double-clicks don't queue conflicting commands.
+        self.media_btn.setEnabled(False)
+        self._media_btn_reenable_timer()
+
+    def _media_btn_reenable_timer(self):
+        from PySide6.QtCore import QTimer
+
+        def reenable():
+            self.media_btn.setEnabled(True)
+
+        QTimer.singleShot(600, reenable)

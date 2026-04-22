@@ -13,6 +13,19 @@ use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
 use crate::protocol::DaemonEvent;
 
+pub type SharedSinks = Arc<Mutex<SinkManager>>;
+
+/// Fan out an event to subscribed GUI clients. Free function so the socket
+/// handler can broadcast from a client-response thread without going
+/// through the Mixer struct (e.g. to echo a runtime media-sink toggle).
+pub fn broadcast_event(
+    subscribers: &Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
+    event: DaemonEvent,
+) {
+    let mut subs = subscribers.lock().unwrap();
+    subs.retain(|tx| tx.send(event.clone()).is_ok());
+}
+
 const RECONNECT_BASE: Duration = Duration::from_secs(3);
 const RECONNECT_MAX: Duration = Duration::from_secs(30);
 const BATTERY_POLL_INTERVAL: Duration = Duration::from_secs(60);
@@ -41,15 +54,17 @@ pub struct MixerState {
     pub game_vol: u8,
     pub chat_vol: u8,
     pub battery: Option<BatteryStatus>,
+    pub media_sink_enabled: bool,
 }
 
 impl MixerState {
-    pub fn new() -> Self {
+    pub fn new(media_sink_enabled: bool) -> Self {
         MixerState {
             connected: false,
             game_vol: 100,
             chat_vol: 100,
             battery: None,
+            media_sink_enabled,
         }
     }
 }
@@ -59,6 +74,7 @@ pub struct Mixer {
     running: Arc<AtomicBool>,
     state: Arc<Mutex<MixerState>>,
     subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
+    sinks: SharedSinks,
     notify_enabled: bool,
     notify_available: bool,
 }
@@ -68,6 +84,7 @@ impl Mixer {
         running: Arc<AtomicBool>,
         state: Arc<Mutex<MixerState>>,
         subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
+        sinks: SharedSinks,
         notify_enabled: bool,
     ) -> Self {
         // Probe notify-send once. Missing on headless servers and some
@@ -92,6 +109,7 @@ impl Mixer {
             running,
             state,
             subscribers,
+            sinks,
             notify_enabled,
             notify_available,
         }
@@ -99,8 +117,7 @@ impl Mixer {
 
     /// Broadcast an event to all subscribed GUI clients. Removes dead senders.
     fn broadcast(&self, event: DaemonEvent) {
-        let mut subs = self.subscribers.lock().unwrap();
-        subs.retain(|tx| tx.send(event.clone()).is_ok());
+        broadcast_event(&self.subscribers, event);
     }
 
     /// Send a desktop notification via notify-send.
@@ -202,8 +219,10 @@ impl Mixer {
             }
         };
 
-        let mut sinks = SinkManager::new();
-        sinks.create_sinks(&output_sink);
+        {
+            let mut sinks = self.sinks.lock().unwrap();
+            sinks.create_sinks(&output_sink);
+        }
 
         let (init_game, init_chat) = self.resolve_initial_dial(&dev);
         SinkManager::set_volume(GAME_SINK, init_game);
@@ -222,10 +241,14 @@ impl Mixer {
             chat: init_chat,
         });
         draw_or_drop(&mut display, init_game, init_chat);
-        self.notify(
-            "🎧 ChatMix Active",
-            "NovaGame and NovaChat sinks ready.\nUse the dial to control balance.",
-        );
+        let media_live = self.sinks.lock().unwrap().media_enabled();
+        let notify_body = if media_live {
+            "SteelGame, SteelChat, and SteelMedia sinks ready.\n\
+             Use the dial to balance Game vs Chat. Media stays independent."
+        } else {
+            "SteelGame and SteelChat sinks ready.\nUse the dial to control balance."
+        };
+        self.notify("🎧 ChatMix Active", notify_body);
 
         self.poll_and_broadcast_battery(&dev);
 
@@ -238,7 +261,10 @@ impl Mixer {
         }
         drop(display);
         let _ = dev.disable_chatmix();
-        sinks.destroy_sinks();
+        {
+            let mut sinks = self.sinks.lock().unwrap();
+            sinks.destroy_sinks();
+        }
         {
             let mut st = self.state.lock().unwrap();
             st.connected = false;
