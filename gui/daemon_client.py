@@ -62,6 +62,8 @@ class DaemonClient:
                     if line.strip():
                         self._handle_event(json.loads(line))
             except socket.timeout:
+                # No data this tick — keep reading. Only a non-timeout error
+                # means the socket is broken; fall back to the outer reconnect.
                 continue
             except Exception:
                 break

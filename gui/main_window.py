@@ -397,6 +397,8 @@ class MixerGUI(QMainWindow):
         self.settings["autostart"] = checked
         save_settings(self.settings)
         verb = "enable" if checked else "disable"
+        # Best-effort: the setting is always persisted above; systemd-less
+        # environments simply won't toggle autostart and that's fine.
         for unit in (APP_NAME, f"{APP_NAME}-gui"):
             try:
                 subprocess.run(
