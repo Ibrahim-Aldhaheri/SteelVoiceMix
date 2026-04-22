@@ -1,0 +1,41 @@
+# Security audit for Rust dependencies. Separate workflow from ci.yml so
+# the weekly cron schedule doesn't clutter the main CI page, and so an
+# advisory fires a visible red X without being blocked by an unrelated
+# clippy or test failure.
+
+name: Security audit
+
+on:
+  push:
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/audit.yml'
+  pull_request:
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+  schedule:
+    # Mondays 06:00 UTC — catches any advisories published over the weekend
+    # before the workweek starts.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # taiki-e/install-action fetches a prebuilt cargo-audit binary
+      # instead of compiling it from source — ~5 seconds vs several minutes.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit
+        run: cargo audit --deny warnings

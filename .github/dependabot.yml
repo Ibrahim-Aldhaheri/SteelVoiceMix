@@ -1,0 +1,51 @@
+# Keep dependencies fresh with weekly automated PRs. Dependabot is free
+# on public repos and doesn't spend CI minutes until a PR it opens runs
+# through the existing `ci.yml` workflow.
+
+version: 2
+updates:
+  # Rust crates — Cargo.lock + Cargo.toml in the repo root.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "deps(cargo)"
+    # Group minor + patch bumps into a single PR to cut review noise;
+    # major bumps stay separate so you read their release notes properly.
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # The vendored ggoled_lib has its own Cargo.toml too.
+  - package-ecosystem: "cargo"
+    directory: "/ggoled_lib"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "rust"
+      - "ggoled_lib"
+    commit-message:
+      prefix: "deps(ggoled_lib)"
+
+  # GitHub Actions themselves — pinning to specific action versions only
+  # helps if we bump them. Dependabot handles that.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "deps(ci)"
