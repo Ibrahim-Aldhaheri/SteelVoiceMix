@@ -13,7 +13,8 @@ use std::thread;
 
 use log::{error, info, warn};
 
-use mixer::{Mixer, MixerState};
+use audio::SinkManager;
+use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
 use protocol::{ClientCommand, DaemonEvent};
 
 fn socket_path() -> PathBuf {
@@ -26,10 +27,24 @@ fn socket_path() -> PathBuf {
     }
 }
 
+/// Snapshot current MixerState into a Status event. Used both for the
+/// one-shot `status` query and the initial push on `subscribe`.
+fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
+    let st = state.lock().unwrap();
+    DaemonEvent::Status {
+        connected: st.connected,
+        game_vol: st.game_vol,
+        chat_vol: st.chat_vol,
+        battery: st.battery.clone(),
+        media_sink_enabled: st.media_sink_enabled,
+    }
+}
+
 fn handle_client(
     stream: UnixStream,
     state: Arc<Mutex<MixerState>>,
     subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
+    sinks: SharedSinks,
     running: Arc<AtomicBool>,
 ) {
     let peer_stream = match stream.try_clone() {
@@ -61,13 +76,7 @@ fn handle_client(
 
         match cmd {
             ClientCommand::Status => {
-                let st = state.lock().unwrap();
-                let event = DaemonEvent::Status {
-                    connected: st.connected,
-                    game_vol: st.game_vol,
-                    chat_vol: st.chat_vol,
-                    battery: st.battery.clone(),
-                };
+                let event = snapshot_status(&state);
                 let mut json = serde_json::to_string(&event).unwrap();
                 json.push('\n');
                 let mut w = &peer_stream;
@@ -75,19 +84,37 @@ fn handle_client(
                     break;
                 }
             }
+            ClientCommand::AddMediaSink => {
+                let enabled = {
+                    let mut sm = sinks.lock().unwrap();
+                    sm.enable_media()
+                };
+                {
+                    let mut st = state.lock().unwrap();
+                    st.media_sink_enabled = enabled;
+                }
+                info!("GUI requested: add media sink → enabled={enabled}");
+                broadcast_event(&subscribers, DaemonEvent::MediaSinkChanged { enabled });
+            }
+            ClientCommand::RemoveMediaSink => {
+                let enabled = {
+                    let mut sm = sinks.lock().unwrap();
+                    sm.disable_media()
+                };
+                {
+                    let mut st = state.lock().unwrap();
+                    st.media_sink_enabled = enabled;
+                }
+                info!("GUI requested: remove media sink → enabled={enabled}");
+                broadcast_event(&subscribers, DaemonEvent::MediaSinkChanged { enabled });
+            }
             ClientCommand::Subscribe => {
                 let (tx, rx) = std::sync::mpsc::channel::<DaemonEvent>();
                 subscribers.lock().unwrap().push(tx);
 
                 // Send current status immediately
                 {
-                    let st = state.lock().unwrap();
-                    let event = DaemonEvent::Status {
-                        connected: st.connected,
-                        game_vol: st.game_vol,
-                        chat_vol: st.chat_vol,
-                        battery: st.battery.clone(),
-                    };
+                    let event = snapshot_status(&state);
                     let mut json = serde_json::to_string(&event).unwrap();
                     json.push('\n');
                     let mut w = &peer_stream;
@@ -121,11 +148,13 @@ fn main() {
     // Parse args
     let mut no_notify = false;
     let mut no_socket = false;
+    let mut no_media_sink = false;
     let mut debug = false;
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--no-notify" => no_notify = true,
             "--no-socket" => no_socket = true,
+            "--no-media-sink" => no_media_sink = true,
             "--debug" | "-d" => debug = true,
             "--version" | "-V" => {
                 println!("steelvoicemix {}", env!("CARGO_PKG_VERSION"));
@@ -137,11 +166,13 @@ fn main() {
                 println!("Usage: steelvoicemix [OPTIONS]");
                 println!();
                 println!("Options:");
-                println!("  --no-notify   Disable desktop notifications");
-                println!("  --no-socket   Disable Unix socket server (no GUI support)");
-                println!("  -d, --debug   Enable debug logging (equivalent to RUST_LOG=debug)");
-                println!("  -V, --version Print version and exit");
-                println!("  -h, --help    Show this help");
+                println!("  --no-notify      Disable desktop notifications");
+                println!("  --no-socket      Disable Unix socket server (no GUI support)");
+                println!("  --no-media-sink  Skip the NovaMedia sink on startup");
+                println!("                   (the GUI can still add it at runtime)");
+                println!("  -d, --debug      Enable debug logging (equivalent to RUST_LOG=debug)");
+                println!("  -V, --version    Print version and exit");
+                println!("  -h, --help       Show this help");
                 return;
             }
             other => {
@@ -157,10 +188,12 @@ fn main() {
         .format_timestamp_secs()
         .init();
 
+    let media_sink_enabled = !no_media_sink;
     let running = Arc::new(AtomicBool::new(true));
-    let state = Arc::new(Mutex::new(MixerState::new()));
+    let state = Arc::new(Mutex::new(MixerState::new(media_sink_enabled)));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
+    let sinks: SharedSinks = Arc::new(Mutex::new(SinkManager::new(media_sink_enabled)));
 
     // Signal handling
     {
@@ -177,6 +210,7 @@ fn main() {
         running.clone(),
         state.clone(),
         subscribers.clone(),
+        sinks.clone(),
         !no_notify,
     );
     let mixer_thread = thread::spawn(move || mixer.run());
@@ -200,9 +234,10 @@ fn main() {
                         Ok((stream, _)) => {
                             let state = state.clone();
                             let subs = subscribers.clone();
+                            let sinks = sinks.clone();
                             let running = running.clone();
                             thread::spawn(move || {
-                                handle_client(stream, state, subs, running);
+                                handle_client(stream, state, subs, sinks, running);
                             });
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {

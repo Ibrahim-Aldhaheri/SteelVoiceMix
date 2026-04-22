@@ -21,6 +21,7 @@ class DaemonSignals(QObject):
     chatmix_changed = Signal(int, int)
     status_message = Signal(str)
     battery_updated = Signal(int, str)
+    media_sink_changed = Signal(bool)
 
 
 class DaemonClient:
@@ -84,7 +85,12 @@ class DaemonClient:
             self.signals.connected.emit()
         elif ev == "disconnected":
             self.signals.disconnected.emit()
+        elif ev == "media-sink-changed":
+            self.signals.media_sink_changed.emit(bool(event.get("enabled", False)))
         elif ev == "status":
+            self.signals.media_sink_changed.emit(
+                bool(event.get("media_sink_enabled", True))
+            )
             if event.get("connected"):
                 self.signals.connected.emit()
                 self.signals.chatmix_changed.emit(
@@ -97,6 +103,18 @@ class DaemonClient:
                     )
             else:
                 self.signals.disconnected.emit()
+
+    def send_command(self, cmd: str) -> None:
+        """Send a one-off command on the existing subscribe socket. Fire-
+        and-forget — if the socket is mid-reconnect this is a no-op."""
+        sock = self._sock
+        if sock is None:
+            return
+        try:
+            sock.sendall(f'{{"cmd":"{cmd}"}}\n'.encode())
+        except Exception:
+            # Connection will be retried by the run loop.
+            pass
 
     def stop(self) -> None:
         self.running = False
