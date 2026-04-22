@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust build + test + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # linux-native-basic-udev in hidapi dlopens libudev at runtime; the
+      # dev header package is still the simplest way to satisfy pkg-config
+      # probes that some transitive crates run during their build.rs.
+      - name: Install libudev headers
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo build --release
+        run: cargo build --release --locked
+
+      - name: cargo test
+        run: cargo test --locked --all-targets
+
+      - name: cargo clippy (warnings are errors)
+        run: cargo clippy --all-targets --no-deps --locked -- -D warnings
+
+  python:
+    name: Python syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: py_compile all modules
+        run: python3 -m py_compile steelvoicemix-gui.py gui/*.py
