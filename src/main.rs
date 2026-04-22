@@ -1,4 +1,5 @@
 mod audio;
+mod config;
 mod display;
 mod hid;
 mod mixer;
@@ -93,6 +94,7 @@ fn handle_client(
                     let mut st = state.lock().unwrap();
                     st.media_sink_enabled = enabled;
                 }
+                config::save(&config::DaemonState { media_sink_enabled: enabled });
                 info!("GUI requested: add media sink → enabled={enabled}");
                 broadcast_event(&subscribers, DaemonEvent::MediaSinkChanged { enabled });
             }
@@ -105,6 +107,7 @@ fn handle_client(
                     let mut st = state.lock().unwrap();
                     st.media_sink_enabled = enabled;
                 }
+                config::save(&config::DaemonState { media_sink_enabled: enabled });
                 info!("GUI requested: remove media sink → enabled={enabled}");
                 broadcast_event(&subscribers, DaemonEvent::MediaSinkChanged { enabled });
             }
@@ -168,7 +171,7 @@ fn main() {
                 println!("Options:");
                 println!("  --no-notify      Disable desktop notifications");
                 println!("  --no-socket      Disable Unix socket server (no GUI support)");
-                println!("  --no-media-sink  Skip the NovaMedia sink on startup");
+                println!("  --no-media-sink  Skip the SteelMedia sink on startup");
                 println!("                   (the GUI can still add it at runtime)");
                 println!("  -d, --debug      Enable debug logging (equivalent to RUST_LOG=debug)");
                 println!("  -V, --version    Print version and exit");
@@ -188,7 +191,17 @@ fn main() {
         .format_timestamp_secs()
         .init();
 
-    let media_sink_enabled = !no_media_sink;
+    // Media sink: default to whatever the user picked last time. On a
+    // fresh install the state file doesn't exist and load() returns the
+    // Default (media_sink_enabled = false) — new users aren't surprised
+    // by a third output device. --no-media-sink is a session-only override
+    // that does NOT overwrite the stored preference.
+    let persisted = config::load();
+    let media_sink_enabled = if no_media_sink { false } else { persisted.media_sink_enabled };
+    info!(
+        "Media sink startup state: {} (persisted={}, --no-media-sink={})",
+        media_sink_enabled, persisted.media_sink_enabled, no_media_sink
+    );
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(media_sink_enabled)));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =

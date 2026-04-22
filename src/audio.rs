@@ -8,15 +8,15 @@ use std::process::{Command, Stdio};
 
 use log::{error, info, warn};
 
-pub const GAME_SINK: &str = "NovaGame";
-pub const CHAT_SINK: &str = "NovaChat";
-pub const MEDIA_SINK: &str = "NovaMedia";
+pub const GAME_SINK: &str = "SteelGame";
+pub const CHAT_SINK: &str = "SteelChat";
+pub const MEDIA_SINK: &str = "SteelMedia";
 pub const OUTPUT_MATCH: &str = "SteelSeries_Arctis_Nova_Pro_Wireless";
 
 /// Every sink-name prefix we're responsible for. Keep this in sync with the
 /// *_SINK constants above — it's what the stale-module sweeper and the
 /// uninstall scripts use to recognise their targets.
-pub const MANAGED_SINK_PREFIX: &str = "Nova";
+pub const MANAGED_SINK_PREFIX: &str = "Steel";
 
 struct SinkModules {
     null_sink_id: u32,
@@ -49,27 +49,27 @@ impl SinkManager {
         }
     }
 
-    /// Whether the NovaMedia sink is currently requested (may be idle if
+    /// Whether the SteelMedia sink is currently requested (may be idle if
     /// the daemon is disconnected; the sink only materialises when
     /// `create_sinks` runs against a live headset).
     pub fn media_enabled(&self) -> bool {
         self.media_enabled
     }
 
-    /// Runtime toggle: add the NovaMedia sink if we're connected, or record
+    /// Runtime toggle: add the SteelMedia sink if we're connected, or record
     /// the intent for the next connect if we're not. Returns the new state
     /// so callers don't have to re-query.
     pub fn enable_media(&mut self) -> bool {
         self.media_enabled = true;
         if self.media.is_none() {
             if let Some(out) = self.output_sink.clone() {
-                self.media = create_sink_pair(&out, MEDIA_SINK, "Nova-Media");
+                self.media = create_sink_pair(&out, MEDIA_SINK, "Steel-Media");
             }
         }
         true
     }
 
-    /// Runtime toggle: tear down the NovaMedia sink immediately (even while
+    /// Runtime toggle: tear down the SteelMedia sink immediately (even while
     /// connected) and remember that future connects should skip it.
     pub fn disable_media(&mut self) -> bool {
         self.media_enabled = false;
@@ -107,14 +107,14 @@ impl SinkManager {
         // Descriptions cannot contain spaces — pactl's proplist parser
         // splits sink_properties tokens on whitespace with no quote or
         // escape handling, so "Nova Game" would truncate to "Nova".
-        self.game = create_sink_pair(output_sink, GAME_SINK, "Nova-Game");
-        self.chat = create_sink_pair(output_sink, CHAT_SINK, "Nova-Chat");
+        self.game = create_sink_pair(output_sink, GAME_SINK, "Steel-Game");
+        self.chat = create_sink_pair(output_sink, CHAT_SINK, "Steel-Chat");
         // Media sink mirrors Game/Chat structurally but is deliberately
         // ignored by the ChatMix dial handler — its volume stays at whatever
         // KDE/pactl set. Use case: music and browser audio that shouldn't
         // dip when the user biases the dial toward chat.
         if self.media_enabled {
-            self.media = create_sink_pair(output_sink, MEDIA_SINK, "Nova-Media");
+            self.media = create_sink_pair(output_sink, MEDIA_SINK, "Steel-Media");
         }
 
         let core_ok = self.game.is_some() && self.chat.is_some();
@@ -219,7 +219,7 @@ fn unload_module(id: u32) {
         .status();
 }
 
-/// Unload any NovaGame / NovaChat modules leaked by a previous run (crash,
+/// Unload any SteelGame / SteelChat modules leaked by a previous run (crash,
 /// kill -9, manual test). We identify them by their loaded arguments.
 fn cleanup_stale_modules() {
     let Ok(output) = Command::new("pactl").args(["list", "modules"]).output() else {
@@ -236,13 +236,17 @@ fn cleanup_stale_modules() {
         if !trimmed.starts_with("Argument:") {
             continue;
         }
-        // Match any module whose argument references one of our sink prefixes.
-        // Catches Game/Chat/Media without listing each by name.
+        // Match any module whose argument references one of our sink
+        // prefixes. Catches Game/Chat/Media without listing each by name.
+        // Legacy "Nova" prefix included so upgrading from pre-rename
+        // installs also sweeps the orphans.
         let prefix_match = trimmed.contains(&format!("sink_name={MANAGED_SINK_PREFIX}"))
-            || trimmed.contains(&format!("source={MANAGED_SINK_PREFIX}"));
+            || trimmed.contains(&format!("source={MANAGED_SINK_PREFIX}"))
+            || trimmed.contains("sink_name=Nova")
+            || trimmed.contains("source=Nova");
         if prefix_match {
             if let Some(id) = current_id {
-                info!("Unloading stale Nova module #{id}");
+                info!("Unloading stale managed module #{id}");
                 unload_module(id);
             }
         }

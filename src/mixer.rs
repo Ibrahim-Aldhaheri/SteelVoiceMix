@@ -9,6 +9,9 @@ use std::time::{Duration, Instant};
 use log::{debug, info, warn};
 
 use crate::audio::{SinkManager, CHAT_SINK, GAME_SINK};
+use crate::display::ChatMixGauge;
+use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
+use crate::protocol::DaemonEvent;
 
 pub type SharedSinks = Arc<Mutex<SinkManager>>;
 
@@ -22,9 +25,6 @@ pub fn broadcast_event(
     let mut subs = subscribers.lock().unwrap();
     subs.retain(|tx| tx.send(event.clone()).is_ok());
 }
-use crate::display::ChatMixGauge;
-use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
-use crate::protocol::DaemonEvent;
 
 const RECONNECT_BASE: Duration = Duration::from_secs(3);
 const RECONNECT_MAX: Duration = Duration::from_secs(30);
@@ -243,10 +243,10 @@ impl Mixer {
         draw_or_drop(&mut display, init_game, init_chat);
         let media_live = self.sinks.lock().unwrap().media_enabled();
         let notify_body = if media_live {
-            "NovaGame, NovaChat, and NovaMedia sinks ready.\n\
+            "SteelGame, SteelChat, and SteelMedia sinks ready.\n\
              Use the dial to balance Game vs Chat. Media stays independent."
         } else {
-            "NovaGame and NovaChat sinks ready.\nUse the dial to control balance."
+            "SteelGame and SteelChat sinks ready.\nUse the dial to control balance."
         };
         self.notify("🎧 ChatMix Active", notify_body);
 

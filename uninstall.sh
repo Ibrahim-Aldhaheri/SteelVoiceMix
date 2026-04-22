@@ -15,13 +15,15 @@ systemctl --user disable steelvoicemix 2>/dev/null || true
 pkill -f steelvoicemix-gui.py 2>/dev/null || true
 pkill -x steelvoicemix 2>/dev/null || true
 
-# Unload any Nova null-sink / loopback modules left behind in PipeWire.
+# Unload any of our null-sink / loopback modules left behind in PipeWire.
 # The daemon normally unloads them on shutdown, but a crash or manual
 # test can orphan them — they'd otherwise linger until the user logs
-# out or manually runs pactl unload-module.
+# out or manually runs pactl unload-module. The pattern matches both the
+# current Steel* sink names and the legacy Nova* ones so users upgrading
+# from earlier installs get swept clean too.
 if command -v pactl >/dev/null; then
     pactl list modules 2>/dev/null \
-        | awk '/^Module #/ {id=$2; sub("#", "", id)} /^\tArgument:.*(sink_name=Nova|source=Nova)/ {print id}' \
+        | awk '/^Module #/ {id=$2; sub("#", "", id)} /^\tArgument:.*(sink_name=(Steel|Nova)|source=(Steel|Nova))/ {print id}' \
         | xargs -r -n1 pactl unload-module 2>/dev/null || true
 fi
 

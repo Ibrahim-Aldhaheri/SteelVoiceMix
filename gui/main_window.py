@@ -65,9 +65,9 @@ class MixerGUI(QMainWindow):
         self.signals.battery_updated.connect(self._on_battery)
         self.signals.media_sink_changed.connect(self._on_media_sink_changed)
         # Track the daemon's reported media-sink state so the toggle button
-        # renders correctly; default optimistically to True until the first
-        # status event arrives.
-        self._media_sink_enabled = True
+        # renders correctly. Daemon default is "off until the user opts in"
+        # so we start with False; the first status event corrects it.
+        self._media_sink_enabled = False
 
         self.settings = load_settings()
         self.overlay = DialOverlay()
@@ -206,11 +206,11 @@ class MixerGUI(QMainWindow):
 
         layout.addLayout(settings_layout)
 
-        # Media sink toggle — add or remove the NovaMedia virtual output
+        # Media sink toggle — add or remove the SteelMedia virtual output
         # without restarting the daemon. Independent of the dial.
         media_row = QHBoxLayout()
         media_row.addWidget(QLabel("Media sink:"))
-        self.media_btn = QPushButton("Remove Media")
+        self.media_btn = QPushButton("Add Media")
         self.media_btn.clicked.connect(self._toggle_media_sink)
         media_row.addWidget(self.media_btn, 1)
         layout.addLayout(media_row)
@@ -418,9 +418,9 @@ class MixerGUI(QMainWindow):
         self._media_sink_enabled = enabled
         self.media_btn.setText("Remove Media" if enabled else "Add Media")
         self.media_btn.setToolTip(
-            "Destroy the NovaMedia virtual sink"
+            "Destroy the SteelMedia virtual sink"
             if enabled
-            else "Create a NovaMedia virtual sink that bypasses the ChatMix dial"
+            else "Create a SteelMedia virtual sink that bypasses the ChatMix dial"
         )
 
     def _toggle_media_sink(self):

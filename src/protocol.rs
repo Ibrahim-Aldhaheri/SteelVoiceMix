@@ -47,7 +47,7 @@ pub enum DaemonEvent {
         media_sink_enabled: bool,
     },
 
-    /// Fired whenever the daemon adds or removes the NovaMedia sink —
+    /// Fired whenever the daemon adds or removes the SteelMedia sink —
     /// either from a CLI flag / runtime toggle, or from a GUI command.
     #[serde(rename = "media-sink-changed")]
     MediaSinkChanged { enabled: bool },
