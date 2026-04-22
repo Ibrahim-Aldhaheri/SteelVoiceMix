@@ -80,10 +80,16 @@ modules:
       - install -Dm644 dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml
           ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
 
-      # Icons — scalable SVG + 256×256 PNG. The PNG is required by Flathub
-      # review; generate with rsvg-convert (see flatpak/README.md).
+      # Icons — scalable SVG + 48/64/128/256 PNGs. Rasters generated from
+      # the SVG with rsvg-convert (see flatpak/README.md).
       - install -Dm644 data/icons/hicolor/scalable/apps/steelvoicemix.svg
           ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
+      - install -Dm644 data/icons/hicolor/48x48/apps/steelvoicemix.png
+          ${FLATPAK_DEST}/share/icons/hicolor/48x48/apps/${FLATPAK_ID}.png
+      - install -Dm644 data/icons/hicolor/64x64/apps/steelvoicemix.png
+          ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
+      - install -Dm644 data/icons/hicolor/128x128/apps/steelvoicemix.png
+          ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
       - install -Dm644 data/icons/hicolor/256x256/apps/steelvoicemix.png
           ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
     sources:

@@ -61,8 +61,12 @@ install -Dm644 steelvoicemix.desktop %{buildroot}%{_datadir}/applications/steelv
 # AppStream metadata
 install -Dm644 dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml %{buildroot}%{_metainfodir}/dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml
 
-# App icon (hicolor/scalable)
+# App icon (hicolor/scalable + 48/64/128/256 raster)
 install -Dm644 data/icons/hicolor/scalable/apps/steelvoicemix.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
+install -Dm644 data/icons/hicolor/48x48/apps/steelvoicemix.png %{buildroot}%{_datadir}/icons/hicolor/48x48/apps/steelvoicemix.png
+install -Dm644 data/icons/hicolor/64x64/apps/steelvoicemix.png %{buildroot}%{_datadir}/icons/hicolor/64x64/apps/steelvoicemix.png
+install -Dm644 data/icons/hicolor/128x128/apps/steelvoicemix.png %{buildroot}%{_datadir}/icons/hicolor/128x128/apps/steelvoicemix.png
+install -Dm644 data/icons/hicolor/256x256/apps/steelvoicemix.png %{buildroot}%{_datadir}/icons/hicolor/256x256/apps/steelvoicemix.png
 
 %post
 %systemd_user_post steelvoicemix.service
@@ -89,6 +93,10 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/applications/steelvoicemix.desktop
 %{_metainfodir}/dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
+%{_datadir}/icons/hicolor/48x48/apps/steelvoicemix.png
+%{_datadir}/icons/hicolor/64x64/apps/steelvoicemix.png
+%{_datadir}/icons/hicolor/128x128/apps/steelvoicemix.png
+%{_datadir}/icons/hicolor/256x256/apps/steelvoicemix.png
 
 %changelog
 * Wed Apr 22 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.2-1
