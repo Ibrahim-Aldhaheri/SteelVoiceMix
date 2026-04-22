@@ -1,0 +1,88 @@
+# Flathub build manifest — WORK IN PROGRESS, not yet submitted.
+#
+# Build locally with:
+#   flatpak-builder --user --install --force-clean build-dir \
+#       flatpak/dev.ibrahimaldhaheri.steelvoicemix.yml
+#
+# Flathub rules we still need to satisfy before submitting:
+# - Ship at least one PNG icon at 256×256 (SVG alone isn't accepted).
+# - Manifest needs to compile Rust offline (Flathub's builders have no
+#   network). Cargo sources will need to be declared individually, or
+#   we use a cargo-sources generator like flatpak-cargo-generator.py.
+# - App ID must be unique; our reverse-DNS dev.ibrahimaldhaheri.* is
+#   fine but we need to own the domain (or use a GitHub-derived ID).
+# - module-null-sink + module-loopback via pactl require access to the
+#   session's PipeWire socket. Sandboxed Flatpak apps may need
+#   --filesystem=xdg-run/pipewire-0 and --socket=pulseaudio.
+# - udev rule can't be installed by a Flatpak — it's a system-level
+#   asset. Users of the Flatpak will still need the udev rule from
+#   the source repo (document this in the README).
+
+app-id: dev.ibrahimaldhaheri.steelvoicemix
+runtime: org.kde.Platform
+runtime-version: "6.7"
+sdk: org.kde.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: steelvoicemix-gui
+
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --filesystem=xdg-run/pipewire-0
+  - --talk-name=org.freedesktop.Notifications
+  # HID access to the base station happens through the nova-mixer daemon
+  # on the host, not inside the sandbox — the Flatpak GUI only talks to
+  # the daemon over its Unix socket. TODO: decide whether to ship the
+  # daemon inside the Flatpak (requires --device=all for hidraw) or
+  # require the user to install it via COPR alongside.
+  - --filesystem=xdg-run/steelvoicemix.sock
+
+modules:
+  - name: python3-pyside6
+    buildsystem: simple
+    build-commands:
+      - pip3 install --prefix=/app --no-deps PySide6==6.7.0
+    sources:
+      # Placeholder — the real manifest needs the PySide6 wheel URL and
+      # SHA256. flatpak-pip-generator will produce these automatically.
+      - type: placeholder
+
+  - name: steelvoicemix
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/steelvoicemix/cargo
+    build-commands:
+      # Rust daemon
+      - cargo --offline fetch --manifest-path Cargo.toml
+      - cargo --offline build --release
+      - install -Dm755 target/release/steelvoicemix /app/bin/steelvoicemix
+
+      # GUI entry shim + package
+      - install -Dm755 steelvoicemix-gui.py /app/share/steelvoicemix/steelvoicemix-gui.py
+      - install -d /app/share/steelvoicemix/gui
+      - install -Dm644 gui/*.py /app/share/steelvoicemix/gui/
+
+      # Launcher
+      - |
+        cat > /app/bin/steelvoicemix-gui <<'EOF'
+        #!/bin/sh
+        export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
+        exec python3 /app/share/steelvoicemix/steelvoicemix-gui.py "$@"
+        EOF
+      - chmod 755 /app/bin/steelvoicemix-gui
+
+      # Desktop + AppStream + icon
+      - install -Dm644 steelvoicemix.desktop /app/share/applications/dev.ibrahimaldhaheri.steelvoicemix.desktop
+      - install -Dm644 dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml /app/share/metainfo/dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml
+      - install -Dm644 data/icons/hicolor/scalable/apps/steelvoicemix.svg /app/share/icons/hicolor/scalable/apps/dev.ibrahimaldhaheri.steelvoicemix.svg
+    sources:
+      - type: git
+        url: https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix.git
+        tag: v0.2.2
+      # TODO: cargo-sources.json from flatpak-cargo-generator.py.
+      # Without it, the cargo fetch above will fail on the offline builder.
