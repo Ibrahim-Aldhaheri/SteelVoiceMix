@@ -107,15 +107,20 @@ class DaemonClient:
                 self.signals.disconnected.emit()
 
     def send_command(self, cmd: str) -> None:
-        """Send a one-off command on the existing subscribe socket. Fire-
-        and-forget — if the socket is mid-reconnect this is a no-op."""
-        sock = self._sock
-        if sock is None:
-            return
+        """Send a one-off command on a fresh short-lived connection.
+
+        Why not the subscribe socket: once the daemon receives `subscribe`
+        on a connection, `handle_client()` enters the event-streaming loop
+        and stops reading from that socket entirely. Reusing it would put
+        commands into the kernel buffer where no one reads them.
+        Fire-and-forget: if the daemon is down there's nothing to do.
+        """
         try:
-            sock.sendall(f'{{"cmd":"{cmd}"}}\n'.encode())
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(2)
+                sock.connect(socket_path())
+                sock.sendall(f'{{"cmd":"{cmd}"}}\n'.encode())
         except Exception:
-            # Connection will be retried by the run loop.
             pass
 
     def stop(self) -> None:
