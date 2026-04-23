@@ -63,7 +63,7 @@ impl SinkManager {
         self.media_enabled = true;
         if self.media.is_none() {
             if let Some(out) = self.output_sink.clone() {
-                self.media = create_sink_pair(&out, MEDIA_SINK, "Steel-Media");
+                self.media = create_sink_pair(&out, MEDIA_SINK, "SteelMedia");
             }
         }
         true
@@ -106,15 +106,17 @@ impl SinkManager {
         self.output_sink = Some(output_sink.to_string());
         // Descriptions cannot contain spaces — pactl's proplist parser
         // splits sink_properties tokens on whitespace with no quote or
-        // escape handling, so "Nova Game" would truncate to "Nova".
-        self.game = create_sink_pair(output_sink, GAME_SINK, "Steel-Game");
-        self.chat = create_sink_pair(output_sink, CHAT_SINK, "Steel-Chat");
+        // escape handling, so "Steel Game" would truncate to "Steel".
+        // Matching the sink name (no separator) also avoids cognitive
+        // mismatch with `pactl list short sinks` output.
+        self.game = create_sink_pair(output_sink, GAME_SINK, "SteelGame");
+        self.chat = create_sink_pair(output_sink, CHAT_SINK, "SteelChat");
         // Media sink mirrors Game/Chat structurally but is deliberately
         // ignored by the ChatMix dial handler — its volume stays at whatever
         // KDE/pactl set. Use case: music and browser audio that shouldn't
         // dip when the user biases the dial toward chat.
         if self.media_enabled {
-            self.media = create_sink_pair(output_sink, MEDIA_SINK, "Steel-Media");
+            self.media = create_sink_pair(output_sink, MEDIA_SINK, "SteelMedia");
         }
 
         let core_ok = self.game.is_some() && self.chat.is_some();
