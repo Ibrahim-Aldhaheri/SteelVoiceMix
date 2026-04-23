@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QColor, QCursor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QApplication, QWidget
 
 from .settings import OVERLAY_ORIENTATIONS
@@ -48,14 +48,12 @@ class DialOverlay(QWidget):
         self.game_vol = game_vol
         self.chat_vol = chat_vol
 
-        # Pick the screen the mouse cursor is on; fall back to the primary.
-        # move() uses global virtual-desktop coordinates, so using the raw
-        # screen dimensions alone puts the overlay at the monitor junction
-        # on multi-display setups — we need the screen's absolute offset too.
-        cursor_pos = QCursor.pos() if QApplication.instance() else None
-        screen_obj = (
-            QApplication.screenAt(cursor_pos) if cursor_pos is not None else None
-        ) or QApplication.primaryScreen()
+        # Always show on the primary monitor. Previously we followed the
+        # mouse cursor which meant whichever screen was "active" won —
+        # confusing on multi-display setups where the headset and the
+        # mouse weren't on the same screen. move() uses global virtual-
+        # desktop coordinates, so we add the screen's absolute offset.
+        screen_obj = QApplication.primaryScreen()
         g = screen_obj.geometry()
 
         margin = 24
