@@ -30,7 +30,7 @@ jobs:
     name: cargo audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       # taiki-e/install-action fetches a prebuilt cargo-audit binary
       # instead of compiling it from source — ~5 seconds vs several minutes.
