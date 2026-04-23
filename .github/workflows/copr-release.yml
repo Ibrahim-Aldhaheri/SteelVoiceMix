@@ -1,0 +1,25 @@
+name: Trigger COPR build on version tag
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  copr-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install copr-cli
+        run: pip install --user copr-cli
+
+      - name: Write COPR credentials
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          mkdir -p ~/.config
+          printf '%s' "$COPR_CONFIG" > ~/.config/copr
+          chmod 600 ~/.config/copr
+
+      - name: Trigger rebuild for ${{ github.ref_name }}
+        run: copr-cli build-package abokhalil/steelvoicemix --name steelvoicemix
