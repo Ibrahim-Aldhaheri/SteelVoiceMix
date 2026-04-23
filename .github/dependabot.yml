@@ -7,6 +7,7 @@ updates:
   # Rust crates — Cargo.lock + Cargo.toml in the repo root.
   - package-ecosystem: "cargo"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -28,6 +29,7 @@ updates:
   # The vendored ggoled_lib has its own Cargo.toml too.
   - package-ecosystem: "cargo"
     directory: "/ggoled_lib"
+    target-branch: "dev"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 3
@@ -42,6 +44,7 @@ updates:
   # helps if we bump them. Dependabot handles that.
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "monthly"
     labels:
