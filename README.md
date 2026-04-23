@@ -1,5 +1,7 @@
 # SteelVoiceMix 🎧
 
+[![COPR build status](https://copr.fedorainfracloud.org/coprs/abokhalil/steelvoicemix/package/steelvoicemix/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/abokhalil/steelvoicemix/package/steelvoicemix/)
+
 Linux ChatMix implementation for the **SteelSeries Arctis Nova Pro Wireless**. Uses PipeWire virtual sinks controlled by the hardware dial on the base station.
 
 Replaces the ChatMix functionality of SteelSeries Sonar (Windows-only) on Linux.
