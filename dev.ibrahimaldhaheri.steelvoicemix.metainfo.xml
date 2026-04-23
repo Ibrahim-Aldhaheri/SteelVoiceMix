@@ -39,6 +39,17 @@
     <modalias>usb:v1038p12E0*</modalias>
   </provides>
   <releases>
+    <release version="0.2.3" date="2026-04-24" type="development">
+      <description>
+        <p>
+          Virtual sinks renamed to Steel* (SteelGame, SteelChat, SteelMedia).
+          Adds a new SteelMedia sink that bypasses the ChatMix dial,
+          runtime-toggleable from the GUI. Fixes a bug where the GUI's
+          Add/Remove Media buttons did nothing. install.sh grew a --no-gui
+          flag for headless setups.
+        </p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-04-06" type="development">
       <description>
         <p>Daemon rewritten in Rust for performance and reliability. GUI now talks to the daemon over a Unix socket. OLED base-station display shows a live ChatMix gauge. Includes exponential-backoff reconnection and a volume-control bugfix.</p>

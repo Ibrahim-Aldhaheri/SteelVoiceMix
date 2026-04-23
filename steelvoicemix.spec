@@ -1,5 +1,5 @@
 Name:           steelvoicemix
-Version:        0.2.2
+Version:        0.2.3
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta)
 
@@ -91,6 +91,22 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
+* Fri Apr 24 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.3-1
+- Virtual sinks renamed to Steel* (SteelGame, SteelChat). Legacy Nova*
+  orphans from earlier installs are swept on startup.
+- Add SteelMedia: a third virtual sink that bypasses the ChatMix dial
+  for apps (music, browsers) that shouldn't duck during voice. Toggle
+  from the GUI "Add Media" / "Remove Media" button; preference persists
+  across restarts.
+- Fix: "Add Media" / "Remove Media" buttons were silently broken. The
+  GUI sent commands on the subscribe socket, but the daemon stops
+  reading from that socket after subscribe. Commands now go over a
+  fresh short-lived connection per click.
+- Sink descriptions drop the hyphen — SteelGame/SteelChat/SteelMedia
+  now match their sink names in Plasma's audio applet.
+- install.sh --no-gui flag for headless / Sway / tray-less setups.
+- Dev infra: Dependabot config + weekly cargo-audit cron.
+
 * Wed Apr 22 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.2-1
 - Fix systemd user units under RPM install. The 0.2.1 service files
   used ExecStart=%%h/.local/bin/steelvoicemix, which resolves to a
