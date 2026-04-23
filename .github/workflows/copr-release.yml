@@ -1,4 +1,4 @@
-name: Trigger COPR build on version tag
+name: Copr Release
 
 on:
   push:
