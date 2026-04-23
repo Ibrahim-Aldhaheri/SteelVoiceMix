@@ -5,7 +5,7 @@ Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta)
 
 License:        MIT
 URL:            https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix
-Source0:        https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/archive/refs/tags/v%{version}.tar.gz
+Source0:        {{{ git_dir_pack }}}
 
 BuildRequires:  rust >= 1.70
 BuildRequires:  cargo
@@ -26,7 +26,7 @@ by the hardware dial on the base station. Includes optional PySide6 GUI monitor
 with battery indicator that communicates with the daemon over a Unix socket.
 
 %prep
-%autosetup -n SteelVoiceMix-%{version}
+%autosetup -n {{{ git_dir_name }}}
 
 %build
 cargo build --release
