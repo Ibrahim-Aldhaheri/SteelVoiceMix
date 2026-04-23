@@ -1,5 +1,5 @@
 Name:           steelvoicemix
-Version:        0.2.3
+Version:        0.2.4
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta)
 
@@ -91,6 +91,19 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
+* Fri Apr 24 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.4-1
+- Fix: the dial overlay now always appears on the primary monitor.
+  Previously it followed the mouse cursor, which put the gauge on
+  whichever screen happened to be "active" — confusing on multi-
+  display setups where the headset and the mouse weren't on the
+  same screen.
+- Release pipeline: spec uses rpkg {{{ git_dir_pack }}} for SRPM
+  generation, removing the external tarball URL dependency.
+- CI: GitHub Actions workflow replaces the COPR webhook for release
+  triggers. Auto-merge lands Dependabot patch/minor bumps on green CI.
+- Deps: actions/checkout v6, actions/setup-python v6, libc 0.2.185,
+  thiserror 2. Dropped unused signal-hook dependency.
+
 * Fri Apr 24 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.3-1
 - Virtual sinks renamed to Steel* (SteelGame, SteelChat). Legacy Nova*
   orphans from earlier installs are swept on startup.

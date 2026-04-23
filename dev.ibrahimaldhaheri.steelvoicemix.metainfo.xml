@@ -39,6 +39,19 @@
     <modalias>usb:v1038p12E0*</modalias>
   </provides>
   <releases>
+    <release version="0.2.4" date="2026-04-24" type="development">
+      <description>
+        <p>
+          Fixes the dial overlay to always show on the primary monitor
+          instead of following the mouse cursor, which behaved
+          unpredictably on multi-display setups. Also modernizes the
+          release pipeline: GitHub Actions triggers COPR builds on tag
+          push, the spec uses rpkg macros for resilient SRPM generation,
+          and Dependabot patch/minor bumps auto-merge on green CI.
+          Minor dependency updates and a dead-code cleanup.
+        </p>
+      </description>
+    </release>
     <release version="0.2.3" date="2026-04-24" type="development">
       <description>
         <p>
