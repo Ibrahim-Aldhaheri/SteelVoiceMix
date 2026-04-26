@@ -22,6 +22,7 @@ class DaemonSignals(QObject):
     status_message = Signal(str)
     battery_updated = Signal(int, str)
     media_sink_changed = Signal(bool)
+    hdmi_sink_changed = Signal(bool)
 
 
 class DaemonClient:
@@ -89,9 +90,14 @@ class DaemonClient:
             self.signals.disconnected.emit()
         elif ev == "media-sink-changed":
             self.signals.media_sink_changed.emit(bool(event.get("enabled", False)))
+        elif ev == "hdmi-sink-changed":
+            self.signals.hdmi_sink_changed.emit(bool(event.get("enabled", False)))
         elif ev == "status":
             self.signals.media_sink_changed.emit(
                 bool(event.get("media_sink_enabled", True))
+            )
+            self.signals.hdmi_sink_changed.emit(
+                bool(event.get("hdmi_sink_enabled", False))
             )
             if event.get("connected"):
                 self.signals.connected.emit()

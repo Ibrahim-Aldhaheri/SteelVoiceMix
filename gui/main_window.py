@@ -64,10 +64,12 @@ class MixerGUI(QMainWindow):
         self.signals.status_message.connect(self._on_status)
         self.signals.battery_updated.connect(self._on_battery)
         self.signals.media_sink_changed.connect(self._on_media_sink_changed)
-        # Track the daemon's reported media-sink state so the toggle button
-        # renders correctly. Daemon default is "off until the user opts in"
-        # so we start with False; the first status event corrects it.
+        self.signals.hdmi_sink_changed.connect(self._on_hdmi_sink_changed)
+        # Track the daemon's reported sink-toggle states so the buttons
+        # render correctly. Daemon defaults are "off until the user opts in"
+        # so we start with False; the first status event corrects them.
         self._media_sink_enabled = False
+        self._hdmi_sink_enabled = False
 
         self.settings = load_settings()
         self.overlay = DialOverlay()
@@ -214,6 +216,15 @@ class MixerGUI(QMainWindow):
         self.media_btn.clicked.connect(self._toggle_media_sink)
         media_row.addWidget(self.media_btn, 1)
         layout.addLayout(media_row)
+
+        # HDMI sink toggle — virtual output that loops to a host HDMI sink
+        # (TV / AVR / monitor speakers) instead of the headset.
+        hdmi_row = QHBoxLayout()
+        hdmi_row.addWidget(QLabel("HDMI sink:"))
+        self.hdmi_btn = QPushButton("Add HDMI")
+        self.hdmi_btn.clicked.connect(self._toggle_hdmi_sink)
+        hdmi_row.addWidget(self.hdmi_btn, 1)
+        layout.addLayout(hdmi_row)
 
         # About button — row aligned right
         about_row = QHBoxLayout()
@@ -438,5 +449,28 @@ class MixerGUI(QMainWindow):
 
         def reenable():
             self.media_btn.setEnabled(True)
+
+        QTimer.singleShot(600, reenable)
+
+    def _on_hdmi_sink_changed(self, enabled: bool):
+        self._hdmi_sink_enabled = enabled
+        self.hdmi_btn.setText("Remove HDMI" if enabled else "Add HDMI")
+        self.hdmi_btn.setToolTip(
+            "Destroy the SteelHDMI virtual sink"
+            if enabled
+            else "Create a SteelHDMI virtual sink that loops to your HDMI output"
+        )
+
+    def _toggle_hdmi_sink(self):
+        cmd = "remove-hdmi-sink" if self._hdmi_sink_enabled else "add-hdmi-sink"
+        self.daemon_client.send_command(cmd)
+        self.hdmi_btn.setEnabled(False)
+        self._hdmi_btn_reenable_timer()
+
+    def _hdmi_btn_reenable_timer(self):
+        from PySide6.QtCore import QTimer
+
+        def reenable():
+            self.hdmi_btn.setEnabled(True)
 
         QTimer.singleShot(600, reenable)

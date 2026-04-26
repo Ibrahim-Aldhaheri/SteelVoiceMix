@@ -55,16 +55,18 @@ pub struct MixerState {
     pub chat_vol: u8,
     pub battery: Option<BatteryStatus>,
     pub media_sink_enabled: bool,
+    pub hdmi_sink_enabled: bool,
 }
 
 impl MixerState {
-    pub fn new(media_sink_enabled: bool) -> Self {
+    pub fn new(media_sink_enabled: bool, hdmi_sink_enabled: bool) -> Self {
         MixerState {
             connected: false,
             game_vol: 100,
             chat_vol: 100,
             battery: None,
             media_sink_enabled,
+            hdmi_sink_enabled,
         }
     }
 }
@@ -241,14 +243,26 @@ impl Mixer {
             chat: init_chat,
         });
         draw_or_drop(&mut display, init_game, init_chat);
-        let media_live = self.sinks.lock().unwrap().media_enabled();
-        let notify_body = if media_live {
-            "SteelGame, SteelChat, and SteelMedia sinks ready.\n\
-             Use the dial to balance Game vs Chat. Media stays independent."
-        } else {
-            "SteelGame and SteelChat sinks ready.\nUse the dial to control balance."
+        let (media_live, hdmi_live) = {
+            let sm = self.sinks.lock().unwrap();
+            (sm.media_enabled(), sm.hdmi_enabled())
         };
-        self.notify("🎧 ChatMix Active", notify_body);
+        let mut active_sinks: Vec<&str> = vec!["SteelGame", "SteelChat"];
+        if media_live {
+            active_sinks.push("SteelMedia");
+        }
+        if hdmi_live {
+            active_sinks.push("SteelHDMI");
+        }
+        let notify_body = if media_live || hdmi_live {
+            format!(
+                "{} sinks ready.\nUse the dial to balance Game vs Chat — Media and HDMI stay independent.",
+                active_sinks.join(", ")
+            )
+        } else {
+            "SteelGame and SteelChat sinks ready.\nUse the dial to control balance.".to_string()
+        };
+        self.notify("🎧 ChatMix Active", &notify_body);
 
         self.poll_and_broadcast_battery(&dev);
 

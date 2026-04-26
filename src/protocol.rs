@@ -17,6 +17,10 @@ pub enum ClientCommand {
     AddMediaSink,
     #[serde(rename = "remove-media-sink")]
     RemoveMediaSink,
+    #[serde(rename = "add-hdmi-sink")]
+    AddHdmiSink,
+    #[serde(rename = "remove-hdmi-sink")]
+    RemoveHdmiSink,
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -45,12 +49,17 @@ pub enum DaemonEvent {
         chat_vol: u8,
         battery: Option<BatteryStatus>,
         media_sink_enabled: bool,
+        hdmi_sink_enabled: bool,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
     /// either from a CLI flag / runtime toggle, or from a GUI command.
     #[serde(rename = "media-sink-changed")]
     MediaSinkChanged { enabled: bool },
+
+    /// Fired whenever the daemon adds or removes the SteelHDMI sink.
+    #[serde(rename = "hdmi-sink-changed")]
+    HdmiSinkChanged { enabled: bool },
 }
 
 #[cfg(test)]
@@ -122,6 +131,7 @@ mod tests {
                 status: "active".into(),
             }),
             media_sink_enabled: true,
+            hdmi_sink_enabled: false,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -131,6 +141,7 @@ mod tests {
         assert_eq!(json["battery"]["level"], 80);
         assert_eq!(json["battery"]["status"], "active");
         assert_eq!(json["media_sink_enabled"], true);
+        assert_eq!(json["hdmi_sink_enabled"], false);
 
         let without_bat = DaemonEvent::Status {
             connected: false,
@@ -138,10 +149,12 @@ mod tests {
             chat_vol: 100,
             battery: None,
             media_sink_enabled: false,
+            hdmi_sink_enabled: true,
         };
         let json: Value = from_str(&to_string(&without_bat).unwrap()).unwrap();
         assert!(json["battery"].is_null());
         assert_eq!(json["media_sink_enabled"], false);
+        assert_eq!(json["hdmi_sink_enabled"], true);
     }
 
     #[test]
@@ -157,10 +170,30 @@ mod tests {
     }
 
     #[test]
+    fn client_command_hdmi_sink_variants_parse() {
+        assert!(matches!(
+            from_str::<ClientCommand>(r#"{"cmd":"add-hdmi-sink"}"#).unwrap(),
+            ClientCommand::AddHdmiSink
+        ));
+        assert!(matches!(
+            from_str::<ClientCommand>(r#"{"cmd":"remove-hdmi-sink"}"#).unwrap(),
+            ClientCommand::RemoveHdmiSink
+        ));
+    }
+
+    #[test]
     fn media_sink_changed_event_shape() {
         let ev = DaemonEvent::MediaSinkChanged { enabled: true };
         let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
         assert_eq!(json["event"], "media-sink-changed");
+        assert_eq!(json["enabled"], true);
+    }
+
+    #[test]
+    fn hdmi_sink_changed_event_shape() {
+        let ev = DaemonEvent::HdmiSinkChanged { enabled: true };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "hdmi-sink-changed");
         assert_eq!(json["enabled"], true);
     }
 }

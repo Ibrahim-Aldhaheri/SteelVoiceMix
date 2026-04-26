@@ -11,6 +11,7 @@ use log::{error, info, warn};
 pub const GAME_SINK: &str = "SteelGame";
 pub const CHAT_SINK: &str = "SteelChat";
 pub const MEDIA_SINK: &str = "SteelMedia";
+pub const HDMI_SINK: &str = "SteelHDMI";
 pub const OUTPUT_MATCH: &str = "SteelSeries_Arctis_Nova_Pro_Wireless";
 
 /// Every sink-name prefix we're responsible for. Keep this in sync with the
@@ -25,27 +26,37 @@ struct SinkModules {
 
 /// Manages the virtual sinks and their loopbacks. Game + Chat are always
 /// created; Media is created when the daemon is launched without
-/// `--no-media-sink`.
+/// `--no-media-sink`. HDMI is created when launched without `--no-hdmi-sink`
+/// and an HDMI-capable output sink is detected on the system.
 pub struct SinkManager {
     game: Option<SinkModules>,
     chat: Option<SinkModules>,
     media: Option<SinkModules>,
+    /// HDMI sink loops to a host-side HDMI output (TV / AVR / monitor speakers),
+    /// not to the headset. Independent of headset connection state.
+    hdmi: Option<SinkModules>,
     media_enabled: bool,
+    hdmi_enabled: bool,
     // Cached during create_sinks so runtime add/remove of the media sink
     // doesn't need to re-query PipeWire for the headset's sink name.
     output_sink: Option<String>,
+    // Cached HDMI target so runtime toggles don't re-scan pactl.
+    hdmi_target: Option<String>,
 }
 
 impl SinkManager {
-    pub fn new(media_enabled: bool) -> Self {
+    pub fn new(media_enabled: bool, hdmi_enabled: bool) -> Self {
         // Sweep up anything a previous crash or manual test left behind.
         cleanup_stale_modules();
         SinkManager {
             game: None,
             chat: None,
             media: None,
+            hdmi: None,
             media_enabled,
+            hdmi_enabled,
             output_sink: None,
+            hdmi_target: None,
         }
     }
 
@@ -80,6 +91,40 @@ impl SinkManager {
         false
     }
 
+    /// Whether the SteelHDMI sink is currently requested.
+    pub fn hdmi_enabled(&self) -> bool {
+        self.hdmi_enabled
+    }
+
+    /// Runtime toggle: add the SteelHDMI sink, looping to a host HDMI output.
+    /// Re-scans pactl for an HDMI sink each time it's enabled — the user may
+    /// have plugged in a TV/AVR after the daemon started.
+    pub fn enable_hdmi(&mut self) -> bool {
+        self.hdmi_enabled = true;
+        if self.hdmi.is_none() {
+            let target = self.hdmi_target.clone().or_else(Self::find_hdmi_sink);
+            match target {
+                Some(t) => {
+                    self.hdmi_target = Some(t.clone());
+                    self.hdmi = create_sink_pair(&t, HDMI_SINK, "SteelHDMI");
+                }
+                None => warn!("HDMI sink requested but no HDMI output detected"),
+            }
+        }
+        true
+    }
+
+    /// Runtime toggle: tear down the SteelHDMI sink and remember the user's
+    /// off-preference for next start.
+    pub fn disable_hdmi(&mut self) -> bool {
+        self.hdmi_enabled = false;
+        if let Some(h) = self.hdmi.take() {
+            unload_module(h.loopback_id);
+            unload_module(h.null_sink_id);
+        }
+        false
+    }
+
     /// Auto-detect the Nova Pro Wireless PipeWire output sink name.
     pub fn find_output_sink() -> Option<String> {
         let output = Command::new("pactl")
@@ -92,6 +137,30 @@ impl SinkManager {
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines() {
             if line.contains(OUTPUT_MATCH) && !line.contains("input.") {
+                if let Some(name) = line.split('\t').nth(1) {
+                    return Some(name.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    /// Auto-detect a PipeWire HDMI output sink. Picks the first match —
+    /// systems with multiple HDMI outputs (multi-GPU, multi-monitor) may
+    /// need a future config knob to override this. Skips `input.`-prefixed
+    /// virtual nodes so plasma-pa-style filters don't trip the heuristic.
+    pub fn find_hdmi_sink() -> Option<String> {
+        let output = Command::new("pactl")
+            .args(["list", "sinks", "short"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let lower = line.to_lowercase();
+            if lower.contains("hdmi") && !lower.contains("input.") {
                 if let Some(name) = line.split('\t').nth(1) {
                     return Some(name.to_string());
                 }
@@ -118,16 +187,28 @@ impl SinkManager {
         if self.media_enabled {
             self.media = create_sink_pair(output_sink, MEDIA_SINK, "SteelMedia");
         }
+        // HDMI loopback target is independent of the headset — it goes to the
+        // host-side HDMI sink (TV / AVR / monitor speakers). Detect at create
+        // time so toggling the headset doesn't lose the HDMI route.
+        if self.hdmi_enabled {
+            if let Some(hdmi_target) = Self::find_hdmi_sink() {
+                self.hdmi_target = Some(hdmi_target.clone());
+                self.hdmi = create_sink_pair(&hdmi_target, HDMI_SINK, "SteelHDMI");
+            } else {
+                warn!("HDMI sink enabled but no HDMI output sink detected");
+            }
+        }
 
         let core_ok = self.game.is_some() && self.chat.is_some();
         if core_ok {
-            if self.media_enabled && self.media.is_some() {
-                info!("Created sinks: {GAME_SINK}, {CHAT_SINK}, {MEDIA_SINK}");
-            } else if self.media_enabled {
-                info!("Created sinks: {GAME_SINK}, {CHAT_SINK} (media sink failed)");
-            } else {
-                info!("Created sinks: {GAME_SINK}, {CHAT_SINK} (media sink disabled)");
+            let mut active = vec![GAME_SINK, CHAT_SINK];
+            if self.media.is_some() {
+                active.push(MEDIA_SINK);
             }
+            if self.hdmi.is_some() {
+                active.push(HDMI_SINK);
+            }
+            info!("Created sinks: {}", active.join(", "));
         } else {
             error!("Failed to create one or more sinks");
         }
@@ -135,13 +216,14 @@ impl SinkManager {
 
     /// Unload the null-sink + loopback modules we created.
     pub fn destroy_sinks(&mut self) {
-        for slot in [&mut self.game, &mut self.chat, &mut self.media] {
+        for slot in [&mut self.game, &mut self.chat, &mut self.media, &mut self.hdmi] {
             if let Some(m) = slot.take() {
                 unload_module(m.loopback_id);
                 unload_module(m.null_sink_id);
             }
         }
         self.output_sink = None;
+        self.hdmi_target = None;
     }
 
     /// Set volume on a sink (0–100) by its sink name.

@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 pub struct DaemonState {
     #[serde(default)]
     pub media_sink_enabled: bool,
+    #[serde(default)]
+    pub hdmi_sink_enabled: bool,
 }
 
 fn state_path() -> Option<PathBuf> {

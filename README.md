@@ -2,6 +2,16 @@
 
 [![COPR build status](https://copr.fedorainfracloud.org/coprs/abokhalil/steelvoicemix/package/steelvoicemix/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/abokhalil/steelvoicemix/package/steelvoicemix/)
 
+> ## Acknowledgments
+>
+> SteelVoiceMix builds on the work of two upstream projects whose protocol
+> decoding, sink-routing patterns, and feature designs informed this codebase:
+>
+> - [**Linux-Arctis-Manager**](https://github.com/elegos/Linux-Arctis-Manager) by **elegos** — the original open-source Linux ChatMix manager for the SteelSeries Arctis line. The HID command set, ChatMix dial decoding, and the `module-null-sink` + `module-loopback` virtual-sink pattern all originate from this project.
+> - [**Arctis Sound Manager**](https://github.com/loteran/Arctis-Sound-Manager) by **loteran** — a comprehensive fork of Linux-Arctis-Manager that pioneered the multi-channel mixer (Game / Chat / Media / HDMI), Sonar-style parametric EQ, OLED weather widget, and the HeSuVi-based spatial audio pipeline. SteelVoiceMix's multi-channel and OLED enhancements were designed with reference to ASM.
+>
+> If you want **full SteelSeries Sonar parity** — 312 game EQ presets, audio profiles, multi-language UI, broad device coverage — use **ASM** directly. SteelVoiceMix is a Rust-daemon alternative narrower in scope and Fedora-KDE-first.
+
 Linux ChatMix implementation for the **SteelSeries Arctis Nova Pro Wireless**. Uses PipeWire virtual sinks controlled by the hardware dial on the base station.
 
 Replaces the ChatMix functionality of SteelSeries Sonar (Windows-only) on Linux.

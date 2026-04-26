@@ -38,7 +38,19 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         chat_vol: st.chat_vol,
         battery: st.battery.clone(),
         media_sink_enabled: st.media_sink_enabled,
+        hdmi_sink_enabled: st.hdmi_sink_enabled,
     }
+}
+
+/// Persist sink-toggle preferences. Reads both flags from the current
+/// MixerState so we don't accidentally clobber one when only the other
+/// changed.
+fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
+    let st = state.lock().unwrap();
+    config::save(&config::DaemonState {
+        media_sink_enabled: st.media_sink_enabled,
+        hdmi_sink_enabled: st.hdmi_sink_enabled,
+    });
 }
 
 fn handle_client(
@@ -94,7 +106,7 @@ fn handle_client(
                     let mut st = state.lock().unwrap();
                     st.media_sink_enabled = enabled;
                 }
-                config::save(&config::DaemonState { media_sink_enabled: enabled });
+                persist_sink_state(&state);
                 info!("GUI requested: add media sink → enabled={enabled}");
                 broadcast_event(&subscribers, DaemonEvent::MediaSinkChanged { enabled });
             }
@@ -107,9 +119,35 @@ fn handle_client(
                     let mut st = state.lock().unwrap();
                     st.media_sink_enabled = enabled;
                 }
-                config::save(&config::DaemonState { media_sink_enabled: enabled });
+                persist_sink_state(&state);
                 info!("GUI requested: remove media sink → enabled={enabled}");
                 broadcast_event(&subscribers, DaemonEvent::MediaSinkChanged { enabled });
+            }
+            ClientCommand::AddHdmiSink => {
+                let enabled = {
+                    let mut sm = sinks.lock().unwrap();
+                    sm.enable_hdmi()
+                };
+                {
+                    let mut st = state.lock().unwrap();
+                    st.hdmi_sink_enabled = enabled;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: add hdmi sink → enabled={enabled}");
+                broadcast_event(&subscribers, DaemonEvent::HdmiSinkChanged { enabled });
+            }
+            ClientCommand::RemoveHdmiSink => {
+                let enabled = {
+                    let mut sm = sinks.lock().unwrap();
+                    sm.disable_hdmi()
+                };
+                {
+                    let mut st = state.lock().unwrap();
+                    st.hdmi_sink_enabled = enabled;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: remove hdmi sink → enabled={enabled}");
+                broadcast_event(&subscribers, DaemonEvent::HdmiSinkChanged { enabled });
             }
             ClientCommand::Subscribe => {
                 let (tx, rx) = std::sync::mpsc::channel::<DaemonEvent>();
@@ -152,12 +190,14 @@ fn main() {
     let mut no_notify = false;
     let mut no_socket = false;
     let mut no_media_sink = false;
+    let mut no_hdmi_sink = false;
     let mut debug = false;
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--no-notify" => no_notify = true,
             "--no-socket" => no_socket = true,
             "--no-media-sink" => no_media_sink = true,
+            "--no-hdmi-sink" => no_hdmi_sink = true,
             "--debug" | "-d" => debug = true,
             "--version" | "-V" => {
                 println!("steelvoicemix {}", env!("CARGO_PKG_VERSION"));
@@ -172,6 +212,8 @@ fn main() {
                 println!("  --no-notify      Disable desktop notifications");
                 println!("  --no-socket      Disable Unix socket server (no GUI support)");
                 println!("  --no-media-sink  Skip the SteelMedia sink on startup");
+                println!("                   (the GUI can still add it at runtime)");
+                println!("  --no-hdmi-sink   Skip the SteelHDMI sink on startup");
                 println!("                   (the GUI can still add it at runtime)");
                 println!("  -d, --debug      Enable debug logging (equivalent to RUST_LOG=debug)");
                 println!("  -V, --version    Print version and exit");
@@ -191,22 +233,27 @@ fn main() {
         .format_timestamp_secs()
         .init();
 
-    // Media sink: default to whatever the user picked last time. On a
-    // fresh install the state file doesn't exist and load() returns the
-    // Default (media_sink_enabled = false) — new users aren't surprised
-    // by a third output device. --no-media-sink is a session-only override
-    // that does NOT overwrite the stored preference.
+    // Optional sinks (Media, HDMI): default to whatever the user picked last
+    // time. On a fresh install the state file doesn't exist and load() returns
+    // the Default (both false) — new users aren't surprised by extra output
+    // devices they didn't ask for. --no-* CLI flags are session-only overrides
+    // that do NOT overwrite the stored preference.
     let persisted = config::load();
     let media_sink_enabled = if no_media_sink { false } else { persisted.media_sink_enabled };
+    let hdmi_sink_enabled = if no_hdmi_sink { false } else { persisted.hdmi_sink_enabled };
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
     );
+    info!(
+        "HDMI sink startup state: {} (persisted={}, --no-hdmi-sink={})",
+        hdmi_sink_enabled, persisted.hdmi_sink_enabled, no_hdmi_sink
+    );
     let running = Arc::new(AtomicBool::new(true));
-    let state = Arc::new(Mutex::new(MixerState::new(media_sink_enabled)));
+    let state = Arc::new(Mutex::new(MixerState::new(media_sink_enabled, hdmi_sink_enabled)));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
-    let sinks: SharedSinks = Arc::new(Mutex::new(SinkManager::new(media_sink_enabled)));
+    let sinks: SharedSinks = Arc::new(Mutex::new(SinkManager::new(media_sink_enabled, hdmi_sink_enabled)));
 
     // Signal handling
     {
