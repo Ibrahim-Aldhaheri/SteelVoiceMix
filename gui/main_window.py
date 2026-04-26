@@ -72,11 +72,15 @@ class MixerGUI(QMainWindow):
         self.signals.battery_updated.connect(self._on_battery)
         self.signals.media_sink_changed.connect(self._on_media_sink_changed)
         self.signals.hdmi_sink_changed.connect(self._on_hdmi_sink_changed)
+        self.signals.auto_route_browsers_changed.connect(
+            self._on_auto_route_browsers_changed
+        )
         # Track the daemon's reported sink-toggle states so the buttons
         # render correctly. Daemon defaults are "off until the user opts in"
         # so we start with False; the first status event corrects them.
         self._media_sink_enabled = False
         self._hdmi_sink_enabled = False
+        self._auto_route_browsers = False
 
         self.settings = load_settings()
         self.overlay = DialOverlay()
@@ -234,6 +238,19 @@ class MixerGUI(QMainWindow):
         self.hdmi_btn.clicked.connect(self._toggle_hdmi_sink)
         hdmi_row.addWidget(self.hdmi_btn, 1)
         layout.addLayout(hdmi_row)
+
+        # Auto-route browser/media-player streams to SteelMedia.
+        self.auto_route_check = QCheckBox(
+            "Auto-route browsers / media players to SteelMedia"
+        )
+        self.auto_route_check.setToolTip(
+            "When enabled, the daemon moves new browser and media-player "
+            "audio streams (Firefox, Chromium, mpv, VLC…) to the SteelMedia "
+            "sink so they bypass the ChatMix dial. Manual moves stick — "
+            "the daemon only acts on first-seen streams."
+        )
+        self.auto_route_check.toggled.connect(self._toggle_auto_route_browsers)
+        layout.addWidget(self.auto_route_check)
 
         # Audio profile bar — load / save / delete named snapshots of the
         # GUI overlay settings + sink toggles.
@@ -515,6 +532,18 @@ class MixerGUI(QMainWindow):
             self.hdmi_btn.setEnabled(True)
 
         QTimer.singleShot(600, reenable)
+
+    def _on_auto_route_browsers_changed(self, enabled: bool):
+        self._auto_route_browsers = enabled
+        # Block the toggled signal so this echo doesn't re-send to the daemon.
+        was_blocked = self.auto_route_check.blockSignals(True)
+        self.auto_route_check.setChecked(enabled)
+        self.auto_route_check.blockSignals(was_blocked)
+
+    def _toggle_auto_route_browsers(self, checked: bool):
+        self.daemon_client.send_command(
+            "set-auto-route-browsers", enabled=bool(checked)
+        )
 
     # -------------------------------------------------------------- profiles
 

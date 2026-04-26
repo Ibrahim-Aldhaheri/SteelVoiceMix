@@ -21,6 +21,10 @@ pub enum ClientCommand {
     AddHdmiSink,
     #[serde(rename = "remove-hdmi-sink")]
     RemoveHdmiSink,
+    /// Toggle browser auto-routing: any subsequent new sink-input from a
+    /// known browser/media-player binary will be moved to SteelMedia.
+    #[serde(rename = "set-auto-route-browsers")]
+    SetAutoRouteBrowsers { enabled: bool },
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -50,6 +54,7 @@ pub enum DaemonEvent {
         battery: Option<BatteryStatus>,
         media_sink_enabled: bool,
         hdmi_sink_enabled: bool,
+        auto_route_browsers: bool,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -60,6 +65,10 @@ pub enum DaemonEvent {
     /// Fired whenever the daemon adds or removes the SteelHDMI sink.
     #[serde(rename = "hdmi-sink-changed")]
     HdmiSinkChanged { enabled: bool },
+
+    /// Fired when browser auto-routing is toggled.
+    #[serde(rename = "auto-route-browsers-changed")]
+    AutoRouteBrowsersChanged { enabled: bool },
 }
 
 #[cfg(test)]
@@ -132,6 +141,7 @@ mod tests {
             }),
             media_sink_enabled: true,
             hdmi_sink_enabled: false,
+            auto_route_browsers: false,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -142,6 +152,7 @@ mod tests {
         assert_eq!(json["battery"]["status"], "active");
         assert_eq!(json["media_sink_enabled"], true);
         assert_eq!(json["hdmi_sink_enabled"], false);
+        assert_eq!(json["auto_route_browsers"], false);
 
         let without_bat = DaemonEvent::Status {
             connected: false,
@@ -150,11 +161,13 @@ mod tests {
             battery: None,
             media_sink_enabled: false,
             hdmi_sink_enabled: true,
+            auto_route_browsers: true,
         };
         let json: Value = from_str(&to_string(&without_bat).unwrap()).unwrap();
         assert!(json["battery"].is_null());
         assert_eq!(json["media_sink_enabled"], false);
         assert_eq!(json["hdmi_sink_enabled"], true);
+        assert_eq!(json["auto_route_browsers"], true);
     }
 
     #[test]
@@ -194,6 +207,24 @@ mod tests {
         let ev = DaemonEvent::HdmiSinkChanged { enabled: true };
         let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
         assert_eq!(json["event"], "hdmi-sink-changed");
+        assert_eq!(json["enabled"], true);
+    }
+
+    #[test]
+    fn set_auto_route_browsers_command_parses() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-auto-route-browsers","enabled":true}"#).unwrap();
+        match cmd {
+            ClientCommand::SetAutoRouteBrowsers { enabled } => assert!(enabled),
+            other => panic!("expected SetAutoRouteBrowsers, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn auto_route_browsers_changed_event_shape() {
+        let ev = DaemonEvent::AutoRouteBrowsersChanged { enabled: true };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "auto-route-browsers-changed");
         assert_eq!(json["enabled"], true);
     }
 }

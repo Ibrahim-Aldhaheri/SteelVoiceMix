@@ -4,6 +4,7 @@ mod display;
 mod hid;
 mod mixer;
 mod protocol;
+mod routing;
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -17,6 +18,7 @@ use log::{error, info, warn};
 use audio::SinkManager;
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
 use protocol::{ClientCommand, DaemonEvent};
+use routing::{spawn_router, RouterState};
 
 fn socket_path() -> PathBuf {
     // Use XDG_RUNTIME_DIR if available, fallback to /tmp
@@ -39,17 +41,18 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         battery: st.battery.clone(),
         media_sink_enabled: st.media_sink_enabled,
         hdmi_sink_enabled: st.hdmi_sink_enabled,
+        auto_route_browsers: st.auto_route_browsers,
     }
 }
 
-/// Persist sink-toggle preferences. Reads both flags from the current
-/// MixerState so we don't accidentally clobber one when only the other
-/// changed.
+/// Persist sink-toggle preferences. Reads all flags from the current
+/// MixerState so a change to one doesn't clobber the others.
 fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
     let st = state.lock().unwrap();
     config::save(&config::DaemonState {
         media_sink_enabled: st.media_sink_enabled,
         hdmi_sink_enabled: st.hdmi_sink_enabled,
+        auto_route_browsers: st.auto_route_browsers,
     });
 }
 
@@ -58,6 +61,7 @@ fn handle_client(
     state: Arc<Mutex<MixerState>>,
     subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
     sinks: SharedSinks,
+    router: Arc<RouterState>,
     running: Arc<AtomicBool>,
 ) {
     let peer_stream = match stream.try_clone() {
@@ -148,6 +152,21 @@ fn handle_client(
                 persist_sink_state(&state);
                 info!("GUI requested: remove hdmi sink → enabled={enabled}");
                 broadcast_event(&subscribers, DaemonEvent::HdmiSinkChanged { enabled });
+            }
+            ClientCommand::SetAutoRouteBrowsers { enabled } => {
+                router
+                    .enabled
+                    .store(enabled, std::sync::atomic::Ordering::Relaxed);
+                {
+                    let mut st = state.lock().unwrap();
+                    st.auto_route_browsers = enabled;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: auto-route browsers → enabled={enabled}");
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::AutoRouteBrowsersChanged { enabled },
+                );
             }
             ClientCommand::Subscribe => {
                 let (tx, rx) = std::sync::mpsc::channel::<DaemonEvent>();
@@ -241,6 +260,7 @@ fn main() {
     let persisted = config::load();
     let media_sink_enabled = if no_media_sink { false } else { persisted.media_sink_enabled };
     let hdmi_sink_enabled = if no_hdmi_sink { false } else { persisted.hdmi_sink_enabled };
+    let auto_route_browsers = persisted.auto_route_browsers;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -249,11 +269,18 @@ fn main() {
         "HDMI sink startup state: {} (persisted={}, --no-hdmi-sink={})",
         hdmi_sink_enabled, persisted.hdmi_sink_enabled, no_hdmi_sink
     );
+    info!("Browser auto-routing: {}", auto_route_browsers);
     let running = Arc::new(AtomicBool::new(true));
-    let state = Arc::new(Mutex::new(MixerState::new(media_sink_enabled, hdmi_sink_enabled)));
+    let state = Arc::new(Mutex::new(MixerState::new(
+        media_sink_enabled,
+        hdmi_sink_enabled,
+        auto_route_browsers,
+    )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
     let sinks: SharedSinks = Arc::new(Mutex::new(SinkManager::new(media_sink_enabled, hdmi_sink_enabled)));
+    let router = Arc::new(RouterState::new(auto_route_browsers));
+    spawn_router(router.clone(), running.clone());
 
     // Signal handling
     {
@@ -295,9 +322,10 @@ fn main() {
                             let state = state.clone();
                             let subs = subscribers.clone();
                             let sinks = sinks.clone();
+                            let router = router.clone();
                             let running = running.clone();
                             thread::spawn(move || {
-                                handle_client(stream, state, subs, sinks, running);
+                                handle_client(stream, state, subs, sinks, router, running);
                             });
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {

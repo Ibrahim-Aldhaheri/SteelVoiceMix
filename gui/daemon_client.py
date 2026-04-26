@@ -23,6 +23,7 @@ class DaemonSignals(QObject):
     battery_updated = Signal(int, str)
     media_sink_changed = Signal(bool)
     hdmi_sink_changed = Signal(bool)
+    auto_route_browsers_changed = Signal(bool)
 
 
 class DaemonClient:
@@ -92,12 +93,19 @@ class DaemonClient:
             self.signals.media_sink_changed.emit(bool(event.get("enabled", False)))
         elif ev == "hdmi-sink-changed":
             self.signals.hdmi_sink_changed.emit(bool(event.get("enabled", False)))
+        elif ev == "auto-route-browsers-changed":
+            self.signals.auto_route_browsers_changed.emit(
+                bool(event.get("enabled", False))
+            )
         elif ev == "status":
             self.signals.media_sink_changed.emit(
                 bool(event.get("media_sink_enabled", True))
             )
             self.signals.hdmi_sink_changed.emit(
                 bool(event.get("hdmi_sink_enabled", False))
+            )
+            self.signals.auto_route_browsers_changed.emit(
+                bool(event.get("auto_route_browsers", False))
             )
             if event.get("connected"):
                 self.signals.connected.emit()
@@ -112,7 +120,7 @@ class DaemonClient:
             else:
                 self.signals.disconnected.emit()
 
-    def send_command(self, cmd: str) -> None:
+    def send_command(self, cmd: str, **extra) -> None:
         """Send a one-off command on a fresh short-lived connection.
 
         Why not the subscribe socket: once the daemon receives `subscribe`
@@ -120,12 +128,19 @@ class DaemonClient:
         and stops reading from that socket entirely. Reusing it would put
         commands into the kernel buffer where no one reads them.
         Fire-and-forget: if the daemon is down there's nothing to do.
+
+        `extra` kwargs are merged into the JSON payload alongside `cmd` so
+        commands that need parameters (e.g. set-auto-route-browsers needs
+        `enabled`) work without a second method.
         """
+        payload = {"cmd": cmd}
+        payload.update(extra)
+        body = (json.dumps(payload) + "\n").encode()
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
                 sock.settimeout(2)
                 sock.connect(socket_path())
-                sock.sendall(f'{{"cmd":"{cmd}"}}\n'.encode())
+                sock.sendall(body)
         except Exception:
             pass
 

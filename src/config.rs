@@ -19,6 +19,11 @@ pub struct DaemonState {
     pub media_sink_enabled: bool,
     #[serde(default)]
     pub hdmi_sink_enabled: bool,
+    /// When true, the routing thread auto-moves browser/media-player
+    /// sink-inputs to SteelMedia (so they bypass the ChatMix dial).
+    /// Off by default — opt-in to avoid surprising users.
+    #[serde(default)]
+    pub auto_route_browsers: bool,
 }
 
 fn state_path() -> Option<PathBuf> {

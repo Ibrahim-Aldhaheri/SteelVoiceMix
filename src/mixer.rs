@@ -56,10 +56,15 @@ pub struct MixerState {
     pub battery: Option<BatteryStatus>,
     pub media_sink_enabled: bool,
     pub hdmi_sink_enabled: bool,
+    pub auto_route_browsers: bool,
 }
 
 impl MixerState {
-    pub fn new(media_sink_enabled: bool, hdmi_sink_enabled: bool) -> Self {
+    pub fn new(
+        media_sink_enabled: bool,
+        hdmi_sink_enabled: bool,
+        auto_route_browsers: bool,
+    ) -> Self {
         MixerState {
             connected: false,
             game_vol: 100,
@@ -67,6 +72,7 @@ impl MixerState {
             battery: None,
             media_sink_enabled,
             hdmi_sink_enabled,
+            auto_route_browsers,
         }
     }
 }
