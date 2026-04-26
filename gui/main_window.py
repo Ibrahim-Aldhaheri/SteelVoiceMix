@@ -14,9 +14,11 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QSystemTrayIcon,
@@ -32,11 +34,16 @@ from .settings import (
     DISPLAY_NAME,
     OVERLAY_ORIENTATIONS,
     OVERLAY_POSITIONS,
+    delete_profile,
+    list_profiles,
     load as load_settings,
+    load_profile,
     normalize_orientation,
     normalize_position,
     save as save_settings,
+    save_profile,
 )
+from .update_checker import UpdateChecker
 
 APP_ICON = "steelvoicemix"
 APP_ICON_FALLBACK = "audio-headset"
@@ -100,6 +107,8 @@ class MixerGUI(QMainWindow):
         if self.has_tray:
             self._build_tray()
         self._start_daemon_client()
+        self._update_checker = None
+        self._start_update_check()
 
     # ---------------------------------------------------------------- layout
 
@@ -225,6 +234,38 @@ class MixerGUI(QMainWindow):
         self.hdmi_btn.clicked.connect(self._toggle_hdmi_sink)
         hdmi_row.addWidget(self.hdmi_btn, 1)
         layout.addLayout(hdmi_row)
+
+        # Audio profile bar — load / save / delete named snapshots of the
+        # GUI overlay settings + sink toggles.
+        profile_row = QHBoxLayout()
+        profile_row.addWidget(QLabel("Profile:"))
+        self.profile_combo = QComboBox()
+        self.profile_combo.setMinimumWidth(120)
+        self._refresh_profile_combo()
+        profile_row.addWidget(self.profile_combo, 1)
+        load_btn = QPushButton("Load")
+        load_btn.clicked.connect(self._load_selected_profile)
+        save_btn = QPushButton("Save…")
+        save_btn.clicked.connect(self._save_new_profile)
+        del_btn = QPushButton("Delete")
+        del_btn.clicked.connect(self._delete_selected_profile)
+        profile_row.addWidget(load_btn)
+        profile_row.addWidget(save_btn)
+        profile_row.addWidget(del_btn)
+        layout.addLayout(profile_row)
+
+        # Update status — shows current state of the GitHub-releases check.
+        # Auto-runs once at startup; clicking refreshes (force, ignore cache).
+        update_row = QHBoxLayout()
+        self.update_label = QLabel("Up to date")
+        self.update_label.setStyleSheet("color: #888; font-size: 10px;")
+        update_btn = QPushButton("Check for updates")
+        update_btn.setFlat(True)
+        update_btn.setStyleSheet("font-size: 10px;")
+        update_btn.clicked.connect(self._force_update_check)
+        update_row.addWidget(self.update_label, 1)
+        update_row.addWidget(update_btn)
+        layout.addLayout(update_row)
 
         # About button — row aligned right
         about_row = QHBoxLayout()
@@ -474,3 +515,127 @@ class MixerGUI(QMainWindow):
             self.hdmi_btn.setEnabled(True)
 
         QTimer.singleShot(600, reenable)
+
+    # -------------------------------------------------------------- profiles
+
+    def _refresh_profile_combo(self):
+        names = list_profiles(self.settings)
+        self.profile_combo.clear()
+        if names:
+            self.profile_combo.addItems(names)
+        else:
+            self.profile_combo.addItem("(no saved profiles)")
+            self.profile_combo.setEnabled(False)
+            return
+        self.profile_combo.setEnabled(True)
+
+    def _save_new_profile(self):
+        name, ok = QInputDialog.getText(
+            self, "Save profile", "Profile name:"
+        )
+        if not ok or not name.strip():
+            return
+        try:
+            save_profile(
+                self.settings,
+                name.strip(),
+                media_enabled=self._media_sink_enabled,
+                hdmi_enabled=self._hdmi_sink_enabled,
+            )
+        except ValueError as e:
+            QMessageBox.warning(self, "Invalid profile name", str(e))
+            return
+        self._refresh_profile_combo()
+        idx = self.profile_combo.findText(name.strip())
+        if idx >= 0:
+            self.profile_combo.setCurrentIndex(idx)
+
+    def _load_selected_profile(self):
+        name = self.profile_combo.currentText()
+        if not name or name.startswith("("):
+            return
+        profile = load_profile(self.settings, name)
+        if profile is None:
+            return
+        # Re-render the GUI controls from the (now updated) settings dict.
+        self.overlay_check.setChecked(self.settings.get("overlay", True))
+        idx = self.position_combo.findText(
+            normalize_position(self.settings.get("overlay_position", "top-right"))
+            .replace("-", " ")
+            .title()
+        )
+        if idx >= 0:
+            self.position_combo.setCurrentIndex(idx)
+        idx = self.orient_combo.findText(
+            normalize_orientation(
+                self.settings.get("overlay_orientation", "horizontal")
+            ).capitalize()
+        )
+        if idx >= 0:
+            self.orient_combo.setCurrentIndex(idx)
+        self.overlay.set_orientation(
+            normalize_orientation(self.settings.get("overlay_orientation", "horizontal"))
+        )
+
+        # Apply daemon-side sink toggles via the existing socket commands so
+        # the daemon's persisted state stays consistent with the profile.
+        sinks = profile.get("sinks", {}) if isinstance(profile, dict) else {}
+        want_media = bool(sinks.get("media", False))
+        want_hdmi = bool(sinks.get("hdmi", False))
+        if want_media != self._media_sink_enabled:
+            self.daemon_client.send_command(
+                "add-media-sink" if want_media else "remove-media-sink"
+            )
+        if want_hdmi != self._hdmi_sink_enabled:
+            self.daemon_client.send_command(
+                "add-hdmi-sink" if want_hdmi else "remove-hdmi-sink"
+            )
+
+    def _delete_selected_profile(self):
+        name = self.profile_combo.currentText()
+        if not name or name.startswith("("):
+            return
+        ok = QMessageBox.question(
+            self,
+            "Delete profile",
+            f"Delete profile '{name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if ok != QMessageBox.Yes:
+            return
+        delete_profile(self.settings, name)
+        self._refresh_profile_combo()
+
+    # -------------------------------------------------------- update checker
+
+    def _start_update_check(self):
+        """Spawn the background update check on first show."""
+        if getattr(self, "_update_checker", None) is not None:
+            return
+        self._update_checker = UpdateChecker(self)
+        self._update_checker.update_available.connect(self._on_update_available)
+        self._update_checker.no_update.connect(self._on_no_update)
+        self._update_checker.failed.connect(self._on_update_failed)
+        self.update_label.setText("Checking for updates…")
+        self.update_label.setStyleSheet("color: #888; font-size: 10px;")
+        self._update_checker.start()
+
+    def _force_update_check(self):
+        """Forced re-check from the user-visible button."""
+        self._update_checker = None
+        self.update_label.setText("Checking…")
+        self._start_update_check()
+
+    def _on_update_available(self, latest_tag: str, current_version: str):
+        self.update_label.setText(
+            f"Update available: {latest_tag} (you have {current_version})"
+        )
+        self.update_label.setStyleSheet("color: #FF9800; font-size: 10px; font-weight: bold;")
+
+    def _on_no_update(self):
+        self.update_label.setText("Up to date")
+        self.update_label.setStyleSheet("color: #888; font-size: 10px;")
+
+    def _on_update_failed(self):
+        self.update_label.setText("Update check failed (offline?)")
+        self.update_label.setStyleSheet("color: #888; font-size: 10px;")

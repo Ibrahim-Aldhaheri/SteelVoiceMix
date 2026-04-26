@@ -10,6 +10,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
+from .i18n import setup_translator
 from .main_window import MixerGUI
 from .settings import APP_NAME
 
@@ -76,6 +77,8 @@ def main() -> None:
     app.setDesktopFileName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
     app.setStyle("fusion")
+    # Keep a reference so the translator isn't GC'd; no-op if no .qm matches.
+    app._translator = setup_translator(app)
 
     # Make Ctrl+C in the launching terminal quit cleanly. Python signal
     # handlers only run when the interpreter gets a chance between Qt events,
