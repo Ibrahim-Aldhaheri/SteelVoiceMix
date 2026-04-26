@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSystemTrayIcon,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -51,6 +53,97 @@ APP_ICON_FALLBACK = "audio-headset"
 log = logging.getLogger(__name__)
 
 
+# Global stylesheet — gives the window a more cohesive look without
+# overriding the user's system theme too aggressively. Most of these
+# rules just tighten spacing, give buttons consistent padding, and
+# soften borders. The progress bars keep their explicit per-bar styles
+# (chunk colours) — those override these defaults where needed.
+_GLOBAL_QSS = """
+QMainWindow {
+    background-color: palette(window);
+}
+QTabWidget::pane {
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    background: palette(base);
+    top: -1px;
+}
+QTabBar::tab {
+    background: palette(window);
+    border: 1px solid palette(mid);
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    padding: 6px 14px;
+    min-width: 60px;
+    color: palette(text);
+}
+QTabBar::tab:selected {
+    background: palette(base);
+    font-weight: bold;
+}
+QTabBar::tab:!selected:hover {
+    background: palette(midlight);
+}
+QPushButton {
+    padding: 5px 12px;
+    border-radius: 4px;
+    border: 1px solid palette(mid);
+    background: palette(button);
+    min-height: 22px;
+}
+QPushButton:hover {
+    background: palette(midlight);
+}
+QPushButton:pressed {
+    background: palette(mid);
+}
+QPushButton:disabled {
+    color: palette(mid);
+}
+QPushButton:flat {
+    border: none;
+    background: transparent;
+}
+QComboBox {
+    padding: 4px 8px;
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+    min-height: 22px;
+}
+QCheckBox {
+    spacing: 8px;
+}
+QLabel#section-title {
+    font-weight: bold;
+    font-size: 11px;
+    color: palette(mid);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 4px;
+}
+QFrame[divider="true"] {
+    background: palette(mid);
+    max-height: 1px;
+    min-height: 1px;
+    margin: 4px 0;
+}
+"""
+
+
+def _section_title(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setObjectName("section-title")
+    return label
+
+
+def _divider() -> QFrame:
+    line = QFrame()
+    line.setFrameShape(QFrame.HLine)
+    line.setProperty("divider", True)
+    return line
+
+
 def _app_icon() -> QIcon:
     """Return our installed icon, falling back to the generic theme icon
     when running from a source checkout that hasn't been installed yet."""
@@ -61,8 +154,9 @@ class MixerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(DISPLAY_NAME)
-        self.setFixedSize(360, 480)
+        self.setFixedSize(440, 560)
         self.setWindowIcon(_app_icon())
+        self.setStyleSheet(_GLOBAL_QSS)
 
         self.signals = DaemonSignals()
         self.signals.connected.connect(self._on_connected)
@@ -119,30 +213,73 @@ class MixerGUI(QMainWindow):
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        root = QVBoxLayout(central)
+        root.setSpacing(8)
+        root.setContentsMargins(12, 12, 12, 12)
 
+        # Persistent header — connection status always visible above the tabs.
         self.status_label = QLabel("🔍 Connecting to daemon...")
         self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("font-size: 13px; font-weight: bold;")
-        layout.addWidget(self.status_label)
+        self.status_label.setStyleSheet("font-size: 13px; font-weight: bold; padding: 4px;")
+        root.addWidget(self.status_label)
 
-        # Game volume
+        tabs = QTabWidget()
+        tabs.addTab(self._build_home_tab(), "Home")
+        tabs.addTab(self._build_sinks_tab(), "Sinks")
+        tabs.addTab(self._build_settings_tab(), "Settings")
+        root.addWidget(tabs, 1)
+
+        # Persistent footer — update status + check-now + about, always visible.
+        footer = QHBoxLayout()
+        footer.setSpacing(8)
+        self.update_label = QLabel("Up to date")
+        self.update_label.setStyleSheet("color: palette(mid); font-size: 10px;")
+        update_btn = QPushButton("Check for updates")
+        update_btn.setFlat(True)
+        update_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
+        update_btn.clicked.connect(self._force_update_check)
+        self.about_btn = QPushButton("About…")
+        self.about_btn.setFlat(True)
+        self.about_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
+        self.about_btn.clicked.connect(self._show_about)
+        footer.addWidget(self.update_label, 1)
+        footer.addWidget(update_btn)
+        footer.addWidget(self.about_btn)
+        root.addLayout(footer)
+
+        if self._wayland:
+            # Launcher forces xcb; this only fires if the user has overridden
+            # that, usually knowingly. Keep the hint terse.
+            hint = QLabel(
+                "⚠ Wayland session detected. The overlay may appear below "
+                "fullscreen windows. Unset QT_QPA_PLATFORM or re-run the "
+                "installer to restore XCB."
+            )
+            hint.setWordWrap(True)
+            hint.setStyleSheet("color: #FF9800; font-size: 10px;")
+            root.addWidget(hint)
+
+    # ---------------------------------------------------------------- tabs
+
+    def _build_home_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(10)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        layout.addWidget(_section_title("ChatMix"))
+
         game_row = QHBoxLayout()
         game_label = QLabel("🎮 Game")
         game_label.setFixedWidth(70)
-        game_label.setStyleSheet("font-size: 12px;")
         self.game_bar = self._make_bar("#4CAF50")
         game_row.addWidget(game_label)
         game_row.addWidget(self.game_bar)
         layout.addLayout(game_row)
 
-        # Chat volume
         chat_row = QHBoxLayout()
         chat_label = QLabel("💬 Chat")
         chat_label.setFixedWidth(70)
-        chat_label.setStyleSheet("font-size: 12px;")
         self.chat_bar = self._make_bar("#2196F3")
         chat_row.addWidget(chat_label)
         chat_row.addWidget(self.chat_bar)
@@ -150,40 +287,100 @@ class MixerGUI(QMainWindow):
 
         self.dial_label = QLabel("⚖️ Balanced")
         self.dial_label.setAlignment(Qt.AlignCenter)
-        self.dial_label.setStyleSheet("font-size: 11px; color: #888;")
+        self.dial_label.setStyleSheet("font-size: 11px; color: palette(mid);")
         layout.addWidget(self.dial_label)
 
-        # Battery
+        layout.addWidget(_divider())
+        layout.addWidget(_section_title("Headset"))
+
         battery_row = QHBoxLayout()
         self.battery_label = QLabel("🔋 Battery")
         self.battery_label.setFixedWidth(90)
-        self.battery_label.setStyleSheet("font-size: 12px;")
         self.battery_bar = QProgressBar()
         self.battery_bar.setRange(0, 100)
         self.battery_bar.setValue(0)
         self.battery_bar.setTextVisible(True)
         self.battery_bar.setFormat("—")
         self.battery_bar.setStyleSheet(
-            """
-            QProgressBar { border: 1px solid #555; border-radius: 4px; height: 22px; }
-            QProgressBar::chunk { background: #FF9800; border-radius: 3px; }
-            """
+            "QProgressBar { border: 1px solid palette(mid); border-radius: 4px; height: 22px; }"
+            "QProgressBar::chunk { background: #FF9800; border-radius: 3px; }"
         )
         battery_row.addWidget(self.battery_label)
         battery_row.addWidget(self.battery_bar)
         layout.addLayout(battery_row)
 
-        # Settings
-        settings_layout = QVBoxLayout()
-        settings_layout.setSpacing(6)
+        layout.addStretch(1)
+        return page
+
+    def _build_sinks_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(10)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        layout.addWidget(_section_title("Virtual Sinks"))
+
+        media_row = QHBoxLayout()
+        media_lbl = QLabel("Media")
+        media_lbl.setFixedWidth(70)
+        self.media_btn = QPushButton("Add Media")
+        self.media_btn.clicked.connect(self._toggle_media_sink)
+        media_row.addWidget(media_lbl)
+        media_row.addWidget(self.media_btn, 1)
+        layout.addLayout(media_row)
+
+        hdmi_row = QHBoxLayout()
+        hdmi_lbl = QLabel("HDMI")
+        hdmi_lbl.setFixedWidth(70)
+        self.hdmi_btn = QPushButton("Add HDMI")
+        self.hdmi_btn.clicked.connect(self._toggle_hdmi_sink)
+        hdmi_row.addWidget(hdmi_lbl)
+        hdmi_row.addWidget(self.hdmi_btn, 1)
+        layout.addLayout(hdmi_row)
+
+        sinks_help = QLabel(
+            "Media and HDMI sinks bypass the ChatMix dial — useful for "
+            "music, browsers, or routing audio to a TV/AVR independently "
+            "of the headset."
+        )
+        sinks_help.setStyleSheet("font-size: 10px; color: palette(mid); padding-top: 4px;")
+        sinks_help.setWordWrap(True)
+        layout.addWidget(sinks_help)
+
+        layout.addWidget(_divider())
+        layout.addWidget(_section_title("Auto-Routing"))
+
+        self.auto_route_check = QCheckBox(
+            "Route browsers and media players to SteelMedia automatically"
+        )
+        self.auto_route_check.setToolTip(
+            "When enabled, the daemon moves new browser and media-player "
+            "audio streams (Firefox, Chromium, mpv, VLC…) to the SteelMedia "
+            "sink so they bypass the ChatMix dial. Manual moves stick — "
+            "the daemon only acts on first-seen streams."
+        )
+        self.auto_route_check.toggled.connect(self._toggle_auto_route_browsers)
+        layout.addWidget(self.auto_route_check)
+
+        layout.addStretch(1)
+        return page
+
+    def _build_settings_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(10)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        layout.addWidget(_section_title("Overlay"))
 
         self.overlay_check = QCheckBox("Show overlay when dial is turned")
         self.overlay_check.setChecked(self.settings.get("overlay", True))
         self.overlay_check.toggled.connect(self._toggle_overlay)
-        settings_layout.addWidget(self.overlay_check)
+        layout.addWidget(self.overlay_check)
 
         position_row = QHBoxLayout()
-        position_row.addWidget(QLabel("Overlay position:"))
+        pos_lbl = QLabel("Position")
+        pos_lbl.setFixedWidth(70)
         self.position_combo = QComboBox()
         self.position_combo.addItems(
             ["Top-right", "Top-left", "Bottom-right", "Bottom-left", "Center"]
@@ -196,11 +393,13 @@ class MixerGUI(QMainWindow):
         if idx >= 0:
             self.position_combo.setCurrentIndex(idx)
         self.position_combo.currentTextChanged.connect(self._change_position)
+        position_row.addWidget(pos_lbl)
         position_row.addWidget(self.position_combo, 1)
-        settings_layout.addLayout(position_row)
+        layout.addLayout(position_row)
 
         orient_row = QHBoxLayout()
-        orient_row.addWidget(QLabel("Overlay style:"))
+        ori_lbl = QLabel("Style")
+        ori_lbl.setFixedWidth(70)
         self.orient_combo = QComboBox()
         self.orient_combo.addItems(["Horizontal", "Vertical"])
         idx = self.orient_combo.findText(
@@ -211,102 +410,51 @@ class MixerGUI(QMainWindow):
         if idx >= 0:
             self.orient_combo.setCurrentIndex(idx)
         self.orient_combo.currentTextChanged.connect(self._change_orientation)
+        orient_row.addWidget(ori_lbl)
         orient_row.addWidget(self.orient_combo, 1)
-        settings_layout.addLayout(orient_row)
+        layout.addLayout(orient_row)
+
+        layout.addWidget(_divider())
+        layout.addWidget(_section_title("Startup"))
 
         self.autostart_check = QCheckBox("Start with system")
         self.autostart_check.setChecked(self.settings.get("autostart", True))
         self.autostart_check.toggled.connect(self._toggle_autostart)
-        settings_layout.addWidget(self.autostart_check)
+        layout.addWidget(self.autostart_check)
 
-        layout.addLayout(settings_layout)
+        layout.addWidget(_divider())
+        layout.addWidget(_section_title("Audio Profiles"))
 
-        # Media sink toggle — add or remove the SteelMedia virtual output
-        # without restarting the daemon. Independent of the dial.
-        media_row = QHBoxLayout()
-        media_row.addWidget(QLabel("Media sink:"))
-        self.media_btn = QPushButton("Add Media")
-        self.media_btn.clicked.connect(self._toggle_media_sink)
-        media_row.addWidget(self.media_btn, 1)
-        layout.addLayout(media_row)
-
-        # HDMI sink toggle — virtual output that loops to a host HDMI sink
-        # (TV / AVR / monitor speakers) instead of the headset.
-        hdmi_row = QHBoxLayout()
-        hdmi_row.addWidget(QLabel("HDMI sink:"))
-        self.hdmi_btn = QPushButton("Add HDMI")
-        self.hdmi_btn.clicked.connect(self._toggle_hdmi_sink)
-        hdmi_row.addWidget(self.hdmi_btn, 1)
-        layout.addLayout(hdmi_row)
-
-        # Auto-route browser/media-player streams to SteelMedia.
-        self.auto_route_check = QCheckBox(
-            "Auto-route browsers / media players to SteelMedia"
-        )
-        self.auto_route_check.setToolTip(
-            "When enabled, the daemon moves new browser and media-player "
-            "audio streams (Firefox, Chromium, mpv, VLC…) to the SteelMedia "
-            "sink so they bypass the ChatMix dial. Manual moves stick — "
-            "the daemon only acts on first-seen streams."
-        )
-        self.auto_route_check.toggled.connect(self._toggle_auto_route_browsers)
-        layout.addWidget(self.auto_route_check)
-
-        # Audio profile bar — load / save / delete named snapshots of the
-        # GUI overlay settings + sink toggles.
         profile_row = QHBoxLayout()
-        profile_row.addWidget(QLabel("Profile:"))
+        profile_row.addWidget(QLabel("Saved:"))
         self.profile_combo = QComboBox()
-        self.profile_combo.setMinimumWidth(120)
+        self.profile_combo.setMinimumWidth(140)
         self._refresh_profile_combo()
         profile_row.addWidget(self.profile_combo, 1)
+        layout.addLayout(profile_row)
+
+        profile_btns = QHBoxLayout()
         load_btn = QPushButton("Load")
         load_btn.clicked.connect(self._load_selected_profile)
         save_btn = QPushButton("Save…")
         save_btn.clicked.connect(self._save_new_profile)
         del_btn = QPushButton("Delete")
         del_btn.clicked.connect(self._delete_selected_profile)
-        profile_row.addWidget(load_btn)
-        profile_row.addWidget(save_btn)
-        profile_row.addWidget(del_btn)
-        layout.addLayout(profile_row)
+        profile_btns.addWidget(load_btn)
+        profile_btns.addWidget(save_btn)
+        profile_btns.addWidget(del_btn)
+        layout.addLayout(profile_btns)
 
-        # Update status — shows current state of the GitHub-releases check.
-        # Auto-runs once at startup; clicking refreshes (force, ignore cache).
-        update_row = QHBoxLayout()
-        self.update_label = QLabel("Up to date")
-        self.update_label.setStyleSheet("color: #888; font-size: 10px;")
-        update_btn = QPushButton("Check for updates")
-        update_btn.setFlat(True)
-        update_btn.setStyleSheet("font-size: 10px;")
-        update_btn.clicked.connect(self._force_update_check)
-        update_row.addWidget(self.update_label, 1)
-        update_row.addWidget(update_btn)
-        layout.addLayout(update_row)
+        profile_help = QLabel(
+            "A profile snapshots overlay options + Media/HDMI sink toggles.\n"
+            "Save the current setup, switch quickly, restore in one click."
+        )
+        profile_help.setStyleSheet("font-size: 10px; color: palette(mid); padding-top: 4px;")
+        profile_help.setWordWrap(True)
+        layout.addWidget(profile_help)
 
-        # About button — row aligned right
-        about_row = QHBoxLayout()
-        about_row.addStretch()
-        self.about_btn = QPushButton("About…")
-        self.about_btn.setFlat(True)
-        self.about_btn.setStyleSheet("color: #888; font-size: 11px;")
-        self.about_btn.clicked.connect(self._show_about)
-        about_row.addWidget(self.about_btn)
-        layout.addLayout(about_row)
-
-        layout.addStretch()
-
-        if self._wayland:
-            # Launcher forces xcb; this only fires if the user has overridden
-            # that, usually knowingly. Keep the hint terse.
-            hint = QLabel(
-                "⚠ Wayland session detected. The overlay may appear below "
-                "fullscreen windows. Unset QT_QPA_PLATFORM or re-run the "
-                "installer to restore XCB."
-            )
-            hint.setWordWrap(True)
-            hint.setStyleSheet("color: #FF9800; font-size: 10px;")
-            layout.addWidget(hint)
+        layout.addStretch(1)
+        return page
 
     def _make_bar(self, chunk_color: str) -> QProgressBar:
         bar = QProgressBar()
@@ -315,10 +463,9 @@ class MixerGUI(QMainWindow):
         bar.setTextVisible(True)
         bar.setFormat("%v%")
         bar.setStyleSheet(
-            f"""
-            QProgressBar {{ border: 1px solid #555; border-radius: 4px; height: 22px; }}
-            QProgressBar::chunk {{ background: {chunk_color}; border-radius: 3px; }}
-            """
+            "QProgressBar { border: 1px solid palette(mid); border-radius: 4px; "
+            "height: 22px; text-align: center; }"
+            f"QProgressBar::chunk {{ background: {chunk_color}; border-radius: 3px; }}"
         )
         return bar
 
@@ -429,10 +576,9 @@ class MixerGUI(QMainWindow):
             chunk = "#4CAF50" if level > 50 else "#FF9800" if level > 20 else "#f44336"
 
         self.battery_bar.setStyleSheet(
-            f"""
-            QProgressBar {{ border: 1px solid #555; border-radius: 4px; height: 22px; }}
-            QProgressBar::chunk {{ background: {chunk}; border-radius: 3px; }}
-            """
+            "QProgressBar { border: 1px solid palette(mid); border-radius: 4px; "
+            "height: 22px; text-align: center; }"
+            f"QProgressBar::chunk {{ background: {chunk}; border-radius: 3px; }}"
         )
         if self.has_tray:
             self.tray.setToolTip(f"{DISPLAY_NAME} — 🔋 {level}% ({status})")
