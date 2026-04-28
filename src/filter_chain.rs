@@ -110,7 +110,6 @@ context.modules = [
             playback.props = {{
                 node.name   = "output.{name}"
                 node.target = "{target}"
-                node.passive = true
             }}
         }}
     }}
