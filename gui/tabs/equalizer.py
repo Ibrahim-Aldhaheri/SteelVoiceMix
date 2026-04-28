@@ -30,6 +30,8 @@ from ..eq_presets import (
     find_preset,
     is_user_preset,
     list_presets,
+    next_custom_name,
+    rename_user_preset,
     save_user_preset,
 )
 from ..widgets import section_title
@@ -117,6 +119,14 @@ class EqualizerTab(QWidget):
         }
         self._current_channel: str = "game"
 
+        # Track which preset is "active" per channel — the one currently
+        # selected in the preset combo, or empty if the user has been
+        # tweaking sliders without loading anything. Drives the
+        # auto-fork-to-Custom-N behaviour: if the user starts editing
+        # while a built-in preset is active, we fork to a fresh Custom N
+        # so the built-in stays clean.
+        self._active_preset_by_channel: dict[str, str] = {"game": "", "chat": ""}
+
         # Slider commits are debounced. While the user drags, we just
         # update the visible label — sending a daemon command per pixel
         # of slider travel queues hundreds of chain respawns and stalls
@@ -183,11 +193,15 @@ class EqualizerTab(QWidget):
         self.preset_load_btn.clicked.connect(self._on_preset_load)
         self.preset_save_btn = QPushButton("Save…")
         self.preset_save_btn.clicked.connect(self._on_preset_save)
+        self.preset_rename_btn = QPushButton("Rename…")
+        self.preset_rename_btn.clicked.connect(self._on_preset_rename)
+        self.preset_rename_btn.setEnabled(False)
         self.preset_delete_btn = QPushButton("Delete")
         self.preset_delete_btn.clicked.connect(self._on_preset_delete)
         self.preset_delete_btn.setEnabled(False)
         preset_row.addWidget(self.preset_load_btn)
         preset_row.addWidget(self.preset_save_btn)
+        preset_row.addWidget(self.preset_rename_btn)
         preset_row.addWidget(self.preset_delete_btn)
         layout.addLayout(preset_row)
         # Populate the combo for the initial channel before any signals fire.
@@ -302,13 +316,16 @@ class EqualizerTab(QWidget):
     def _on_slider_changed(self, band: int, value_tenths: int, label: QLabel) -> None:
         """User moved a slider. Update the live value label, store the
         new value in the current channel's bands array, and queue a
-        debounced daemon commit."""
+        debounced daemon commit. If the user is editing on top of a
+        built-in or no preset, fork to a fresh Custom N — once — before
+        any commits go out, so the original preset stays untouched."""
         gain_db = value_tenths / 10.0
         sign = "+" if gain_db > 0 else ""
         label.setText(f"{sign}{gain_db:.1f}")
         bands = self._bands_by_channel[self._current_channel]
         if 1 <= band <= len(bands):
             bands[band - 1]["gain"] = gain_db
+        self._maybe_fork_to_custom()
         self._pending_band_value[band] = value_tenths
         self._commit_timer.start()
 
@@ -320,7 +337,8 @@ class EqualizerTab(QWidget):
 
     def _commit_pending_changes(self) -> None:
         """Flush queued band-gain changes to the daemon for the currently
-        selected channel."""
+        selected channel. If we've forked to a Custom preset, persist the
+        updated bands so the saved file stays in sync with the sliders."""
         channel = self._current_channel
         for band, value_tenths in self._pending_band_value.items():
             gain_db = value_tenths / 10.0
@@ -331,6 +349,49 @@ class EqualizerTab(QWidget):
                 gain_db=gain_db,
             )
         self._pending_band_value.clear()
+        # Auto-save: if a user preset is currently active, write the
+        # latest band state to its file so the dropdown stays a faithful
+        # snapshot of what's playing. Built-ins are read-only, so skip.
+        active = self._active_preset_by_channel.get(channel, "")
+        if active and is_user_preset(active, channel):
+            try:
+                save_user_preset(
+                    active, channel, self._bands_by_channel[channel]
+                )
+            except ValueError:
+                # Sanitisation rejected the name, somehow. Don't surface
+                # a dialog mid-drag — log and move on.
+                pass
+
+    def _maybe_fork_to_custom(self) -> None:
+        """If the user just started editing while a built-in (or nothing)
+        is selected, fork the current bands into a new Custom N user
+        preset and select it. Subsequent edits then update Custom N in
+        place via the auto-save in `_commit_pending_changes`. Idempotent:
+        if a Custom N is already active, no-op."""
+        channel = self._current_channel
+        active = self._active_preset_by_channel.get(channel, "")
+        if active and is_user_preset(active, channel):
+            return
+        new_name = next_custom_name(channel)
+        try:
+            save_user_preset(
+                new_name, channel, self._bands_by_channel[channel]
+            )
+        except ValueError:
+            return
+        self._active_preset_by_channel[channel] = new_name
+        was_blocked = self.preset_combo.blockSignals(True)
+        try:
+            self.preset_combo.clear()
+            for preset in list_presets(channel):
+                self.preset_combo.addItem(preset["name"])
+            idx = self.preset_combo.findText(new_name)
+            if idx >= 0:
+                self.preset_combo.setCurrentIndex(idx)
+        finally:
+            self.preset_combo.blockSignals(was_blocked)
+        self._update_action_buttons()
 
     def _on_channel_changed(self, text: str) -> None:
         """Combo box changed — load the selected channel's stored bands
@@ -354,26 +415,32 @@ class EqualizerTab(QWidget):
     def _refresh_preset_combo(self) -> None:
         """Rebuild the preset combo for the current channel. Block
         signals while we mutate the model so the active selection
-        change doesn't fire spurious 'load this preset' edits."""
+        change doesn't fire spurious 'load this preset' edits.
+        Restores the active-preset selection if there is one."""
         was_blocked = self.preset_combo.blockSignals(True)
         try:
             self.preset_combo.clear()
             for preset in list_presets(self._current_channel):
                 self.preset_combo.addItem(preset["name"])
+            active = self._active_preset_by_channel.get(self._current_channel, "")
+            if active:
+                idx = self.preset_combo.findText(active)
+                if idx >= 0:
+                    self.preset_combo.setCurrentIndex(idx)
         finally:
             self.preset_combo.blockSignals(was_blocked)
-        self._update_delete_button()
+        self._update_action_buttons()
 
     def _on_preset_text_changed(self, _text: str) -> None:
-        # Delete is only meaningful for user-saved presets — toggle it
-        # whenever the dropdown's selected name changes.
-        self._update_delete_button()
+        # Rename + Delete are only meaningful for user-saved presets —
+        # toggle them whenever the dropdown's selected name changes.
+        self._update_action_buttons()
 
-    def _update_delete_button(self) -> None:
+    def _update_action_buttons(self) -> None:
         name = self.preset_combo.currentText().strip()
-        self.preset_delete_btn.setEnabled(
-            bool(name) and is_user_preset(name, self._current_channel)
-        )
+        editable = bool(name) and is_user_preset(name, self._current_channel)
+        self.preset_delete_btn.setEnabled(editable)
+        self.preset_rename_btn.setEnabled(editable)
 
     def _on_preset_load(self) -> None:
         name = self.preset_combo.currentText().strip()
@@ -399,6 +466,10 @@ class EqualizerTab(QWidget):
             channel=self._current_channel,
             bands=preset["bands"],
         )
+        # Mark this preset active so a subsequent slider edit knows
+        # whether to fork (built-in) or update in place (user preset).
+        self._active_preset_by_channel[self._current_channel] = name
+        self._update_action_buttons()
 
     def _on_preset_save(self) -> None:
         suggested = self.preset_combo.currentText().strip() or "My Preset"
@@ -419,11 +490,28 @@ class EqualizerTab(QWidget):
         except ValueError as e:
             QMessageBox.warning(self, "Could not save preset", str(e))
             return
+        self._active_preset_by_channel[self._current_channel] = name.strip()
         self._refresh_preset_combo()
-        # Reselect the saved name so Delete becomes available immediately.
-        idx = self.preset_combo.findText(name.strip())
-        if idx >= 0:
-            self.preset_combo.setCurrentIndex(idx)
+
+    def _on_preset_rename(self) -> None:
+        old_name = self.preset_combo.currentText().strip()
+        if not old_name or not is_user_preset(old_name, self._current_channel):
+            return
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Rename preset",
+            "New name:",
+            text=old_name,
+        )
+        if not ok or not new_name.strip() or new_name.strip() == old_name:
+            return
+        try:
+            rename_user_preset(old_name, new_name.strip(), self._current_channel)
+        except ValueError as e:
+            QMessageBox.warning(self, "Could not rename", str(e))
+            return
+        self._active_preset_by_channel[self._current_channel] = new_name.strip()
+        self._refresh_preset_combo()
 
     def _on_preset_delete(self) -> None:
         name = self.preset_combo.currentText().strip()
@@ -438,6 +526,8 @@ class EqualizerTab(QWidget):
         if ok != QMessageBox.Yes:
             return
         delete_user_preset(name, self._current_channel)
+        if self._active_preset_by_channel.get(self._current_channel) == name:
+            self._active_preset_by_channel[self._current_channel] = ""
         self._refresh_preset_combo()
 
     def _render_sliders_for_channel(self, channel: str) -> None:

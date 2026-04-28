@@ -235,3 +235,37 @@ def find_preset(name: str, channel: str) -> dict | None:
         if preset["name"] == name:
             return preset
     return None
+
+
+def next_custom_name(channel: str) -> str:
+    """Pick the next unused 'Custom N' label for `channel`. Used by the
+    EQ tab when the user starts editing on top of a built-in preset —
+    we don't want to overwrite the built-in, so we fork to the lowest
+    Custom slot that isn't already taken (built-in OR user)."""
+    existing = {p["name"] for p in list_presets(channel)}
+    n = 1
+    while f"Custom {n}" in existing:
+        n += 1
+    return f"Custom {n}"
+
+
+def rename_user_preset(old: str, new: str, channel: str) -> str:
+    """Rename a user preset on disk. Returns the actual saved name (post-
+    sanitisation). Raises ValueError on an invalid new name or if the
+    target name already exists. The old file is deleted only after the
+    new one writes successfully so a crash mid-rename can't lose data."""
+    if not is_user_preset(old, channel):
+        raise ValueError(f"'{old}' is a built-in preset and can't be renamed.")
+    safe_new = _safe_filename(new)
+    if not safe_new:
+        raise ValueError("New name must contain at least one letter or digit.")
+    new_path = user_preset_dir(channel) / f"{safe_new}.json"
+    if new_path.exists():
+        raise ValueError(f"A preset called '{safe_new}' already exists.")
+
+    preset = find_preset(old, channel)
+    if preset is None:
+        raise ValueError(f"Preset '{old}' was not found.")
+    save_user_preset(new, channel, preset["bands"])
+    delete_user_preset(old, channel)
+    return safe_new
