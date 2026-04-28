@@ -186,6 +186,7 @@ class MixerGUI(QMainWindow):
         )
         self.signals.eq_enabled_changed.connect(self._on_eq_enabled_changed)
         self.signals.eq_band_gains_changed.connect(self._on_eq_band_gains_changed)
+        self.signals.eq_full_state.connect(self._on_eq_full_state)
         # Track the daemon's reported sink-toggle states so the buttons
         # render correctly. Daemon defaults are "off until the user opts in"
         # so we start with False; the first status event corrects them.
@@ -193,10 +194,18 @@ class MixerGUI(QMainWindow):
         self._hdmi_sink_enabled = False
         self._auto_route_browsers = False
         self._eq_enabled = False
-        self._eq_band_gains = [0.0] * 6
-        # Slider widgets, populated when the Sinks tab is built. We cache
-        # them so _on_eq_band_gains_changed can update them without
-        # triggering signal storms.
+        # Sonar-style per-channel EQ: separate gain arrays for Game and
+        # Chat. The sliders display whichever channel is currently
+        # selected via the channel combo box; switching the combo loads
+        # that channel's stored gains into the sliders.
+        self._eq_gains_by_channel: dict[str, list[float]] = {
+            "game": [0.0] * 6,
+            "chat": [0.0] * 6,
+        }
+        self._eq_current_channel: str = "game"
+        # Slider widgets, populated in _build_eq_tab. Cached so the
+        # channel-switch and daemon-broadcast handlers can update them
+        # without triggering signal storms.
         self.eq_band_sliders: list[QSlider] = []
         self.eq_band_value_labels: list[QLabel] = []
 
@@ -419,6 +428,20 @@ class MixerGUI(QMainWindow):
         )
         self.eq_check.toggled.connect(self._toggle_eq_enabled)
         layout.addWidget(self.eq_check)
+
+        # Sonar-style per-channel selector: tune Game and Chat
+        # independently. Sliders display the selected channel's gains;
+        # switching the combo loads that channel's stored values.
+        ch_row = QHBoxLayout()
+        ch_row.addWidget(QLabel("Channel:"))
+        self.eq_channel_combo = QComboBox()
+        self.eq_channel_combo.addItems(["Game", "Chat"])
+        self.eq_channel_combo.setMinimumWidth(120)
+        self.eq_channel_combo.currentTextChanged.connect(
+            self._on_eq_channel_changed
+        )
+        ch_row.addWidget(self.eq_channel_combo, 1)
+        layout.addLayout(ch_row)
 
         # Bands match PipeWire's canonical sink-eq6.conf shape:
         # low shelf / peaking x4 / high shelf at 100, 100, 500, 2k, 5k, 5k Hz.
@@ -831,41 +854,59 @@ class MixerGUI(QMainWindow):
         self.daemon_client.send_command("set-eq-enabled", enabled=bool(checked))
 
     def _on_eq_slider_changed(self, band: int, value_tenths: int, label: QLabel):
-        """User moved a slider. Update the live value label and queue a
-        debounced daemon commit. While the user is actively dragging, no
-        commands go to the daemon — that's what was producing minute-long
-        lag on slider drag (one chain respawn queued per pixel of travel).
-        The 250 ms timer collapses rapid changes into a single command per
-        band per pause."""
+        """User moved a slider. Update the live value label, store the
+        new value in the current channel's gain array, and queue a
+        debounced daemon commit. While the user is actively dragging,
+        no commands go to the daemon — that's what was producing
+        minute-long lag (one chain respawn queued per pixel of travel).
+        The 250 ms timer collapses rapid changes into a single command
+        per band per pause."""
         gain_db = value_tenths / 10.0
         sign = "+" if gain_db > 0 else ""
         label.setText(f"{sign}{gain_db:.1f}")
+        # Update the LOCAL view of the current channel's gains so a
+        # channel switch + switch-back doesn't lose the in-progress edit.
+        self._eq_gains_by_channel[self._eq_current_channel][band - 1] = gain_db
         self._eq_pending_band_value[band] = value_tenths
         self._eq_commit_timer.start()
 
     def _on_eq_slider_released(self, band: int, slider: QSlider):
-        """Slider released — commit *now* without waiting for the debounce.
-        Gives fast audible feedback the moment the user lets go of the
-        slider, instead of an extra 250 ms delay on top of the chain
-        respawn time."""
+        """Slider released — commit *now* without waiting for the debounce."""
         self._eq_pending_band_value[band] = slider.value()
         self._eq_commit_timer.stop()
         self._commit_pending_eq_changes()
 
     def _commit_pending_eq_changes(self):
-        """Flush queued band-gain changes to the daemon. One command per
-        band that's seen any change since the last commit."""
+        """Flush queued band-gain changes to the daemon for the currently
+        selected channel."""
+        channel = self._eq_current_channel
         for band, value_tenths in self._eq_pending_band_value.items():
             gain_db = value_tenths / 10.0
             self.daemon_client.send_command(
-                "set-eq-band-gain", band=band, gain_db=gain_db
+                "set-eq-band-gain",
+                channel=channel,
+                band=band,
+                gain_db=gain_db,
             )
         self._eq_pending_band_value.clear()
 
-    def _on_eq_band_gains_changed(self, gains: list):
-        """Daemon told us the canonical gain values changed. Push them
-        into the sliders and labels without re-sending commands."""
-        self._eq_band_gains = gains
+    def _on_eq_channel_changed(self, text: str):
+        """Combo box changed — load the selected channel's stored gains
+        into the sliders. Signals are blocked so populating the sliders
+        doesn't generate spurious commands back to the daemon."""
+        channel = text.lower().strip()
+        if channel not in self._eq_gains_by_channel:
+            return
+        self._eq_current_channel = channel
+        # Cancel any pending commit from the previous channel.
+        self._eq_commit_timer.stop()
+        self._eq_pending_band_value.clear()
+        self._render_sliders_for_channel(channel)
+
+    def _render_sliders_for_channel(self, channel: str):
+        """Push the stored gains for `channel` into the slider widgets
+        without re-emitting valueChanged → daemon commands."""
+        gains = self._eq_gains_by_channel.get(channel, [0.0] * 6)
         for idx, gain_db in enumerate(gains):
             if idx >= len(self.eq_band_sliders):
                 break
@@ -877,6 +918,26 @@ class MixerGUI(QMainWindow):
             slider.blockSignals(was_blocked)
             sign = "+" if gain_db > 0 else ""
             label.setText(f"{sign}{gain_db:.1f}")
+
+    def _on_eq_band_gains_changed(self, channel: str, gains: list):
+        """Daemon broadcast: the gains for `channel` changed (perhaps
+        because we just sent the change, perhaps from another client).
+        Always update the local cache; if it's the channel currently
+        on screen, refresh the sliders too."""
+        if channel not in self._eq_gains_by_channel:
+            return
+        self._eq_gains_by_channel[channel] = list(gains)
+        if channel == self._eq_current_channel:
+            self._render_sliders_for_channel(channel)
+
+    def _on_eq_full_state(self, state: dict):
+        """Initial Status snapshot delivered both channels' gains at
+        once (Game and Chat). Cache both and refresh the visible sliders
+        for whichever channel is currently selected."""
+        for ch in ("game", "chat"):
+            if ch in state:
+                self._eq_gains_by_channel[ch] = list(state[ch])
+        self._render_sliders_for_channel(self._eq_current_channel)
 
     # -------------------------------------------------------------- profiles
 

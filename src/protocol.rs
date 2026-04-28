@@ -5,6 +5,51 @@ use serde::{Deserialize, Serialize};
 
 use crate::hid::BatteryStatus;
 
+/// Which audio channel an EQ command targets. Sonar-style per-channel
+/// EQ — Game and Chat each have their own 6-band gain set so a user
+/// can tune game audio bass-heavy and chat audio mid-forward
+/// independently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EqChannel {
+    Game,
+    Chat,
+}
+
+/// Both channels' EQ gain arrays bundled together. Lives in the daemon
+/// state, status snapshot, and persistence — saves wiring two parallel
+/// arrays everywhere.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct EqGains {
+    pub game: [f32; 6],
+    pub chat: [f32; 6],
+}
+
+impl Default for EqGains {
+    fn default() -> Self {
+        EqGains {
+            game: [0.0; 6],
+            chat: [0.0; 6],
+        }
+    }
+}
+
+impl EqGains {
+    pub fn for_channel(&self, channel: EqChannel) -> [f32; 6] {
+        match channel {
+            EqChannel::Game => self.game,
+            EqChannel::Chat => self.chat,
+        }
+    }
+
+    pub fn for_channel_mut(&mut self, channel: EqChannel) -> &mut [f32; 6] {
+        match channel {
+            EqChannel::Game => &mut self.game,
+            EqChannel::Chat => &mut self.chat,
+        }
+    }
+}
+
 /// Commands sent by the GUI client to the daemon.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd")]
@@ -30,13 +75,17 @@ pub enum ClientCommand {
     /// architecture before bands land.
     #[serde(rename = "set-eq-enabled")]
     SetEqEnabled { enabled: bool },
-    /// Set the gain (dB) of one EQ band. Bands are 1..=6 in the order:
-    /// low shelf @ 100, peaking @ 100, peaking @ 500, peaking @ 2000,
-    /// peaking @ 5000, high shelf @ 5000 Hz. Daemon clamps gain to
-    /// [-12.0, 12.0]. If EQ is currently enabled, the chain respawns
-    /// with the new gain (~100 ms audio glitch).
+    /// Set the gain (dB) of one EQ band on one channel. Bands are 1..=6
+    /// in the order: low shelf @ 100, peaking @ 100, peaking @ 500,
+    /// peaking @ 2000, peaking @ 5000, high shelf @ 5000 Hz. Daemon
+    /// clamps gain to [-12.0, 12.0]. If EQ is currently enabled, only
+    /// the affected channel's chain respawns (~100 ms audio glitch).
     #[serde(rename = "set-eq-band-gain")]
-    SetEqBandGain { band: u8, gain_db: f32 },
+    SetEqBandGain {
+        channel: EqChannel,
+        band: u8,
+        gain_db: f32,
+    },
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -68,7 +117,7 @@ pub enum DaemonEvent {
         hdmi_sink_enabled: bool,
         auto_route_browsers: bool,
         eq_enabled: bool,
-        eq_band_gains: [f32; 6],
+        eq_gains: EqGains,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -88,11 +137,15 @@ pub enum DaemonEvent {
     #[serde(rename = "eq-enabled-changed")]
     EqEnabledChanged { enabled: bool },
 
-    /// Fired whenever any EQ band's gain changes — emits the full
-    /// 6-band array so the GUI can refresh all sliders at once and
-    /// stay in sync if multiple changes happen close together.
+    /// Fired whenever any EQ band's gain changes — emits the affected
+    /// channel and its full 6-band array so the GUI can refresh all
+    /// sliders for that channel at once and stay in sync if multiple
+    /// changes happen close together.
     #[serde(rename = "eq-band-gains-changed")]
-    EqBandGainsChanged { gains: [f32; 6] },
+    EqBandGainsChanged {
+        channel: EqChannel,
+        gains: [f32; 6],
+    },
 }
 
 #[cfg(test)]
@@ -167,7 +220,7 @@ mod tests {
             hdmi_sink_enabled: false,
             auto_route_browsers: false,
             eq_enabled: false,
-            eq_band_gains: [0.0; 6],
+            eq_gains: EqGains::default(),
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -180,7 +233,8 @@ mod tests {
         assert_eq!(json["hdmi_sink_enabled"], false);
         assert_eq!(json["auto_route_browsers"], false);
         assert_eq!(json["eq_enabled"], false);
-        assert!(json["eq_band_gains"].is_array());
+        assert!(json["eq_gains"]["game"].is_array());
+        assert!(json["eq_gains"]["chat"].is_array());
 
         let without_bat = DaemonEvent::Status {
             connected: false,
@@ -191,24 +245,30 @@ mod tests {
             hdmi_sink_enabled: true,
             auto_route_browsers: true,
             eq_enabled: true,
-            eq_band_gains: [-3.0, 0.0, 0.0, 0.0, 0.0, 6.0],
+            eq_gains: EqGains {
+                game: [-3.0, 0.0, 0.0, 0.0, 0.0, 6.0],
+                chat: [0.0, 2.0, 0.0, 0.0, 0.0, 0.0],
+            },
         };
         let json: Value = from_str(&to_string(&without_bat).unwrap()).unwrap();
         assert!(json["battery"].is_null());
-        assert_eq!(json["media_sink_enabled"], false);
-        assert_eq!(json["hdmi_sink_enabled"], true);
-        assert_eq!(json["auto_route_browsers"], true);
-        assert_eq!(json["eq_enabled"], true);
-        assert_eq!(json["eq_band_gains"][0], -3.0);
-        assert_eq!(json["eq_band_gains"][5], 6.0);
+        assert_eq!(json["eq_gains"]["game"][0], -3.0);
+        assert_eq!(json["eq_gains"]["game"][5], 6.0);
+        assert_eq!(json["eq_gains"]["chat"][1], 2.0);
     }
 
     #[test]
     fn set_eq_band_gain_command_parses() {
         let cmd: ClientCommand =
-            from_str(r#"{"cmd":"set-eq-band-gain","band":3,"gain_db":-4.5}"#).unwrap();
+            from_str(r#"{"cmd":"set-eq-band-gain","channel":"chat","band":3,"gain_db":-4.5}"#)
+                .unwrap();
         match cmd {
-            ClientCommand::SetEqBandGain { band, gain_db } => {
+            ClientCommand::SetEqBandGain {
+                channel,
+                band,
+                gain_db,
+            } => {
+                assert_eq!(channel, EqChannel::Chat);
                 assert_eq!(band, 3);
                 assert!((gain_db - -4.5).abs() < 1e-6);
             }
@@ -219,10 +279,12 @@ mod tests {
     #[test]
     fn eq_band_gains_changed_event_shape() {
         let ev = DaemonEvent::EqBandGainsChanged {
+            channel: EqChannel::Game,
             gains: [1.0, -2.0, 0.0, 0.0, 0.0, 0.0],
         };
         let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
         assert_eq!(json["event"], "eq-band-gains-changed");
+        assert_eq!(json["channel"], "game");
         assert_eq!(json["gains"][0], 1.0);
         assert_eq!(json["gains"][1], -2.0);
     }

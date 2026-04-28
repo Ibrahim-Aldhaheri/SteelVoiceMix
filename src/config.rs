@@ -10,10 +10,12 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::protocol::EqGains;
+
 /// What the daemon remembers across restarts. Default-derived: a fresh
 /// install loads as all-false so we don't surprise anyone with extra
 /// output devices they didn't ask for.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DaemonState {
     #[serde(default)]
     pub media_sink_enabled: bool,
@@ -28,28 +30,12 @@ pub struct DaemonState {
     /// startup. Toggling this re-runs the loopback-swap dance.
     #[serde(default)]
     pub eq_enabled: bool,
-    /// Per-band gains in dB for the 6-band EQ chain (low shelf @ 100 Hz,
-    /// peaking @ 100 / 500 / 2000 / 5000 Hz, high shelf @ 5000 Hz).
-    /// Range expected to be [-12.0, 12.0]; clamping is enforced in the
-    /// command handler. All zeros = passthrough.
-    #[serde(default = "default_band_gains")]
-    pub eq_band_gains: [f32; 6],
-}
-
-fn default_band_gains() -> [f32; 6] {
-    [0.0; 6]
-}
-
-impl Default for DaemonState {
-    fn default() -> Self {
-        DaemonState {
-            media_sink_enabled: false,
-            hdmi_sink_enabled: false,
-            auto_route_browsers: false,
-            eq_enabled: false,
-            eq_band_gains: default_band_gains(),
-        }
-    }
+    /// Per-band gains in dB for the 6-band EQ, separate arrays for
+    /// the Game and Chat channels (low shelf @ 100 Hz, peaking @ 100 /
+    /// 500 / 2000 / 5000 Hz, high shelf @ 5000 Hz). Range [-12.0, 12.0];
+    /// clamping enforced upstream. Zero = passthrough.
+    #[serde(default)]
+    pub eq_gains: EqGains,
 }
 
 fn state_path() -> Option<PathBuf> {

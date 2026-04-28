@@ -25,8 +25,13 @@ class DaemonSignals(QObject):
     hdmi_sink_changed = Signal(bool)
     auto_route_browsers_changed = Signal(bool)
     eq_enabled_changed = Signal(bool)
-    # Emits the full 6-band gain array as a Python list of floats.
-    eq_band_gains_changed = Signal(list)
+    # Emits (channel, gains) where channel is "game" or "chat" and gains
+    # is a Python list of 6 floats (dB).
+    eq_band_gains_changed = Signal(str, list)
+    # One-shot: full Status snapshot's per-channel gains, sent at startup
+    # so the GUI can populate both Game and Chat sliders before the user
+    # has interacted with anything.
+    eq_full_state = Signal(dict)
 
 
 class DaemonClient:
@@ -103,10 +108,15 @@ class DaemonClient:
         elif ev == "eq-enabled-changed":
             self.signals.eq_enabled_changed.emit(bool(event.get("enabled", False)))
         elif ev == "eq-band-gains-changed":
+            channel = event.get("channel", "")
             gains = event.get("gains")
-            if isinstance(gains, list) and len(gains) == 6:
+            if (
+                channel in ("game", "chat")
+                and isinstance(gains, list)
+                and len(gains) == 6
+            ):
                 self.signals.eq_band_gains_changed.emit(
-                    [float(g) for g in gains]
+                    channel, [float(g) for g in gains]
                 )
         elif ev == "status":
             self.signals.media_sink_changed.emit(
@@ -121,11 +131,17 @@ class DaemonClient:
             self.signals.eq_enabled_changed.emit(
                 bool(event.get("eq_enabled", False))
             )
-            gains = event.get("eq_band_gains")
-            if isinstance(gains, list) and len(gains) == 6:
-                self.signals.eq_band_gains_changed.emit(
-                    [float(g) for g in gains]
-                )
+            eq_gains = event.get("eq_gains")
+            if isinstance(eq_gains, dict):
+                game = eq_gains.get("game")
+                chat = eq_gains.get("chat")
+                state = {}
+                if isinstance(game, list) and len(game) == 6:
+                    state["game"] = [float(g) for g in game]
+                if isinstance(chat, list) and len(chat) == 6:
+                    state["chat"] = [float(g) for g in chat]
+                if state:
+                    self.signals.eq_full_state.emit(state)
             if event.get("connected"):
                 self.signals.connected.emit()
                 self.signals.chatmix_changed.emit(

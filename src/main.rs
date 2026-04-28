@@ -45,7 +45,7 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         hdmi_sink_enabled: st.hdmi_sink_enabled,
         auto_route_browsers: st.auto_route_browsers,
         eq_enabled: st.eq_enabled,
-        eq_band_gains: st.eq_band_gains,
+        eq_gains: st.eq_gains,
     }
 }
 
@@ -58,7 +58,7 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         hdmi_sink_enabled: st.hdmi_sink_enabled,
         auto_route_browsers: st.auto_route_browsers,
         eq_enabled: st.eq_enabled,
-        eq_band_gains: st.eq_band_gains,
+        eq_gains: st.eq_gains,
     });
 }
 
@@ -194,28 +194,40 @@ fn handle_client(
                     DaemonEvent::EqEnabledChanged { enabled: actual },
                 );
             }
-            ClientCommand::SetEqBandGain { band, gain_db } => {
+            ClientCommand::SetEqBandGain {
+                channel,
+                band,
+                gain_db,
+            } => {
                 let result = {
                     let mut sm = sinks.lock().unwrap();
-                    sm.set_eq_band_gain(band, gain_db)
+                    sm.set_eq_band_gain(channel, band, gain_db)
                 };
                 if result.is_none() {
-                    warn!("Invalid set-eq-band-gain (band={band}, gain_db={gain_db})");
+                    warn!(
+                        "Invalid set-eq-band-gain (channel={:?}, band={band}, gain_db={gain_db})",
+                        channel
+                    );
                     continue;
                 }
-                let new_gains = sinks.lock().unwrap().eq_band_gains();
+                let new_gains_all = sinks.lock().unwrap().eq_gains();
                 {
                     let mut st = state.lock().unwrap();
-                    st.eq_band_gains = new_gains;
+                    st.eq_gains = new_gains_all;
                 }
                 persist_sink_state(&state);
+                let channel_gains = new_gains_all.for_channel(channel);
                 info!(
-                    "GUI requested: set-eq-band-gain → band={band} gain={:.2} dB",
-                    new_gains[(band - 1) as usize]
+                    "GUI requested: set-eq-band-gain → channel={:?} band={band} gain={:.2} dB",
+                    channel,
+                    channel_gains[(band - 1) as usize]
                 );
                 broadcast_event(
                     &subscribers,
-                    DaemonEvent::EqBandGainsChanged { gains: new_gains },
+                    DaemonEvent::EqBandGainsChanged {
+                        channel,
+                        gains: channel_gains,
+                    },
                 );
             }
             ClientCommand::Subscribe => {
@@ -323,7 +335,7 @@ fn main() {
     let hdmi_sink_enabled = if no_hdmi_sink { false } else { persisted.hdmi_sink_enabled };
     let auto_route_browsers = persisted.auto_route_browsers;
     let eq_enabled = persisted.eq_enabled;
-    let eq_band_gains = persisted.eq_band_gains;
+    let eq_gains = persisted.eq_gains;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -334,8 +346,8 @@ fn main() {
     );
     info!("Browser auto-routing: {}", auto_route_browsers);
     info!(
-        "EQ filter chains: {} (band gains: {:?})",
-        eq_enabled, eq_band_gains
+        "EQ filter chains: {} (game={:?}, chat={:?})",
+        eq_enabled, eq_gains.game, eq_gains.chat
     );
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(
@@ -343,7 +355,7 @@ fn main() {
         hdmi_sink_enabled,
         auto_route_browsers,
         eq_enabled,
-        eq_band_gains,
+        eq_gains,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
@@ -351,7 +363,7 @@ fn main() {
         media_sink_enabled,
         hdmi_sink_enabled,
         eq_enabled,
-        eq_band_gains,
+        eq_gains,
     )));
     let router = Arc::new(RouterState::new(auto_route_browsers));
     spawn_router(router.clone(), running.clone());
