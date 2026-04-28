@@ -76,9 +76,9 @@ def make_about_dialog(parent=None) -> QDialog:
     links.setOpenExternalLinks(True)
     layout.addWidget(links)
 
-    license_lbl = QLabel("Licensed under the MIT License")
+    license_lbl = QLabel("Licensed under the GNU GPL-3.0-or-later")
     license_lbl.setAlignment(Qt.AlignCenter)
-    license_lbl.setStyleSheet("color: #888; font-size: 11px;")
+    license_lbl.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
     layout.addWidget(license_lbl)
 
     buttons = QDialogButtonBox(QDialogButtonBox.Close)

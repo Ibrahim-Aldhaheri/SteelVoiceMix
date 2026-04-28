@@ -3,7 +3,7 @@ name = "steelvoicemix"
 version = "0.2.4"
 edition = "2021"
 description = "ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux"
-license = "MIT"
+license = "GPL-3.0-or-later"
 
 [[bin]]
 name = "steelvoicemix"
