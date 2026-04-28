@@ -39,51 +39,57 @@ pub struct FilterChainSpec<'a> {
 }
 
 impl<'a> FilterChainSpec<'a> {
-    /// Build the single `pactl load-module module-filter-chain` argument
-    /// string. PipeWire accepts the entire spec (filter graph + capture +
-    /// playback wiring) as one quoted blob — simpler than writing a .conf
-    /// file under `filter-chain.conf.d/` which would also live on disk
-    /// after a daemon crash.
+    /// Build the SPA-JSON args object for `pw-cli load-module`. PipeWire's
+    /// native loader accepts the same nested structure used in
+    /// `filter-chain.conf.d/*.conf` files — graph + capture + playback
+    /// wiring all in one. We deliberately do NOT use `pactl load-module`:
+    /// the pulse-protocol bridge only proxies pulse-style key=value modules
+    /// (null-sink, loopback) and rejects PipeWire-native filter-chain configs
+    /// with an opaque "No such entity" error.
     fn to_module_args(&self) -> String {
-        // For Phase 1 the graph is a stereo passthrough — two `copy`
-        // nodes, one per channel. Adding biquad EQ bands later means
-        // appending nodes + links inside this graph, no other change.
+        // Phase 1 graph is a stereo passthrough — two `copy` nodes, one
+        // per channel. Real biquad EQ bands and HeSuVi convolvers slot
+        // into the same nodes/links/inputs/outputs structure later.
         format!(
-            r#"node.description="{desc}" \
-               filter.graph={{ \
-                   nodes=[ \
-                       {{ type=builtin name=passL label=copy }} \
-                       {{ type=builtin name=passR label=copy }} \
-                   ] \
-                   inputs=[ "passL:In" "passR:In" ] \
-                   outputs=[ "passL:Out" "passR:Out" ] \
-               }} \
-               audio.channels=2 \
-               audio.position=[ FL FR ] \
-               capture.props={{ \
-                   node.name="{name}" \
-                   media.class=Audio/Sink \
-               }} \
-               playback.props={{ \
-                   node.name="output.{name}" \
-                   node.target="{target}" \
-                   node.passive=true \
-               }}"#,
+            "{{ \
+                node.description=\"{desc}\" \
+                filter.graph={{ \
+                    nodes=[ \
+                        {{ type=builtin name=passL label=copy }} \
+                        {{ type=builtin name=passR label=copy }} \
+                    ] \
+                    inputs=[ \"passL:In\" \"passR:In\" ] \
+                    outputs=[ \"passL:Out\" \"passR:Out\" ] \
+                }} \
+                audio.channels=2 \
+                audio.position=[ FL FR ] \
+                capture.props={{ \
+                    node.name=\"{name}\" \
+                    media.class=Audio/Sink \
+                }} \
+                playback.props={{ \
+                    node.name=\"output.{name}\" \
+                    node.target=\"{target}\" \
+                    node.passive=true \
+                }} \
+            }}",
             desc = self.description,
             name = self.sink_name,
             target = self.playback_target,
         )
     }
 
-    /// Load the filter chain via `pactl load-module module-filter-chain`.
-    /// Returns the module ID for later unload, or None on failure.
+    /// Load the filter chain via `pw-cli load-module`. Returns the
+    /// PipeWire object ID (to pass to `unload`), or None on failure.
+    /// pw-cli prints a line like `Object: 12345` on success.
     pub fn load(&self) -> Option<u32> {
         let args = self.to_module_args();
-        let output = Command::new("pactl")
+        let output = Command::new("pw-cli")
             .arg("load-module")
-            .arg("module-filter-chain")
+            .arg("libpipewire-module-filter-chain")
             .arg(&args)
             .stderr(Stdio::piped())
+            .stdout(Stdio::piped())
             .output()
             .ok()?;
         if !output.status.success() {
@@ -94,21 +100,27 @@ impl<'a> FilterChainSpec<'a> {
             );
             return None;
         }
-        let id = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .parse::<u32>()
-            .ok()?;
-        info!("Loaded filter chain '{}' as module #{id}", self.sink_name);
+        // pw-cli's "load-module" output: typically a single integer (the
+        // object ID) on stdout. Older builds print "Object: N"; newer
+        // ones just "N". Parse the first integer-looking token we see.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let id = stdout
+            .split_whitespace()
+            .find_map(|tok| tok.trim_matches(|c: char| !c.is_ascii_digit()).parse::<u32>().ok())?;
+        info!(
+            "Loaded filter chain '{}' as PipeWire object #{id}",
+            self.sink_name
+        );
         Some(id)
     }
 }
 
-/// Unload a previously-loaded filter-chain module by its pactl module ID.
+/// Unload a previously-loaded filter-chain by its PipeWire object ID.
 /// Best-effort — silently no-ops on failure since we usually call this
 /// during sink teardown where retrying isn't useful.
-pub fn unload(module_id: u32) {
-    let _ = Command::new("pactl")
-        .args(["unload-module", &module_id.to_string()])
+pub fn unload(object_id: u32) {
+    let _ = Command::new("pw-cli")
+        .args(["destroy", &object_id.to_string()])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
