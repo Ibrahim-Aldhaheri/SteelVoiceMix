@@ -143,6 +143,16 @@ impl FilterChainHandle {
 
     /// Write the spec to a config file and spawn `pipewire -c <conf>` to
     /// host the chain. Returns a handle to manage its lifecycle.
+    ///
+    /// After the spawn we wait briefly for the child to register its nodes,
+    /// then explicitly link the chain's output ports to the playback target
+    /// via `pw-link`. The `playback.props.node.target = <target>` directive
+    /// in the conf is supposed to make wireplumber auto-create this link,
+    /// but it's not reliable across all session-manager configurations
+    /// (observed on KDE Plasma + WirePlumber on Fedora 43: chain spawns,
+    /// ports register, but no link to the target gets created → audio
+    /// reaches the chain's input but never makes it through). Doing it
+    /// ourselves with `pw-link` is unambiguous.
     pub fn spawn(spec: &FilterChainSpec) -> Option<Self> {
         let conf_dir = Self::conf_dir()?;
         let conf_path = conf_dir.join(format!("{}.conf", spec.sink_name));
@@ -170,6 +180,39 @@ impl FilterChainHandle {
             child.id(),
             conf_path.display()
         );
+
+        // Wait for the spawned daemon to register its nodes before we
+        // try to link them. 500 ms is empirically enough on a healthy box.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Wire chain output → target playback explicitly. Best effort: if
+        // either side hasn't registered yet, this fails silently and the
+        // user just gets no audio through the chain — same symptom as
+        // before, no worse. In practice the 500 ms wait above is enough.
+        for ch in ["FL", "FR"] {
+            let from = format!("output.{}:output_{ch}", spec.sink_name);
+            let to = format!("{}:playback_{ch}", spec.playback_target);
+            let status = Command::new("pw-link")
+                .args([&from, &to])
+                .stderr(Stdio::piped())
+                .stdout(Stdio::null())
+                .output();
+            match status {
+                Ok(out) if out.status.success() => {
+                    info!("Linked {from} → {to}");
+                }
+                Ok(out) => {
+                    warn!(
+                        "pw-link {from} → {to} failed: {}",
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    );
+                }
+                Err(e) => {
+                    warn!("pw-link {from} → {to} spawn error: {e}");
+                }
+            }
+        }
+
         Some(FilterChainHandle {
             child,
             conf_path,

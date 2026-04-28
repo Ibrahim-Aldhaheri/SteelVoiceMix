@@ -5,8 +5,6 @@
 //! sinks that plasma-pa filters out.
 
 use std::process::{Command, Stdio};
-use std::thread;
-use std::time::Duration;
 
 use log::{error, info, warn};
 
@@ -19,12 +17,6 @@ pub const HDMI_SINK: &str = "SteelHDMI";
 pub const EQ_GAME_SINK: &str = "SteelGameEQ";
 pub const EQ_CHAT_SINK: &str = "SteelChatEQ";
 pub const OUTPUT_MATCH: &str = "SteelSeries_Arctis_Nova_Pro_Wireless";
-
-/// How long to wait after spawning a filter-chain pipewire child before
-/// trying to point a loopback at its sink. The spawned process needs to
-/// load its modules and register the sink with the main daemon; that
-/// takes ~50–200 ms on a healthy box. 500 ms is a safe upper bound.
-const EQ_SPAWN_GRACE: Duration = Duration::from_millis(500);
 
 /// Every sink-name prefix we're responsible for. Keep this in sync with the
 /// *_SINK constants above — it's what the stale-module sweeper and the
@@ -445,9 +437,9 @@ fn insert_eq_into_channel(
         return false;
     };
 
-    // Wait for the spawned pipewire to actually load its modules — the
-    // filter-chain sink needs to exist before a loopback can target it.
-    thread::sleep(EQ_SPAWN_GRACE);
+    // FilterChainHandle::spawn already waited for the chain's nodes to
+    // register and explicitly linked the chain output to the headset.
+    // Safe to point our loopback at the chain sink now.
 
     // Tear down the existing direct-to-headset loopback.
     unload_module(channel.loopback_id);
