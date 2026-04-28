@@ -159,8 +159,9 @@ _POSITION_DISPLAY: dict[str, str] = {
 }
 
 
-# Sonar's parametric EQ exposes 10 bands. Matching that count means a Sonar
-# preset's filter1..filter10 maps slot-for-slot into our state.
+# Common parametric-EQ preset JSONs use 10 filter slots
+# (parametricEQ.filter1..filter10), so 10 bands lets those load 1:1 into
+# our state.
 NUM_EQ_BANDS = 10
 
 
@@ -259,8 +260,8 @@ class MixerGUI(QMainWindow):
         self._hdmi_sink_enabled = False
         self._auto_route_browsers = False
         self._eq_enabled = False
-        # Sonar-style per-channel EQ: separate band arrays for Game and
-        # Chat. Each band carries its full {freq, q, gain, type, enabled}
+        # Per-channel EQ: separate band arrays for Game and Chat. Each
+        # band carries its full {freq, q, gain, type, enabled}
         # — sliders bind to `gain`, labels read `freq` and derive a
         # musical name from it. The sliders display whichever channel is
         # currently selected via the channel combo box; switching the
@@ -344,7 +345,7 @@ class MixerGUI(QMainWindow):
         tabs = QTabWidget()
         tabs.addTab(self._build_home_tab(), "Home")
         tabs.addTab(self._build_sinks_tab(), "Sinks")
-        tabs.addTab(self._build_eq_tab(), "Sonar")
+        tabs.addTab(self._build_eq_tab(), "Equalizer")
         tabs.addTab(self._build_settings_tab(), "Settings")
         root.addWidget(tabs, 1)
 
@@ -490,9 +491,9 @@ class MixerGUI(QMainWindow):
         layout.setSpacing(12)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        layout.addWidget(_section_title(f"Sonar — {NUM_EQ_BANDS}-band parametric EQ"))
+        layout.addWidget(_section_title(f"{NUM_EQ_BANDS}-band parametric EQ"))
 
-        self.eq_check = QCheckBox("Enable Sonar EQ (🎮 Game + 💬 Chat)")
+        self.eq_check = QCheckBox("Enable parametric EQ (🎮 Game + 💬 Chat)")
         self.eq_check.setToolTip(
             "Inserts a PipeWire filter chain between the SteelGame and "
             "SteelChat sinks and the headset. The user-facing sinks stay "
@@ -502,7 +503,7 @@ class MixerGUI(QMainWindow):
         self.eq_check.toggled.connect(self._toggle_eq_enabled)
         layout.addWidget(self.eq_check)
 
-        # Sonar-style per-channel selector: tune [Game] and [Chat]
+        # Per-channel selector: tune [Game] and [Chat]
         # independently. Sliders display the selected channel's gains;
         # switching the combo loads that channel's stored values. Emoji
         # icons match the Home-tab convention (🎮 / 💬).

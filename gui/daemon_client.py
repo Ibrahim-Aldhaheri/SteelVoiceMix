@@ -19,7 +19,7 @@ def _normalize_bands(raw: list) -> list[dict]:
     """Coerce daemon-sent band dicts into a uniform GUI-side shape.
 
     The daemon emits each band as `{freq, q, gain, type, enabled}` (matching
-    the Sonar `parametricEQ.filterN` JSON layout). We always return a list
+    the `parametricEQ.filterN` preset JSON layout). We always return a list
     of dicts with those exact keys and type-coerced numeric values, so
     downstream slots never have to defend against partial / legacy shapes.
     Older `eq_gains` snapshots — bare floats — get wrapped into peaking

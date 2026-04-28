@@ -9,7 +9,7 @@
     <p>
       SteelVoiceMix brings ChatMix functionality to Linux for the SteelSeries Arctis Nova Pro Wireless headset.
       It creates virtual PipeWire audio sinks (Game and Chat) that are controlled by the hardware dial
-      on the base station, replacing the Windows-only SteelSeries Sonar software.
+      on the base station, providing native Linux support for the headset's ChatMix feature.
     </p>
     <p>Features:</p>
     <ul>

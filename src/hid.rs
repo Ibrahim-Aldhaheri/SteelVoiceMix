@@ -15,7 +15,8 @@ pub const TX: u8 = 0x06; // Host → base station
 pub const RX: u8 = 0x07; // Base station → host (for reference)
 
 // Parameter IDs (second byte in messages)
-pub const OPT_SONAR_ICON: u8 = 0x8D;
+// Toggles the base-station glyph that lights up while ChatMix is active.
+pub const OPT_CHATMIX_ICON: u8 = 0x8D;
 pub const OPT_CHATMIX_ENABLE: u8 = 0x49;
 pub const OPT_CHATMIX: u8 = 0x45;
 pub const OPT_BATTERY: u8 = 0xB0;
@@ -89,17 +90,17 @@ impl NovaDevice {
         Ok(())
     }
 
-    /// Enable ChatMix mode and Sonar icon on the base station.
+    /// Enable ChatMix mode and the base-station ChatMix glyph.
     pub fn enable_chatmix(&self) -> Result<(), HidError> {
         self.send(&[TX, OPT_CHATMIX_ENABLE, 1])?;
-        self.send(&[TX, OPT_SONAR_ICON, 1])?;
+        self.send(&[TX, OPT_CHATMIX_ICON, 1])?;
         Ok(())
     }
 
-    /// Disable ChatMix mode and Sonar icon.
+    /// Disable ChatMix mode and the base-station glyph.
     pub fn disable_chatmix(&self) -> Result<(), HidError> {
         let _ = self.send(&[TX, OPT_CHATMIX_ENABLE, 0]);
-        let _ = self.send(&[TX, OPT_SONAR_ICON, 0]);
+        let _ = self.send(&[TX, OPT_CHATMIX_ICON, 0]);
         Ok(())
     }
 

@@ -5,10 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::hid::BatteryStatus;
 
-/// Which audio channel an EQ command targets. Sonar-style per-channel
-/// EQ — Game and Chat each have their own 6-band gain set so a user
-/// can tune game audio bass-heavy and chat audio mid-forward
-/// independently.
+/// Which audio channel an EQ command targets. Per-channel EQ — Game
+/// and Chat each have their own band set so a user can tune game audio
+/// bass-heavy and chat audio mid-forward independently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EqChannel {
@@ -16,13 +15,14 @@ pub enum EqChannel {
     Chat,
 }
 
-/// Number of EQ bands per channel. Sonar uses 10 — matching that here so
-/// Sonar preset JSONs (which always carry filter1..filter10) load 1:1.
+/// Number of EQ bands per channel. Common parametric-EQ preset JSONs
+/// carry exactly `parametricEQ.filter1..filter10` — 10 bands here lets
+/// those load 1:1 without padding or truncation.
 pub const NUM_BANDS: usize = 10;
 
 /// Filter type for a single biquad band. Names match PipeWire's
 /// `bq_*` builtin labels; the wire format is lowercase JSON
-/// (`"lowshelf"` etc.) for parity with Sonar preset files.
+/// (`"lowshelf"` etc.) for parity with the `parametricEQ` preset shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BandType {
@@ -37,7 +37,7 @@ pub enum BandType {
 }
 
 /// One EQ band's parameters. Maps directly to a PipeWire builtin biquad
-/// node and the `parametricEQ.filterN` shape in Sonar preset JSONs.
+/// node and the `parametricEQ.filterN` shape used by common preset JSONs.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct EqBand {
     pub freq: f32,

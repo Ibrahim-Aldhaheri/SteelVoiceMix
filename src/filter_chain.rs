@@ -64,9 +64,9 @@ pub struct FilterChainSpec<'a> {
     /// headset sink name. The filter chain's playback side binds to this.
     pub playback_target: &'a str,
     /// Full per-band parameters. Frequency, Q, gain (dB) and biquad type
-    /// are all driven from the EqBand records, so a Sonar preset that
-    /// maps `parametricEQ.filter1..filter10` into this array gets
-    /// reproduced verbatim. Disabled bands collapse to passthrough by
+    /// are all driven from the EqBand records, so a preset whose
+    /// `parametricEQ.filter1..filter10` entries map into this array
+    /// gets reproduced verbatim. Disabled bands collapse to passthrough by
     /// emitting them with gain=0.0 — keeping the chain's node count
     /// identical between presets simplifies the link list.
     pub bands: [EqBand; NUM_BANDS],
@@ -94,7 +94,7 @@ impl<'a> FilterChainSpec<'a> {
     fn to_pipewire_conf(&self) -> String {
         // Filter graph adapted from PipeWire's canonical `sink-eq6.conf`
         // (`/usr/share/pipewire/filter-chain/`), extended to 10 bands so
-        // Sonar's parametricEQ.filter1..filter10 preset shape maps 1:1.
+        // the parametricEQ.filter1..filter10 preset shape maps 1:1.
         //
         // Critical idioms preserved verbatim:
         //

@@ -9,13 +9,13 @@
 >
 > - [**nova-chatmix-linux**](https://github.com/Dymstro/nova-chatmix-linux) by **Dymstro** — reverse-engineered the SteelSeries Arctis Nova Pro Wireless USB HID protocol. Without their work, none of the Linux-side ChatMix tooling for this device would exist.
 > - [**Linux-Arctis-Manager**](https://github.com/elegos/Linux-Arctis-Manager) by **elegos** — the original open-source Linux ChatMix *manager* for the SteelSeries Arctis line. The HID command set, ChatMix dial decoding, and the `module-null-sink` + `module-loopback` virtual-sink pattern all originate from this project.
-> - [**Arctis Sound Manager**](https://github.com/loteran/Arctis-Sound-Manager) by **loteran** — a comprehensive fork of Linux-Arctis-Manager that pioneered the multi-channel mixer (Game / Chat / Media / HDMI), Sonar-style parametric EQ, OLED weather widget, and the HeSuVi-based spatial audio pipeline. SteelVoiceMix's multi-channel and OLED enhancements were designed with reference to ASM.
+> - [**Arctis Sound Manager**](https://github.com/loteran/Arctis-Sound-Manager) by **loteran** — a comprehensive fork of Linux-Arctis-Manager that pioneered the multi-channel mixer (Game / Chat / Media / HDMI), parametric EQ, OLED weather widget, and the HeSuVi-based spatial audio pipeline. SteelVoiceMix's multi-channel and OLED enhancements were designed with reference to ASM.
 >
-> If you want **full SteelSeries Sonar parity** — 312 game EQ presets, audio profiles, multi-language UI, broad device coverage — use **ASM** directly. SteelVoiceMix is a Rust-daemon alternative narrower in scope and Fedora-KDE-first.
+> If you want **broader feature coverage** — large EQ preset libraries, audio profiles, multi-language UI, broad device coverage — use **ASM** directly. SteelVoiceMix is a Rust-daemon alternative narrower in scope and Fedora-KDE-first.
 
 Linux ChatMix implementation for the **SteelSeries Arctis Nova Pro Wireless**. Uses PipeWire virtual sinks controlled by the hardware dial on the base station.
 
-Replaces the ChatMix functionality of SteelSeries Sonar (Windows-only) on Linux.
+Brings the headset's ChatMix dial — and a parametric EQ + multi-sink mixer — to Linux without relying on the OEM Windows-only mixer software.
 
 ## Screenshots
 

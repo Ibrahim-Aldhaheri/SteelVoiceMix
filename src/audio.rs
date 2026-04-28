@@ -59,9 +59,9 @@ pub struct SinkManager {
     /// SteelChat and the headset.
     eq_enabled: bool,
     /// Full per-channel EQ state: 10 bands per channel, each with its own
-    /// frequency / Q / gain / type. Sonar-style — Game and Chat tune
-    /// independently. Defaults are flat passthrough at standard graphic-EQ
-    /// frequencies; preset loads can replace any band's full parameters.
+    /// frequency / Q / gain / type. Game and Chat tune independently.
+    /// Defaults are flat passthrough at standard graphic-EQ frequencies;
+    /// preset loads can replace any band's full parameters.
     eq_state: EqState,
     // Cached during create_sinks so runtime add/remove of the media sink
     // doesn't need to re-query PipeWire for the headset's sink name.
@@ -126,11 +126,11 @@ impl SinkManager {
         Some(clamped)
     }
 
-    /// Replace one band's full parameters wholesale. Used when a Sonar-
-    /// style preset loads, where freq, Q, gain and type may all change
-    /// at once. Out-of-range bands rejected. Gain is clamped to
-    /// [-12, 12] dB; freq is clamped to a safe audible range. Returns
-    /// the band as actually applied (after clamping).
+    /// Replace one band's full parameters wholesale. Used when a preset
+    /// loads, where freq, Q, gain and type may all change at once.
+    /// Out-of-range bands rejected. Gain is clamped to [-12, 12] dB;
+    /// freq is clamped to a safe audible range. Returns the band as
+    /// actually applied (after clamping).
     pub fn set_eq_band(
         &mut self,
         channel: EqChannel,

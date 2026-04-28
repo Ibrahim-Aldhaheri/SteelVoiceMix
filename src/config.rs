@@ -32,8 +32,8 @@ pub struct DaemonState {
     pub eq_enabled: bool,
     /// Full per-band EQ state for both channels. Each channel carries
     /// 10 `EqBand`s (freq / Q / gain / type / enabled). Default = flat
-    /// passthrough at standard graphic-EQ frequencies. Sonar preset
-    /// JSONs map directly into this shape.
+    /// passthrough at standard graphic-EQ frequencies. Preset JSONs in
+    /// the `parametricEQ.filter1..filter10` shape map directly here.
     #[serde(default, alias = "eq_gains")]
     pub eq_state: EqState,
 }
