@@ -218,7 +218,10 @@ context.modules = [
 "#,
             desc = self.description,
             name = self.sink_name,
-            target = self.playback_target,
+            // playback_target is intentionally not interpolated into the
+            // conf any more — see the comment block on playback.props
+            // about why we no longer set node.target. The target is used
+            // exclusively by the explicit pw-link in spawn() instead.
         )
     }
 }
