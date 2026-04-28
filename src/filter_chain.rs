@@ -83,14 +83,29 @@ impl<'a> FilterChainSpec<'a> {
     /// that, when run via `pipewire -c <file>`, loads exactly this filter
     /// chain into the running PipeWire instance.
     fn to_pipewire_conf(&self) -> String {
-        // Reverted to Phase 1 passthrough. The Phase 2.0 bq_lowshelf attempt
-        // (200 Hz, Q=0.7, +6 dB) caused selective channel breakage on the
-        // user's hardware: SteelGame went silent entirely, SteelChat audio
-        // worked only for Discord (not for browser streams routed to it via
-        // the audio applet), and even direct playback to the physical
-        // headset sink developed audible "jamming" while EQ was enabled.
-        // None of that happens with the copy nodes below, so we keep them
-        // until the biquad config issue is properly diagnosed.
+        // Filter graph adapted from PipeWire's canonical `sink-eq6.conf`
+        // (`/usr/share/pipewire/filter-chain/`). Critical idioms preserved
+        // verbatim:
+        //
+        //   - Single node per band (not per channel). PipeWire auto-
+        //     duplicates each node across channels driven by audio.channels.
+        //     Earlier per-channel pairs (bassL/bassR) confused the graph.
+        //   - Quoted control keys with float literals: "Freq" = 100.0 etc.
+        //     Unquoted/integer forms parse but appear to produce silently
+        //     broken biquad coefficients.
+        //   - No explicit inputs/outputs arrays — derived from links.
+        //   - playback.props uses node.passive=true (canonical for filter
+        //     sinks) plus our explicit node.target so wireplumber routes
+        //     output to the headset. Phase-1 attempt without node.passive
+        //     made one direction work; explicit pw-link in spawn() is the
+        //     safety net regardless.
+        //
+        // All gains default to 0.0 (passthrough — no audible change yet).
+        // Phase 2.1 will expose these as user-controllable sliders that
+        // respawn the chain with new values. The 6-band shape (low shelf
+        // / 4 peaking / high shelf at 100, 100, 500, 2k, 5k, 5k Hz) is
+        // PipeWire's stock starting point; we can adjust frequency
+        // distribution later if the Sonar-style bands warrant it.
         format!(
             r#"context.properties = {{
     log.level = 0
@@ -120,11 +135,50 @@ context.modules = [
             media.name       = "{desc}"
             filter.graph = {{
                 nodes = [
-                    {{ type = builtin name = passL label = copy }}
-                    {{ type = builtin name = passR label = copy }}
+                    {{
+                        type  = builtin
+                        name  = eq_band_1
+                        label = bq_lowshelf
+                        control = {{ "Freq" = 100.0  "Q" = 1.0  "Gain" = 0.0 }}
+                    }}
+                    {{
+                        type  = builtin
+                        name  = eq_band_2
+                        label = bq_peaking
+                        control = {{ "Freq" = 100.0  "Q" = 1.0  "Gain" = 0.0 }}
+                    }}
+                    {{
+                        type  = builtin
+                        name  = eq_band_3
+                        label = bq_peaking
+                        control = {{ "Freq" = 500.0  "Q" = 1.0  "Gain" = 0.0 }}
+                    }}
+                    {{
+                        type  = builtin
+                        name  = eq_band_4
+                        label = bq_peaking
+                        control = {{ "Freq" = 2000.0  "Q" = 1.0  "Gain" = 0.0 }}
+                    }}
+                    {{
+                        type  = builtin
+                        name  = eq_band_5
+                        label = bq_peaking
+                        control = {{ "Freq" = 5000.0  "Q" = 1.0  "Gain" = 0.0 }}
+                    }}
+                    {{
+                        type  = builtin
+                        name  = eq_band_6
+                        label = bq_highshelf
+                        control = {{ "Freq" = 5000.0  "Q" = 1.0  "Gain" = 0.0 }}
+                    }}
                 ]
-                inputs  = [ "passL:In"  "passR:In"  ]
-                outputs = [ "passL:Out" "passR:Out" ]
+                links = [
+                    {{ output = "eq_band_1:Out"  input = "eq_band_2:In" }}
+                    {{ output = "eq_band_2:Out"  input = "eq_band_3:In" }}
+                    {{ output = "eq_band_3:Out"  input = "eq_band_4:In" }}
+                    {{ output = "eq_band_4:Out"  input = "eq_band_5:In" }}
+                    {{ output = "eq_band_5:Out"  input = "eq_band_6:In" }}
+                ]
             }}
             audio.channels = 2
             audio.position = [ FL FR ]
@@ -133,8 +187,17 @@ context.modules = [
                 media.class = Audio/Sink
             }}
             playback.props = {{
-                node.name   = "effect_output.{name}"
-                node.target = "{target}"
+                node.name           = "effect_output.{name}"
+                node.target         = "{target}"
+                node.passive        = true
+                # Critical when the user has any session-managed default sink
+                # (EasyEffects, etc.) — without this, WirePlumber auto-adds a
+                # link from this output to whatever the current default is,
+                # which on top of our explicit pw-link to the headset creates
+                # a second downstream and (if the default sink loops back to
+                # SteelGame, as EasyEffects can) a feedback cycle that
+                # PipeWire breaks by silencing one or both edges.
+                node.dont-reconnect = true
             }}
         }}
     }}
