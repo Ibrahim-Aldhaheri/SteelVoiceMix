@@ -5,14 +5,26 @@
 //! sinks that plasma-pa filters out.
 
 use std::process::{Command, Stdio};
+use std::thread;
+use std::time::Duration;
 
 use log::{error, info, warn};
+
+use crate::filter_chain::{FilterChainHandle, FilterChainSpec};
 
 pub const GAME_SINK: &str = "SteelGame";
 pub const CHAT_SINK: &str = "SteelChat";
 pub const MEDIA_SINK: &str = "SteelMedia";
 pub const HDMI_SINK: &str = "SteelHDMI";
+pub const EQ_GAME_SINK: &str = "SteelGameEQ";
+pub const EQ_CHAT_SINK: &str = "SteelChatEQ";
 pub const OUTPUT_MATCH: &str = "SteelSeries_Arctis_Nova_Pro_Wireless";
+
+/// How long to wait after spawning a filter-chain pipewire child before
+/// trying to point a loopback at its sink. The spawned process needs to
+/// load its modules and register the sink with the main daemon; that
+/// takes ~50–200 ms on a healthy box. 500 ms is a safe upper bound.
+const EQ_SPAWN_GRACE: Duration = Duration::from_millis(500);
 
 /// Every sink-name prefix we're responsible for. Keep this in sync with the
 /// *_SINK constants above — it's what the stale-module sweeper and the
@@ -22,6 +34,19 @@ pub const MANAGED_SINK_PREFIX: &str = "Steel";
 struct SinkModules {
     null_sink_id: u32,
     loopback_id: u32,
+    /// EQ filter chain inserted between this null-sink's monitor and the
+    /// headset. When `Some`, the `loopback_id` above points at the EQ
+    /// chain's sink instead of the headset directly. The chain itself
+    /// has `playback.props.node.target = <headset>` so audio still
+    /// reaches the headset — just through the filter graph first.
+    eq: Option<EqInsertion>,
+}
+
+/// One filter-chain instance owned by a managed pipewire child process.
+/// Created when EQ is enabled for a channel; dropped (which kills the
+/// child) when EQ is disabled.
+struct EqInsertion {
+    filter: FilterChainHandle,
 }
 
 /// Manages the virtual sinks and their loopbacks. Game + Chat are always
@@ -37,6 +62,11 @@ pub struct SinkManager {
     hdmi: Option<SinkModules>,
     media_enabled: bool,
     hdmi_enabled: bool,
+    /// When true, EQ filter chains are inserted between SteelGame /
+    /// SteelChat and the headset. The chain currently passes audio
+    /// through unchanged (Phase 1 scaffolding); real biquad bands will
+    /// land in a later commit.
+    eq_enabled: bool,
     // Cached during create_sinks so runtime add/remove of the media sink
     // doesn't need to re-query PipeWire for the headset's sink name.
     output_sink: Option<String>,
@@ -45,7 +75,7 @@ pub struct SinkManager {
 }
 
 impl SinkManager {
-    pub fn new(media_enabled: bool, hdmi_enabled: bool) -> Self {
+    pub fn new(media_enabled: bool, hdmi_enabled: bool, eq_enabled: bool) -> Self {
         // Sweep up anything a previous crash or manual test left behind.
         cleanup_stale_modules();
         SinkManager {
@@ -55,6 +85,7 @@ impl SinkManager {
             hdmi: None,
             media_enabled,
             hdmi_enabled,
+            eq_enabled,
             output_sink: None,
             hdmi_target: None,
         }
@@ -122,6 +153,83 @@ impl SinkManager {
             unload_module(h.loopback_id);
             unload_module(h.null_sink_id);
         }
+        false
+    }
+
+    /// Runtime toggle: insert a filter chain between SteelGame/SteelChat and
+    /// the headset. The user-facing null-sinks themselves stay loaded — only
+    /// the loopback target changes — so apps bound to SteelGame (Discord,
+    /// OBS, …) keep their connection across this toggle.
+    pub fn enable_eq(&mut self) -> bool {
+        if self.eq_enabled && self.game.as_ref().is_some_and(|m| m.eq.is_some()) {
+            return true;
+        }
+        let Some(headset) = self.output_sink.clone() else {
+            warn!("EQ enable requested but no headset connected yet — will retry when sinks are created");
+            self.eq_enabled = true;
+            return true;
+        };
+
+        // Try to insert on each existing channel. If chat fails after game
+        // succeeds, undo game so we end in a consistent state.
+        let game_ok = match self.game.as_mut() {
+            Some(ch) => insert_eq_into_channel(
+                ch,
+                GAME_SINK,
+                EQ_GAME_SINK,
+                "SteelVoiceMix Game EQ",
+                &headset,
+            ),
+            None => true,
+        };
+        if !game_ok {
+            return false;
+        }
+
+        let chat_ok = match self.chat.as_mut() {
+            Some(ch) => insert_eq_into_channel(
+                ch,
+                CHAT_SINK,
+                EQ_CHAT_SINK,
+                "SteelVoiceMix Chat EQ",
+                &headset,
+            ),
+            None => true,
+        };
+        if !chat_ok {
+            if let Some(ch) = self.game.as_mut() {
+                let _ = remove_eq_from_channel(ch, GAME_SINK, &headset);
+            }
+            return false;
+        }
+
+        self.eq_enabled = true;
+        info!("EQ enabled (Game + Chat routed through filter chains)");
+        true
+    }
+
+    /// Runtime toggle: tear down the EQ filter chains and reroute Game/Chat
+    /// loopbacks back to the headset directly.
+    pub fn disable_eq(&mut self) -> bool {
+        self.eq_enabled = false;
+        let Some(headset) = self.output_sink.clone() else {
+            // No headset = sinks gone too. Just clear flag and any
+            // stale insertions defensively.
+            if let Some(ch) = self.game.as_mut() {
+                ch.eq = None;
+            }
+            if let Some(ch) = self.chat.as_mut() {
+                ch.eq = None;
+            }
+            return false;
+        };
+        if let Some(ch) = self.game.as_mut() {
+            let _ = remove_eq_from_channel(ch, GAME_SINK, &headset);
+        }
+        if let Some(ch) = self.chat.as_mut() {
+            let _ = remove_eq_from_channel(ch, CHAT_SINK, &headset);
+        }
+        info!("EQ disabled (Game + Chat reverted to direct routing)");
         false
     }
 
@@ -209,15 +317,44 @@ impl SinkManager {
                 active.push(HDMI_SINK);
             }
             info!("Created sinks: {}", active.join(", "));
+
+            // If EQ was on before disconnect (or set via persisted state),
+            // re-insert the filter chains now that the sinks exist again.
+            if self.eq_enabled {
+                let headset = output_sink.to_string();
+                if let Some(ch) = self.game.as_mut() {
+                    insert_eq_into_channel(
+                        ch,
+                        GAME_SINK,
+                        EQ_GAME_SINK,
+                        "SteelVoiceMix Game EQ",
+                        &headset,
+                    );
+                }
+                if let Some(ch) = self.chat.as_mut() {
+                    insert_eq_into_channel(
+                        ch,
+                        CHAT_SINK,
+                        EQ_CHAT_SINK,
+                        "SteelVoiceMix Chat EQ",
+                        &headset,
+                    );
+                }
+            }
         } else {
             error!("Failed to create one or more sinks");
         }
     }
 
-    /// Unload the null-sink + loopback modules we created.
+    /// Unload the null-sink + loopback modules we created. Also tears down
+    /// any inserted EQ filter chains by dropping their handles (which kills
+    /// the spawned pipewire children).
     pub fn destroy_sinks(&mut self) {
         for slot in [&mut self.game, &mut self.chat, &mut self.media, &mut self.hdmi] {
-            if let Some(m) = slot.take() {
+            if let Some(mut m) = slot.take() {
+                if let Some(eq) = m.eq.take() {
+                    eq.filter.shutdown();
+                }
                 unload_module(m.loopback_id);
                 unload_module(m.null_sink_id);
             }
@@ -269,6 +406,7 @@ fn create_sink_pair(target: &str, name: &str, description: &str) -> Option<SinkM
         Some(loopback_id) => Some(SinkModules {
             null_sink_id,
             loopback_id,
+            eq: None,
         }),
         None => {
             warn!("Loopback for {name} failed — unloading its null-sink");
@@ -276,6 +414,109 @@ fn create_sink_pair(target: &str, name: &str, description: &str) -> Option<SinkM
             None
         }
     }
+}
+
+/// Insert an EQ filter chain in front of a channel's headset path.
+/// Spawns a managed pipewire child that hosts the chain (which auto-routes
+/// to the headset via its own `playback.props.node.target`), then swaps
+/// the channel's null-sink → headset loopback for a null-sink → EQ-sink
+/// loopback. The null-sink module ID never changes, so apps bound to
+/// the user-facing sink (Discord, OBS) keep their connection.
+///
+/// Idempotent: calling it on a channel that already has EQ inserted is
+/// a no-op that returns true.
+fn insert_eq_into_channel(
+    channel: &mut SinkModules,
+    null_sink_name: &str,
+    eq_sink_name: &str,
+    eq_description: &str,
+    headset: &str,
+) -> bool {
+    if channel.eq.is_some() {
+        return true;
+    }
+
+    let spec = FilterChainSpec {
+        sink_name: eq_sink_name,
+        description: eq_description,
+        playback_target: headset,
+    };
+    let Some(filter) = FilterChainHandle::spawn(&spec) else {
+        return false;
+    };
+
+    // Wait for the spawned pipewire to actually load its modules — the
+    // filter-chain sink needs to exist before a loopback can target it.
+    thread::sleep(EQ_SPAWN_GRACE);
+
+    // Tear down the existing direct-to-headset loopback.
+    unload_module(channel.loopback_id);
+
+    // Establish the new null-sink → EQ-sink loopback.
+    let new_loopback = load_module(&[
+        "module-loopback",
+        &format!("source={null_sink_name}.monitor"),
+        &format!("sink={eq_sink_name}"),
+        "latency_msec=1",
+    ]);
+
+    match new_loopback {
+        Some(id) => {
+            channel.loopback_id = id;
+            channel.eq = Some(EqInsertion { filter });
+            info!("Inserted EQ chain '{eq_sink_name}' for {null_sink_name}");
+            true
+        }
+        None => {
+            // Loopback to EQ sink failed — fall back to direct so audio
+            // still works, and shut down the orphan filter chain.
+            warn!("Failed to retarget {null_sink_name} loopback at {eq_sink_name}; reverting to direct");
+            let direct = load_module(&[
+                "module-loopback",
+                &format!("source={null_sink_name}.monitor"),
+                &format!("sink={headset}"),
+                "latency_msec=1",
+            ]);
+            if let Some(id) = direct {
+                channel.loopback_id = id;
+            }
+            filter.shutdown();
+            false
+        }
+    }
+}
+
+/// Reverse `insert_eq_into_channel`: tear down the EQ chain and restore
+/// the channel's direct null-sink → headset loopback. Idempotent.
+fn remove_eq_from_channel(
+    channel: &mut SinkModules,
+    null_sink_name: &str,
+    headset: &str,
+) -> bool {
+    let Some(eq) = channel.eq.take() else {
+        return true;
+    };
+
+    // Tear down the null-sink → EQ-sink loopback first.
+    unload_module(channel.loopback_id);
+
+    // Restore the direct null-sink → headset loopback.
+    let direct = load_module(&[
+        "module-loopback",
+        &format!("source={null_sink_name}.monitor"),
+        &format!("sink={headset}"),
+        "latency_msec=1",
+    ]);
+    if let Some(id) = direct {
+        channel.loopback_id = id;
+    } else {
+        warn!("Failed to restore direct loopback for {null_sink_name}; channel may be silent until reconnect");
+    }
+
+    // Now safe to kill the filter-chain child.
+    eq.filter.shutdown();
+    info!("Removed EQ chain for {null_sink_name}");
+    true
 }
 
 fn load_module(args: &[&str]) -> Option<u32> {

@@ -25,6 +25,11 @@ pub enum ClientCommand {
     /// known browser/media-player binary will be moved to SteelMedia.
     #[serde(rename = "set-auto-route-browsers")]
     SetAutoRouteBrowsers { enabled: bool },
+    /// Toggle EQ filter-chain insertion on Game + Chat. Phase 1 chain is
+    /// passthrough so this is audibly inert; the toggle proves the
+    /// architecture before bands land.
+    #[serde(rename = "set-eq-enabled")]
+    SetEqEnabled { enabled: bool },
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -55,6 +60,7 @@ pub enum DaemonEvent {
         media_sink_enabled: bool,
         hdmi_sink_enabled: bool,
         auto_route_browsers: bool,
+        eq_enabled: bool,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -69,6 +75,10 @@ pub enum DaemonEvent {
     /// Fired when browser auto-routing is toggled.
     #[serde(rename = "auto-route-browsers-changed")]
     AutoRouteBrowsersChanged { enabled: bool },
+
+    /// Fired when EQ insertion is toggled.
+    #[serde(rename = "eq-enabled-changed")]
+    EqEnabledChanged { enabled: bool },
 }
 
 #[cfg(test)]
@@ -142,6 +152,7 @@ mod tests {
             media_sink_enabled: true,
             hdmi_sink_enabled: false,
             auto_route_browsers: false,
+            eq_enabled: false,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -153,6 +164,7 @@ mod tests {
         assert_eq!(json["media_sink_enabled"], true);
         assert_eq!(json["hdmi_sink_enabled"], false);
         assert_eq!(json["auto_route_browsers"], false);
+        assert_eq!(json["eq_enabled"], false);
 
         let without_bat = DaemonEvent::Status {
             connected: false,
@@ -162,12 +174,32 @@ mod tests {
             media_sink_enabled: false,
             hdmi_sink_enabled: true,
             auto_route_browsers: true,
+            eq_enabled: true,
         };
         let json: Value = from_str(&to_string(&without_bat).unwrap()).unwrap();
         assert!(json["battery"].is_null());
         assert_eq!(json["media_sink_enabled"], false);
         assert_eq!(json["hdmi_sink_enabled"], true);
         assert_eq!(json["auto_route_browsers"], true);
+        assert_eq!(json["eq_enabled"], true);
+    }
+
+    #[test]
+    fn set_eq_enabled_command_parses() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-eq-enabled","enabled":true}"#).unwrap();
+        match cmd {
+            ClientCommand::SetEqEnabled { enabled } => assert!(enabled),
+            other => panic!("expected SetEqEnabled, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn eq_enabled_changed_event_shape() {
+        let ev = DaemonEvent::EqEnabledChanged { enabled: true };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "eq-enabled-changed");
+        assert_eq!(json["enabled"], true);
     }
 
     #[test]

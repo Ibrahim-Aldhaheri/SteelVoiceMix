@@ -24,6 +24,11 @@ pub struct DaemonState {
     /// Off by default — opt-in to avoid surprising users.
     #[serde(default)]
     pub auto_route_browsers: bool,
+    /// When true, EQ filter chains are inserted on Game + Chat at
+    /// startup. Phase 1 chain is a passthrough — toggle is wired but
+    /// not yet audibly different. Bands land in a follow-up commit.
+    #[serde(default)]
+    pub eq_enabled: bool,
 }
 
 fn state_path() -> Option<PathBuf> {

@@ -44,6 +44,7 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         media_sink_enabled: st.media_sink_enabled,
         hdmi_sink_enabled: st.hdmi_sink_enabled,
         auto_route_browsers: st.auto_route_browsers,
+        eq_enabled: st.eq_enabled,
     }
 }
 
@@ -55,6 +56,7 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         media_sink_enabled: st.media_sink_enabled,
         hdmi_sink_enabled: st.hdmi_sink_enabled,
         auto_route_browsers: st.auto_route_browsers,
+        eq_enabled: st.eq_enabled,
     });
 }
 
@@ -170,6 +172,26 @@ fn handle_client(
                     DaemonEvent::AutoRouteBrowsersChanged { enabled },
                 );
             }
+            ClientCommand::SetEqEnabled { enabled } => {
+                let actual = {
+                    let mut sm = sinks.lock().unwrap();
+                    if enabled {
+                        sm.enable_eq()
+                    } else {
+                        sm.disable_eq()
+                    }
+                };
+                {
+                    let mut st = state.lock().unwrap();
+                    st.eq_enabled = actual;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: set-eq-enabled → enabled={actual}");
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::EqEnabledChanged { enabled: actual },
+                );
+            }
             ClientCommand::Subscribe => {
                 let (tx, rx) = std::sync::mpsc::channel::<DaemonEvent>();
                 subscribers.lock().unwrap().push(tx);
@@ -274,6 +296,7 @@ fn main() {
     let media_sink_enabled = if no_media_sink { false } else { persisted.media_sink_enabled };
     let hdmi_sink_enabled = if no_hdmi_sink { false } else { persisted.hdmi_sink_enabled };
     let auto_route_browsers = persisted.auto_route_browsers;
+    let eq_enabled = persisted.eq_enabled;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -283,15 +306,21 @@ fn main() {
         hdmi_sink_enabled, persisted.hdmi_sink_enabled, no_hdmi_sink
     );
     info!("Browser auto-routing: {}", auto_route_browsers);
+    info!("EQ filter chains: {}", eq_enabled);
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(
         media_sink_enabled,
         hdmi_sink_enabled,
         auto_route_browsers,
+        eq_enabled,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
-    let sinks: SharedSinks = Arc::new(Mutex::new(SinkManager::new(media_sink_enabled, hdmi_sink_enabled)));
+    let sinks: SharedSinks = Arc::new(Mutex::new(SinkManager::new(
+        media_sink_enabled,
+        hdmi_sink_enabled,
+        eq_enabled,
+    )));
     let router = Arc::new(RouterState::new(auto_route_browsers));
     spawn_router(router.clone(), running.clone());
 

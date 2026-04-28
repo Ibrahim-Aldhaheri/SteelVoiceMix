@@ -24,6 +24,7 @@ class DaemonSignals(QObject):
     media_sink_changed = Signal(bool)
     hdmi_sink_changed = Signal(bool)
     auto_route_browsers_changed = Signal(bool)
+    eq_enabled_changed = Signal(bool)
 
 
 class DaemonClient:
@@ -97,6 +98,8 @@ class DaemonClient:
             self.signals.auto_route_browsers_changed.emit(
                 bool(event.get("enabled", False))
             )
+        elif ev == "eq-enabled-changed":
+            self.signals.eq_enabled_changed.emit(bool(event.get("enabled", False)))
         elif ev == "status":
             self.signals.media_sink_changed.emit(
                 bool(event.get("media_sink_enabled", True))
@@ -106,6 +109,9 @@ class DaemonClient:
             )
             self.signals.auto_route_browsers_changed.emit(
                 bool(event.get("auto_route_browsers", False))
+            )
+            self.signals.eq_enabled_changed.emit(
+                bool(event.get("eq_enabled", False))
             )
             if event.get("connected"):
                 self.signals.connected.emit()

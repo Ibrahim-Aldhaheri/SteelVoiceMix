@@ -183,12 +183,14 @@ class MixerGUI(QMainWindow):
         self.signals.auto_route_browsers_changed.connect(
             self._on_auto_route_browsers_changed
         )
+        self.signals.eq_enabled_changed.connect(self._on_eq_enabled_changed)
         # Track the daemon's reported sink-toggle states so the buttons
         # render correctly. Daemon defaults are "off until the user opts in"
         # so we start with False; the first status event corrects them.
         self._media_sink_enabled = False
         self._hdmi_sink_enabled = False
         self._auto_route_browsers = False
+        self._eq_enabled = False
 
         self.settings = load_settings()
         self.overlay = DialOverlay()
@@ -375,6 +377,30 @@ class MixerGUI(QMainWindow):
         )
         self.auto_route_check.toggled.connect(self._toggle_auto_route_browsers)
         layout.addWidget(self.auto_route_check)
+
+        layout.addWidget(_divider())
+        layout.addWidget(_section_title("Equalizer"))
+
+        self.eq_check = QCheckBox("Enable EQ filter chain (Game + Chat)")
+        self.eq_check.setToolTip(
+            "Inserts a PipeWire filter chain between SteelGame/SteelChat "
+            "and the headset. Phase 1 chain is a passthrough — no audible "
+            "change yet, this just verifies the routing works without "
+            "dropping app connections (Discord stays bound). Bands and "
+            "presets land in a follow-up update."
+        )
+        self.eq_check.toggled.connect(self._toggle_eq_enabled)
+        layout.addWidget(self.eq_check)
+
+        eq_help = QLabel(
+            "When enabled, Game + Chat audio routes through a filter graph "
+            "before reaching the headset. The user-facing sinks stay put, "
+            "so apps holding sink references (Discord, OBS) keep their "
+            "connection across toggles."
+        )
+        eq_help.setStyleSheet("font-size: 10px; color: palette(placeholder-text); padding-top: 4px;")
+        eq_help.setWordWrap(True)
+        layout.addWidget(eq_help)
 
         layout.addStretch(1)
         return page
@@ -699,6 +725,15 @@ class MixerGUI(QMainWindow):
         self.daemon_client.send_command(
             "set-auto-route-browsers", enabled=bool(checked)
         )
+
+    def _on_eq_enabled_changed(self, enabled: bool):
+        self._eq_enabled = enabled
+        was_blocked = self.eq_check.blockSignals(True)
+        self.eq_check.setChecked(enabled)
+        self.eq_check.blockSignals(was_blocked)
+
+    def _toggle_eq_enabled(self, checked: bool):
+        self.daemon_client.send_command("set-eq-enabled", enabled=bool(checked))
 
     # -------------------------------------------------------------- profiles
 
