@@ -50,7 +50,16 @@ DEFAULTS: dict[str, Any] = {
     "overlay_orientation": "horizontal",
     # name -> {"gui": {...PROFILE_GUI_KEYS subset...}, "sinks": {"media": bool, "hdmi": bool}}
     "profiles": {},
+    # channel -> [preset name, ...]; capped at MAX_FAVOURITES_PER_CHANNEL
+    # entries each via add_favourite(). Used by the EQ tab to pin
+    # favourite presets to the top of the preset dropdown.
+    "eq_favourites": {},
 }
+
+# Star-tier capacity per channel. Five is enough to cover the main use
+# cases (bass / vocal / footsteps / cinematic / flat) without the
+# dropdown's pinned section eating too much vertical space.
+MAX_FAVOURITES_PER_CHANNEL = 5
 
 
 def socket_path() -> str:
@@ -180,3 +189,72 @@ def delete_profile(settings: dict[str, Any], name: str) -> bool:
         save(settings)
         return True
     return False
+
+
+# ----------------------------------------------------------- EQ favourites
+
+
+def _favourites_dict(settings: dict[str, Any]) -> dict[str, list[str]]:
+    fav = settings.get("eq_favourites")
+    if not isinstance(fav, dict):
+        fav = {}
+        settings["eq_favourites"] = fav
+    return fav
+
+
+def get_favourites(settings: dict[str, Any], channel: str) -> list[str]:
+    """Ordered list of favourited preset names for `channel`. Order is
+    preserved as added; the EQ tab uses it to render the pinned section
+    of the dropdown."""
+    raw = _favourites_dict(settings).get(channel, [])
+    if not isinstance(raw, list):
+        return []
+    return [str(n) for n in raw]
+
+
+def is_favourite(settings: dict[str, Any], channel: str, name: str) -> bool:
+    return name in get_favourites(settings, channel)
+
+
+def add_favourite(settings: dict[str, Any], channel: str, name: str) -> bool:
+    """Mark `name` as a favourite on `channel`. Returns False if the
+    channel is already at MAX_FAVOURITES_PER_CHANNEL — the caller can
+    then prompt the user to unfavourite something first. No-op if the
+    name was already in the list."""
+    fav = _favourites_dict(settings)
+    current = fav.get(channel, [])
+    if not isinstance(current, list):
+        current = []
+    if name in current:
+        return True
+    if len(current) >= MAX_FAVOURITES_PER_CHANNEL:
+        return False
+    current.append(name)
+    fav[channel] = current
+    save(settings)
+    return True
+
+
+def remove_favourite(settings: dict[str, Any], channel: str, name: str) -> bool:
+    fav = _favourites_dict(settings)
+    current = fav.get(channel, [])
+    if not isinstance(current, list) or name not in current:
+        return False
+    current.remove(name)
+    fav[channel] = current
+    save(settings)
+    return True
+
+
+def rename_favourite(
+    settings: dict[str, Any], channel: str, old: str, new: str
+) -> None:
+    """Keep favourites in sync with a preset rename. No-op if the old
+    name wasn't favourited."""
+    fav = _favourites_dict(settings)
+    current = fav.get(channel, [])
+    if not isinstance(current, list) or old not in current:
+        return
+    current[current.index(old)] = new
+    fav[channel] = current
+    save(settings)

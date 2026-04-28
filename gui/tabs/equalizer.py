@@ -34,6 +34,14 @@ from ..eq_presets import (
     rename_user_preset,
     save_user_preset,
 )
+from ..settings import (
+    MAX_FAVOURITES_PER_CHANNEL,
+    add_favourite,
+    get_favourites,
+    is_favourite,
+    remove_favourite,
+    rename_favourite,
+)
 from ..widgets import section_title
 
 
@@ -104,9 +112,12 @@ def _band_name_for(freq: float) -> str:
 
 
 class EqualizerTab(QWidget):
-    def __init__(self, daemon_client, parent=None):
+    def __init__(self, daemon_client, settings: dict, parent=None):
         super().__init__(parent)
         self._daemon = daemon_client
+        # Settings dict is shared with the rest of the GUI so favourite
+        # changes persist alongside overlay/profile prefs.
+        self._settings = settings
         self._eq_enabled = False
 
         # Per-channel band data. Each channel carries its own
@@ -189,6 +200,16 @@ class EqualizerTab(QWidget):
         self.preset_combo.setMinimumWidth(160)
         self.preset_combo.currentTextChanged.connect(self._on_preset_text_changed)
         preset_row.addWidget(self.preset_combo, 1)
+        # Star toggle. Outline = not favourited, filled = favourited.
+        # Limited to MAX_FAVOURITES_PER_CHANNEL on each channel; trying
+        # to add a sixth pops a message asking the user to clear one.
+        self.preset_fav_btn = QPushButton("☆")
+        self.preset_fav_btn.setFixedWidth(32)
+        self.preset_fav_btn.setToolTip(
+            f"Favourite this preset (up to {MAX_FAVOURITES_PER_CHANNEL} per channel)"
+        )
+        self.preset_fav_btn.clicked.connect(self._on_preset_favourite_toggled)
+        preset_row.addWidget(self.preset_fav_btn)
         self.preset_load_btn = QPushButton("Load")
         self.preset_load_btn.clicked.connect(self._on_preset_load)
         self.preset_save_btn = QPushButton("Save…")
@@ -381,17 +402,9 @@ class EqualizerTab(QWidget):
         except ValueError:
             return
         self._active_preset_by_channel[channel] = new_name
-        was_blocked = self.preset_combo.blockSignals(True)
-        try:
-            self.preset_combo.clear()
-            for preset in list_presets(channel):
-                self.preset_combo.addItem(preset["name"])
-            idx = self.preset_combo.findText(new_name)
-            if idx >= 0:
-                self.preset_combo.setCurrentIndex(idx)
-        finally:
-            self.preset_combo.blockSignals(was_blocked)
-        self._update_action_buttons()
+        # _refresh_preset_combo handles the star-prefix + favourites
+        # sorting and re-selects the active preset for us.
+        self._refresh_preset_combo()
 
     def _on_channel_changed(self, text: str) -> None:
         """Combo box changed — load the selected channel's stored bands
@@ -413,23 +426,63 @@ class EqualizerTab(QWidget):
     # ---------------------------------------------------------------- presets
 
     def _refresh_preset_combo(self) -> None:
-        """Rebuild the preset combo for the current channel. Block
-        signals while we mutate the model so the active selection
-        change doesn't fire spurious 'load this preset' edits.
-        Restores the active-preset selection if there is one."""
+        """Rebuild the preset combo for the current channel. Favourites
+        pin to the top with a star prefix, separated from the rest of
+        the list. Block signals while we mutate the model so the active
+        selection change doesn't fire spurious 'load this preset'
+        edits."""
+        ch = self._current_channel
+        favs = get_favourites(self._settings, ch)
+        all_presets = list_presets(ch)
+        all_names = [p["name"] for p in all_presets]
+        # Favourites first (in user-defined order), then everything else
+        # in the natural built-in-then-alphabetical order from
+        # list_presets. Names that were favourited but no longer exist
+        # (e.g. the underlying preset was deleted from disk) are skipped
+        # so the dropdown never shows a dead entry.
+        fav_present = [n for n in favs if n in all_names]
+        non_fav = [n for n in all_names if n not in fav_present]
+
         was_blocked = self.preset_combo.blockSignals(True)
         try:
             self.preset_combo.clear()
-            for preset in list_presets(self._current_channel):
-                self.preset_combo.addItem(preset["name"])
-            active = self._active_preset_by_channel.get(self._current_channel, "")
+            for n in fav_present:
+                self.preset_combo.addItem(f"★ {n}", userData=n)
+            if fav_present and non_fav:
+                self.preset_combo.insertSeparator(self.preset_combo.count())
+            for n in non_fav:
+                self.preset_combo.addItem(n, userData=n)
+
+            active = self._active_preset_by_channel.get(ch, "")
             if active:
-                idx = self.preset_combo.findText(active)
+                idx = self._index_for_preset_name(active)
                 if idx >= 0:
                     self.preset_combo.setCurrentIndex(idx)
         finally:
             self.preset_combo.blockSignals(was_blocked)
         self._update_action_buttons()
+
+    def _index_for_preset_name(self, name: str) -> int:
+        """Find the combo row whose userData (the underlying preset
+        name) matches `name`. Necessary because favourited rows show as
+        '★ Foo' but their userData is plain 'Foo'."""
+        for i in range(self.preset_combo.count()):
+            if self.preset_combo.itemData(i) == name:
+                return i
+        return -1
+
+    def _selected_preset_name(self) -> str:
+        """Return the underlying preset name for the currently selected
+        combo row — or whatever the user typed if they edited the line
+        and haven't picked an item yet. Strips a leading star prefix as
+        a safety net for typed input."""
+        data = self.preset_combo.currentData()
+        if isinstance(data, str) and data:
+            return data
+        text = self.preset_combo.currentText().strip()
+        if text.startswith("★ "):
+            return text[2:].strip()
+        return text
 
     def _on_preset_text_changed(self, _text: str) -> None:
         # Rename + Delete are only meaningful for user-saved presets —
@@ -437,13 +490,44 @@ class EqualizerTab(QWidget):
         self._update_action_buttons()
 
     def _update_action_buttons(self) -> None:
-        name = self.preset_combo.currentText().strip()
+        name = self._selected_preset_name()
         editable = bool(name) and is_user_preset(name, self._current_channel)
         self.preset_delete_btn.setEnabled(editable)
         self.preset_rename_btn.setEnabled(editable)
+        if name and is_favourite(self._settings, self._current_channel, name):
+            self.preset_fav_btn.setText("★")
+            self.preset_fav_btn.setToolTip(
+                "Remove this preset from favourites"
+            )
+        else:
+            self.preset_fav_btn.setText("☆")
+            self.preset_fav_btn.setToolTip(
+                f"Favourite this preset (up to {MAX_FAVOURITES_PER_CHANNEL} per channel)"
+            )
+        self.preset_fav_btn.setEnabled(bool(name))
+
+    def _on_preset_favourite_toggled(self) -> None:
+        name = self._selected_preset_name()
+        if not name:
+            return
+        ch = self._current_channel
+        if is_favourite(self._settings, ch, name):
+            remove_favourite(self._settings, ch, name)
+        else:
+            ok = add_favourite(self._settings, ch, name)
+            if not ok:
+                QMessageBox.information(
+                    self,
+                    "Favourites full",
+                    f"You can only have {MAX_FAVOURITES_PER_CHANNEL} "
+                    f"favourites per channel. Remove one first, then "
+                    f"favourite '{name}'.",
+                )
+                return
+        self._refresh_preset_combo()
 
     def _on_preset_load(self) -> None:
-        name = self.preset_combo.currentText().strip()
+        name = self._selected_preset_name()
         if not name:
             return
         preset = find_preset(name, self._current_channel)
@@ -472,7 +556,7 @@ class EqualizerTab(QWidget):
         self._update_action_buttons()
 
     def _on_preset_save(self) -> None:
-        suggested = self.preset_combo.currentText().strip() or "My Preset"
+        suggested = self._selected_preset_name() or "My Preset"
         name, ok = QInputDialog.getText(
             self,
             "Save preset",
@@ -494,7 +578,7 @@ class EqualizerTab(QWidget):
         self._refresh_preset_combo()
 
     def _on_preset_rename(self) -> None:
-        old_name = self.preset_combo.currentText().strip()
+        old_name = self._selected_preset_name()
         if not old_name or not is_user_preset(old_name, self._current_channel):
             return
         new_name, ok = QInputDialog.getText(
@@ -510,11 +594,16 @@ class EqualizerTab(QWidget):
         except ValueError as e:
             QMessageBox.warning(self, "Could not rename", str(e))
             return
+        # Keep the favourites list in sync with the new name so the star
+        # row at the top of the dropdown stays consistent.
+        rename_favourite(
+            self._settings, self._current_channel, old_name, new_name.strip()
+        )
         self._active_preset_by_channel[self._current_channel] = new_name.strip()
         self._refresh_preset_combo()
 
     def _on_preset_delete(self) -> None:
-        name = self.preset_combo.currentText().strip()
+        name = self._selected_preset_name()
         if not name or not is_user_preset(name, self._current_channel):
             return
         ok = QMessageBox.question(
@@ -526,6 +615,9 @@ class EqualizerTab(QWidget):
         if ok != QMessageBox.Yes:
             return
         delete_user_preset(name, self._current_channel)
+        # Drop the deleted preset from favourites too — otherwise a
+        # ghost entry would persist in settings.json.
+        remove_favourite(self._settings, self._current_channel, name)
         if self._active_preset_by_channel.get(self._current_channel) == name:
             self._active_preset_by_channel[self._current_channel] = ""
         self._refresh_preset_combo()

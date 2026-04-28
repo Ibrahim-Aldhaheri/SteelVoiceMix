@@ -114,7 +114,7 @@ class MixerGUI(QMainWindow):
         # handlers. The window only routes daemon events to them.
         self.home_tab = HomeTab()
         self.sinks_tab = SinksTab(self.daemon_client)
-        self.eq_tab = EqualizerTab(self.daemon_client)
+        self.eq_tab = EqualizerTab(self.daemon_client, self.settings)
         self.mic_tab = MicrophoneTab(self.daemon_client)
         self.settings_tab = SettingsTab(self.settings, self.overlay, self.sinks_tab)
 
