@@ -1,6 +1,7 @@
 mod audio;
 mod config;
 mod display;
+mod filter_chain;
 mod hid;
 mod mixer;
 mod protocol;
@@ -16,6 +17,7 @@ use std::thread;
 use log::{error, info, warn};
 
 use audio::SinkManager;
+use filter_chain::FilterChainSpec;
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
 use protocol::{ClientCommand, DaemonEvent};
 use routing::{spawn_router, RouterState};
@@ -211,12 +213,14 @@ fn main() {
     let mut no_media_sink = false;
     let mut no_hdmi_sink = false;
     let mut debug = false;
+    let mut test_filter_chain = false;
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--no-notify" => no_notify = true,
             "--no-socket" => no_socket = true,
             "--no-media-sink" => no_media_sink = true,
             "--no-hdmi-sink" => no_hdmi_sink = true,
+            "--test-filter-chain" => test_filter_chain = true,
             "--debug" | "-d" => debug = true,
             "--version" | "-V" => {
                 println!("steelvoicemix {}", env!("CARGO_PKG_VERSION"));
@@ -234,6 +238,10 @@ fn main() {
                 println!("                   (the GUI can still add it at runtime)");
                 println!("  --no-hdmi-sink   Skip the SteelHDMI sink on startup");
                 println!("                   (the GUI can still add it at runtime)");
+                println!("  --test-filter-chain  Load a passthrough filter-chain sink");
+                println!("                   ('SteelGameEQ_test') for 5 seconds, then");
+                println!("                   unload and exit. Used to verify PipeWire");
+                println!("                   filter-chain wiring before EQ ships.");
                 println!("  -d, --debug      Enable debug logging (equivalent to RUST_LOG=debug)");
                 println!("  -V, --version    Print version and exit");
                 println!("  -h, --help       Show this help");
@@ -251,6 +259,11 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_level))
         .format_timestamp_secs()
         .init();
+
+    if test_filter_chain {
+        run_filter_chain_test();
+        return;
+    }
 
     // Optional sinks (Media, HDMI): default to whatever the user picked last
     // time. On a fresh install the state file doesn't exist and load() returns
@@ -352,4 +365,41 @@ fn main() {
     }
 
     let _ = mixer_thread.join();
+}
+
+/// Diagnostic helper for `--test-filter-chain`. Loads a passthrough
+/// filter-chain sink, sleeps a few seconds so the user can verify it
+/// shows up in `pactl list short sinks`, then unloads it and exits.
+///
+/// This is the "scaffolding works" smoke test before the full EQ
+/// integration touches `audio.rs` and the loopback wiring.
+fn run_filter_chain_test() {
+    info!("=== filter-chain wiring smoke test ===");
+
+    // Auto-detect the headset so the test chain has somewhere to play to.
+    // Falls back to a sentinel if no headset is currently attached — the
+    // chain still loads, just with no audio downstream.
+    let headset = SinkManager::find_output_sink()
+        .unwrap_or_else(|| "@DEFAULT_SINK@".to_string());
+    info!("Using playback target: {headset}");
+
+    let spec = FilterChainSpec {
+        sink_name: "SteelGameEQ_test",
+        description: "SteelVoiceMix filter-chain test",
+        playback_target: &headset,
+    };
+    let Some(module_id) = spec.load() else {
+        error!("Failed to load test filter chain — see warnings above.");
+        std::process::exit(1);
+    };
+
+    info!(
+        "Filter chain loaded as module #{module_id}. Run: \
+         pactl list short sinks | grep SteelGameEQ_test"
+    );
+    info!("Sleeping 5s before unload...");
+    std::thread::sleep(std::time::Duration::from_secs(5));
+
+    filter_chain::unload(module_id);
+    info!("Test filter chain unloaded. Exiting.");
 }
