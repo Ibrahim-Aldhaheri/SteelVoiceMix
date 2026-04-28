@@ -25,6 +25,8 @@ class DaemonSignals(QObject):
     hdmi_sink_changed = Signal(bool)
     auto_route_browsers_changed = Signal(bool)
     eq_enabled_changed = Signal(bool)
+    # Emits the full 6-band gain array as a Python list of floats.
+    eq_band_gains_changed = Signal(list)
 
 
 class DaemonClient:
@@ -100,6 +102,12 @@ class DaemonClient:
             )
         elif ev == "eq-enabled-changed":
             self.signals.eq_enabled_changed.emit(bool(event.get("enabled", False)))
+        elif ev == "eq-band-gains-changed":
+            gains = event.get("gains")
+            if isinstance(gains, list) and len(gains) == 6:
+                self.signals.eq_band_gains_changed.emit(
+                    [float(g) for g in gains]
+                )
         elif ev == "status":
             self.signals.media_sink_changed.emit(
                 bool(event.get("media_sink_enabled", True))
@@ -113,6 +121,11 @@ class DaemonClient:
             self.signals.eq_enabled_changed.emit(
                 bool(event.get("eq_enabled", False))
             )
+            gains = event.get("eq_band_gains")
+            if isinstance(gains, list) and len(gains) == 6:
+                self.signals.eq_band_gains_changed.emit(
+                    [float(g) for g in gains]
+                )
             if event.get("connected"):
                 self.signals.connected.emit()
                 self.signals.chatmix_changed.emit(

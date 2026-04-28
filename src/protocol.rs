@@ -30,6 +30,13 @@ pub enum ClientCommand {
     /// architecture before bands land.
     #[serde(rename = "set-eq-enabled")]
     SetEqEnabled { enabled: bool },
+    /// Set the gain (dB) of one EQ band. Bands are 1..=6 in the order:
+    /// low shelf @ 100, peaking @ 100, peaking @ 500, peaking @ 2000,
+    /// peaking @ 5000, high shelf @ 5000 Hz. Daemon clamps gain to
+    /// [-12.0, 12.0]. If EQ is currently enabled, the chain respawns
+    /// with the new gain (~100 ms audio glitch).
+    #[serde(rename = "set-eq-band-gain")]
+    SetEqBandGain { band: u8, gain_db: f32 },
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -61,6 +68,7 @@ pub enum DaemonEvent {
         hdmi_sink_enabled: bool,
         auto_route_browsers: bool,
         eq_enabled: bool,
+        eq_band_gains: [f32; 6],
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -79,6 +87,12 @@ pub enum DaemonEvent {
     /// Fired when EQ insertion is toggled.
     #[serde(rename = "eq-enabled-changed")]
     EqEnabledChanged { enabled: bool },
+
+    /// Fired whenever any EQ band's gain changes — emits the full
+    /// 6-band array so the GUI can refresh all sliders at once and
+    /// stay in sync if multiple changes happen close together.
+    #[serde(rename = "eq-band-gains-changed")]
+    EqBandGainsChanged { gains: [f32; 6] },
 }
 
 #[cfg(test)]
@@ -153,6 +167,7 @@ mod tests {
             hdmi_sink_enabled: false,
             auto_route_browsers: false,
             eq_enabled: false,
+            eq_band_gains: [0.0; 6],
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -165,6 +180,7 @@ mod tests {
         assert_eq!(json["hdmi_sink_enabled"], false);
         assert_eq!(json["auto_route_browsers"], false);
         assert_eq!(json["eq_enabled"], false);
+        assert!(json["eq_band_gains"].is_array());
 
         let without_bat = DaemonEvent::Status {
             connected: false,
@@ -175,6 +191,7 @@ mod tests {
             hdmi_sink_enabled: true,
             auto_route_browsers: true,
             eq_enabled: true,
+            eq_band_gains: [-3.0, 0.0, 0.0, 0.0, 0.0, 6.0],
         };
         let json: Value = from_str(&to_string(&without_bat).unwrap()).unwrap();
         assert!(json["battery"].is_null());
@@ -182,6 +199,32 @@ mod tests {
         assert_eq!(json["hdmi_sink_enabled"], true);
         assert_eq!(json["auto_route_browsers"], true);
         assert_eq!(json["eq_enabled"], true);
+        assert_eq!(json["eq_band_gains"][0], -3.0);
+        assert_eq!(json["eq_band_gains"][5], 6.0);
+    }
+
+    #[test]
+    fn set_eq_band_gain_command_parses() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-eq-band-gain","band":3,"gain_db":-4.5}"#).unwrap();
+        match cmd {
+            ClientCommand::SetEqBandGain { band, gain_db } => {
+                assert_eq!(band, 3);
+                assert!((gain_db - -4.5).abs() < 1e-6);
+            }
+            other => panic!("expected SetEqBandGain, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn eq_band_gains_changed_event_shape() {
+        let ev = DaemonEvent::EqBandGainsChanged {
+            gains: [1.0, -2.0, 0.0, 0.0, 0.0, 0.0],
+        };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "eq-band-gains-changed");
+        assert_eq!(json["gains"][0], 1.0);
+        assert_eq!(json["gains"][1], -2.0);
     }
 
     #[test]

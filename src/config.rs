@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// What the daemon remembers across restarts. Default-derived: a fresh
 /// install loads as all-false so we don't surprise anyone with extra
 /// output devices they didn't ask for.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonState {
     #[serde(default)]
     pub media_sink_enabled: bool,
@@ -25,10 +25,31 @@ pub struct DaemonState {
     #[serde(default)]
     pub auto_route_browsers: bool,
     /// When true, EQ filter chains are inserted on Game + Chat at
-    /// startup. Phase 1 chain is a passthrough — toggle is wired but
-    /// not yet audibly different. Bands land in a follow-up commit.
+    /// startup. Toggling this re-runs the loopback-swap dance.
     #[serde(default)]
     pub eq_enabled: bool,
+    /// Per-band gains in dB for the 6-band EQ chain (low shelf @ 100 Hz,
+    /// peaking @ 100 / 500 / 2000 / 5000 Hz, high shelf @ 5000 Hz).
+    /// Range expected to be [-12.0, 12.0]; clamping is enforced in the
+    /// command handler. All zeros = passthrough.
+    #[serde(default = "default_band_gains")]
+    pub eq_band_gains: [f32; 6],
+}
+
+fn default_band_gains() -> [f32; 6] {
+    [0.0; 6]
+}
+
+impl Default for DaemonState {
+    fn default() -> Self {
+        DaemonState {
+            media_sink_enabled: false,
+            hdmi_sink_enabled: false,
+            auto_route_browsers: false,
+            eq_enabled: false,
+            eq_band_gains: default_band_gains(),
+        }
+    }
 }
 
 fn state_path() -> Option<PathBuf> {

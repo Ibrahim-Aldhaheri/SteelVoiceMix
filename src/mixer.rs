@@ -58,6 +58,7 @@ pub struct MixerState {
     pub hdmi_sink_enabled: bool,
     pub auto_route_browsers: bool,
     pub eq_enabled: bool,
+    pub eq_band_gains: [f32; 6],
 }
 
 impl MixerState {
@@ -66,6 +67,7 @@ impl MixerState {
         hdmi_sink_enabled: bool,
         auto_route_browsers: bool,
         eq_enabled: bool,
+        eq_band_gains: [f32; 6],
     ) -> Self {
         MixerState {
             connected: false,
@@ -76,6 +78,7 @@ impl MixerState {
             hdmi_sink_enabled,
             auto_route_browsers,
             eq_enabled,
+            eq_band_gains,
         }
     }
 }

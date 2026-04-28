@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSlider,
     QSystemTrayIcon,
     QTabWidget,
     QVBoxLayout,
@@ -184,6 +185,7 @@ class MixerGUI(QMainWindow):
             self._on_auto_route_browsers_changed
         )
         self.signals.eq_enabled_changed.connect(self._on_eq_enabled_changed)
+        self.signals.eq_band_gains_changed.connect(self._on_eq_band_gains_changed)
         # Track the daemon's reported sink-toggle states so the buttons
         # render correctly. Daemon defaults are "off until the user opts in"
         # so we start with False; the first status event corrects them.
@@ -191,6 +193,12 @@ class MixerGUI(QMainWindow):
         self._hdmi_sink_enabled = False
         self._auto_route_browsers = False
         self._eq_enabled = False
+        self._eq_band_gains = [0.0] * 6
+        # Slider widgets, populated when the Sinks tab is built. We cache
+        # them so _on_eq_band_gains_changed can update them without
+        # triggering signal storms.
+        self.eq_band_sliders: list[QSlider] = []
+        self.eq_band_value_labels: list[QLabel] = []
 
         self.settings = load_settings()
         self.overlay = DialOverlay()
@@ -384,19 +392,55 @@ class MixerGUI(QMainWindow):
         self.eq_check = QCheckBox("Enable EQ filter chain (Game + Chat)")
         self.eq_check.setToolTip(
             "Inserts a PipeWire filter chain between SteelGame/SteelChat "
-            "and the headset. Phase 1 chain is a passthrough — no audible "
-            "change yet, this just verifies the routing works without "
-            "dropping app connections (Discord stays bound). Bands and "
-            "presets land in a follow-up update."
+            "and the headset. The user-facing sinks stay put across "
+            "toggles, so Discord/OBS don't lose their connection."
         )
         self.eq_check.toggled.connect(self._toggle_eq_enabled)
         layout.addWidget(self.eq_check)
 
+        # 6-band parametric EQ sliders. Bands match the shape from
+        # PipeWire's canonical sink-eq6.conf: low shelf @ 100 Hz,
+        # peaking @ 100 / 500 / 2k / 5k Hz, high shelf @ 5k Hz.
+        bands_row = QHBoxLayout()
+        bands_row.setSpacing(12)
+        BAND_LABELS = ["100 Hz\nshelf", "100 Hz", "500 Hz", "2 kHz", "5 kHz", "5 kHz\nshelf"]
+        for idx, label_text in enumerate(BAND_LABELS):
+            band_col = QVBoxLayout()
+            band_col.setSpacing(2)
+
+            value_lbl = QLabel("0.0")
+            value_lbl.setAlignment(Qt.AlignCenter)
+            value_lbl.setStyleSheet("font-size: 10px; color: palette(placeholder-text);")
+            self.eq_band_value_labels.append(value_lbl)
+            band_col.addWidget(value_lbl)
+
+            slider = QSlider(Qt.Vertical)
+            # Slider unit = 0.1 dB. Range: -120 to 120 → -12.0 to +12.0 dB.
+            slider.setRange(-120, 120)
+            slider.setValue(0)
+            slider.setTickPosition(QSlider.TicksRight)
+            slider.setTickInterval(60)
+            slider.setMinimumHeight(120)
+            # 1-indexed band number captured by closure for the daemon command.
+            band_num = idx + 1
+            slider.valueChanged.connect(
+                lambda v, b=band_num, lbl=value_lbl: self._on_eq_slider_changed(b, v, lbl)
+            )
+            self.eq_band_sliders.append(slider)
+            band_col.addWidget(slider, 1, alignment=Qt.AlignHCenter)
+
+            freq_lbl = QLabel(label_text)
+            freq_lbl.setAlignment(Qt.AlignCenter)
+            freq_lbl.setStyleSheet("font-size: 9px;")
+            band_col.addWidget(freq_lbl)
+
+            bands_row.addLayout(band_col)
+        layout.addLayout(bands_row)
+
         eq_help = QLabel(
-            "When enabled, Game + Chat audio routes through a filter graph "
-            "before reaching the headset. The user-facing sinks stay put, "
-            "so apps holding sink references (Discord, OBS) keep their "
-            "connection across toggles."
+            "Drag a slider to boost or cut a frequency band by up to "
+            "±12 dB. Changes apply on release — the chain respawns with "
+            "the new gains, ~100 ms audio glitch per change."
         )
         eq_help.setStyleSheet("font-size: 10px; color: palette(placeholder-text); padding-top: 4px;")
         eq_help.setWordWrap(True)
@@ -734,6 +778,36 @@ class MixerGUI(QMainWindow):
 
     def _toggle_eq_enabled(self, checked: bool):
         self.daemon_client.send_command("set-eq-enabled", enabled=bool(checked))
+
+    def _on_eq_slider_changed(self, band: int, value_tenths: int, label: QLabel):
+        """User dragged a slider. Slider value is dB × 10 (so we get 0.1 dB
+        granularity from an int-only QSlider). Update the visible label
+        immediately and send the command to the daemon. The daemon respawns
+        the chain with the new gain — ~100 ms glitch per change is fine
+        for set-and-forget tuning, less ideal for live drag, but live-update
+        without respawn is Phase 2.2 work."""
+        gain_db = value_tenths / 10.0
+        sign = "+" if gain_db > 0 else ""
+        label.setText(f"{sign}{gain_db:.1f}")
+        self.daemon_client.send_command(
+            "set-eq-band-gain", band=band, gain_db=gain_db
+        )
+
+    def _on_eq_band_gains_changed(self, gains: list):
+        """Daemon told us the canonical gain values changed. Push them
+        into the sliders and labels without re-sending commands."""
+        self._eq_band_gains = gains
+        for idx, gain_db in enumerate(gains):
+            if idx >= len(self.eq_band_sliders):
+                break
+            slider = self.eq_band_sliders[idx]
+            label = self.eq_band_value_labels[idx]
+            value_tenths = int(round(gain_db * 10))
+            was_blocked = slider.blockSignals(True)
+            slider.setValue(value_tenths)
+            slider.blockSignals(was_blocked)
+            sign = "+" if gain_db > 0 else ""
+            label.setText(f"{sign}{gain_db:.1f}")
 
     # -------------------------------------------------------------- profiles
 

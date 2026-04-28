@@ -61,7 +61,17 @@ pub struct FilterChainSpec<'a> {
     /// PipeWire node name of the downstream target — typically the real
     /// headset sink name. The filter chain's playback side binds to this.
     pub playback_target: &'a str,
+    /// Per-band gain in dB. Six entries matching the 6-band shape we
+    /// generate (low shelf at 100 Hz, peaking at 100/500/2k/5k Hz,
+    /// high shelf at 5k Hz). Range expected to be [-12.0, 12.0]; clamping
+    /// happens upstream where the user-facing slider lives.
+    pub band_gains: [f32; 6],
 }
+
+/// Default flat (passthrough) gains for a fresh chain — used at startup
+/// before the user has touched any sliders. All bands at 0 dB = the chain
+/// processes audio but applies no boost or cut.
+pub const FLAT_GAINS: [f32; 6] = [0.0; 6];
 
 impl<'a> FilterChainSpec<'a> {
     /// The prefixed sink name a loopback should target to feed audio
@@ -139,37 +149,37 @@ context.modules = [
                         type  = builtin
                         name  = eq_band_1
                         label = bq_lowshelf
-                        control = {{ "Freq" = 100.0  "Q" = 1.0  "Gain" = 12.0 }}
+                        control = {{ "Freq" = 100.0  "Q" = 1.0  "Gain" = {g1:.2} }}
                     }}
                     {{
                         type  = builtin
                         name  = eq_band_2
                         label = bq_peaking
-                        control = {{ "Freq" = 100.0  "Q" = 1.0  "Gain" = 0.0 }}
+                        control = {{ "Freq" = 100.0  "Q" = 1.0  "Gain" = {g2:.2} }}
                     }}
                     {{
                         type  = builtin
                         name  = eq_band_3
                         label = bq_peaking
-                        control = {{ "Freq" = 500.0  "Q" = 1.0  "Gain" = 0.0 }}
+                        control = {{ "Freq" = 500.0  "Q" = 1.0  "Gain" = {g3:.2} }}
                     }}
                     {{
                         type  = builtin
                         name  = eq_band_4
                         label = bq_peaking
-                        control = {{ "Freq" = 2000.0  "Q" = 1.0  "Gain" = 0.0 }}
+                        control = {{ "Freq" = 2000.0  "Q" = 1.0  "Gain" = {g4:.2} }}
                     }}
                     {{
                         type  = builtin
                         name  = eq_band_5
                         label = bq_peaking
-                        control = {{ "Freq" = 5000.0  "Q" = 1.0  "Gain" = 0.0 }}
+                        control = {{ "Freq" = 5000.0  "Q" = 1.0  "Gain" = {g5:.2} }}
                     }}
                     {{
                         type  = builtin
                         name  = eq_band_6
                         label = bq_highshelf
-                        control = {{ "Freq" = 5000.0  "Q" = 1.0  "Gain" = 0.0 }}
+                        control = {{ "Freq" = 5000.0  "Q" = 1.0  "Gain" = {g6:.2} }}
                     }}
                 ]
                 links = [
@@ -222,6 +232,12 @@ context.modules = [
             // conf any more — see the comment block on playback.props
             // about why we no longer set node.target. The target is used
             // exclusively by the explicit pw-link in spawn() instead.
+            g1 = self.band_gains[0],
+            g2 = self.band_gains[1],
+            g3 = self.band_gains[2],
+            g4 = self.band_gains[3],
+            g5 = self.band_gains[4],
+            g6 = self.band_gains[5],
         )
     }
 }

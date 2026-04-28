@@ -55,10 +55,12 @@ pub struct SinkManager {
     media_enabled: bool,
     hdmi_enabled: bool,
     /// When true, EQ filter chains are inserted between SteelGame /
-    /// SteelChat and the headset. The chain currently passes audio
-    /// through unchanged (Phase 1 scaffolding); real biquad bands will
-    /// land in a later commit.
+    /// SteelChat and the headset.
     eq_enabled: bool,
+    /// Per-band gain (dB) for the 6-band EQ. Range is enforced by the
+    /// command handler before this field is touched. All-zeros means
+    /// the chain is loaded but applies no boost or cut (passthrough).
+    eq_band_gains: [f32; 6],
     // Cached during create_sinks so runtime add/remove of the media sink
     // doesn't need to re-query PipeWire for the headset's sink name.
     output_sink: Option<String>,
@@ -67,7 +69,12 @@ pub struct SinkManager {
 }
 
 impl SinkManager {
-    pub fn new(media_enabled: bool, hdmi_enabled: bool, eq_enabled: bool) -> Self {
+    pub fn new(
+        media_enabled: bool,
+        hdmi_enabled: bool,
+        eq_enabled: bool,
+        eq_band_gains: [f32; 6],
+    ) -> Self {
         // Sweep up anything a previous crash or manual test left behind.
         cleanup_stale_modules();
         SinkManager {
@@ -78,9 +85,70 @@ impl SinkManager {
             media_enabled,
             hdmi_enabled,
             eq_enabled,
+            eq_band_gains,
             output_sink: None,
             hdmi_target: None,
         }
+    }
+
+    /// Read-only view of the current EQ band gains. The daemon's
+    /// snapshot logic copies these out for status events.
+    pub fn eq_band_gains(&self) -> [f32; 6] {
+        self.eq_band_gains
+    }
+
+    /// Update one band's gain (1-indexed: bands 1..=6). Out-of-range
+    /// bands or NaN gains are rejected. Returns the (possibly clamped)
+    /// new value applied. If EQ is currently enabled the chains are
+    /// respawned with the new gains so the change takes effect right
+    /// away.
+    pub fn set_eq_band_gain(&mut self, band: u8, gain_db: f32) -> Option<f32> {
+        if !(1..=6).contains(&band) || !gain_db.is_finite() {
+            return None;
+        }
+        let clamped = gain_db.clamp(-12.0, 12.0);
+        let idx = (band - 1) as usize;
+        if (self.eq_band_gains[idx] - clamped).abs() < 1e-6 {
+            // No change — skip the chain respawn cost.
+            return Some(clamped);
+        }
+        self.eq_band_gains[idx] = clamped;
+
+        if self.eq_enabled {
+            // Cheapest path to apply new gains: tear down the existing
+            // chains and re-insert with the new values. Costs ~100-200 ms
+            // of audio glitch but avoids the complexity of pw-cli live
+            // parameter updates against the running filter graph.
+            if let Some(headset) = self.output_sink.clone() {
+                if let Some(ch) = self.game.as_mut() {
+                    let _ = remove_eq_from_channel(ch, GAME_SINK, &headset);
+                }
+                if let Some(ch) = self.chat.as_mut() {
+                    let _ = remove_eq_from_channel(ch, CHAT_SINK, &headset);
+                }
+                if let Some(ch) = self.game.as_mut() {
+                    insert_eq_into_channel(
+                        ch,
+                        GAME_SINK,
+                        EQ_GAME_SINK,
+                        "SteelVoiceMix Game EQ",
+                        &headset,
+                        &self.eq_band_gains,
+                    );
+                }
+                if let Some(ch) = self.chat.as_mut() {
+                    insert_eq_into_channel(
+                        ch,
+                        CHAT_SINK,
+                        EQ_CHAT_SINK,
+                        "SteelVoiceMix Chat EQ",
+                        &headset,
+                        &self.eq_band_gains,
+                    );
+                }
+            }
+        }
+        Some(clamped)
     }
 
     /// Whether the SteelMedia sink is currently requested (may be idle if
@@ -164,6 +232,7 @@ impl SinkManager {
 
         // Try to insert on each existing channel. If chat fails after game
         // succeeds, undo game so we end in a consistent state.
+        let gains = self.eq_band_gains;
         let game_ok = match self.game.as_mut() {
             Some(ch) => insert_eq_into_channel(
                 ch,
@@ -171,6 +240,7 @@ impl SinkManager {
                 EQ_GAME_SINK,
                 "SteelVoiceMix Game EQ",
                 &headset,
+                &gains,
             ),
             None => true,
         };
@@ -185,6 +255,7 @@ impl SinkManager {
                 EQ_CHAT_SINK,
                 "SteelVoiceMix Chat EQ",
                 &headset,
+                &gains,
             ),
             None => true,
         };
@@ -314,6 +385,7 @@ impl SinkManager {
             // re-insert the filter chains now that the sinks exist again.
             if self.eq_enabled {
                 let headset = output_sink.to_string();
+                let gains = self.eq_band_gains;
                 if let Some(ch) = self.game.as_mut() {
                     insert_eq_into_channel(
                         ch,
@@ -321,6 +393,7 @@ impl SinkManager {
                         EQ_GAME_SINK,
                         "SteelVoiceMix Game EQ",
                         &headset,
+                        &gains,
                     );
                 }
                 if let Some(ch) = self.chat.as_mut() {
@@ -330,6 +403,7 @@ impl SinkManager {
                         EQ_CHAT_SINK,
                         "SteelVoiceMix Chat EQ",
                         &headset,
+                        &gains,
                     );
                 }
             }
@@ -423,6 +497,7 @@ fn insert_eq_into_channel(
     eq_sink_name: &str,
     eq_description: &str,
     headset: &str,
+    band_gains: &[f32; 6],
 ) -> bool {
     if channel.eq.is_some() {
         return true;
@@ -432,6 +507,7 @@ fn insert_eq_into_channel(
         sink_name: eq_sink_name,
         description: eq_description,
         playback_target: headset,
+        band_gains: *band_gains,
     };
     // Capture the prefixed sink name BEFORE moving spec into spawn — used
     // below as the loopback target. `effect_input.<name>` is the prefix
