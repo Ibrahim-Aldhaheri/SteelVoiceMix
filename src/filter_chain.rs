@@ -83,10 +83,14 @@ impl<'a> FilterChainSpec<'a> {
     /// that, when run via `pipewire -c <file>`, loads exactly this filter
     /// chain into the running PipeWire instance.
     fn to_pipewire_conf(&self) -> String {
-        // Phase 2.0 graph: one bq_lowshelf per channel at 200 Hz, +6 dB.
-        // Audibly bass-heavy when enabled, audibly identical to nothing
-        // when disabled — confirmation that the DSP path works end-to-end.
-        // Real per-band sliders + presets land in Phase 2.1.
+        // Reverted to Phase 1 passthrough. The Phase 2.0 bq_lowshelf attempt
+        // (200 Hz, Q=0.7, +6 dB) caused selective channel breakage on the
+        // user's hardware: SteelGame went silent entirely, SteelChat audio
+        // worked only for Discord (not for browser streams routed to it via
+        // the audio applet), and even direct playback to the physical
+        // headset sink developed audible "jamming" while EQ was enabled.
+        // None of that happens with the copy nodes below, so we keep them
+        // until the biquad config issue is properly diagnosed.
         format!(
             r#"context.properties = {{
     log.level = 0
@@ -116,13 +120,11 @@ context.modules = [
             media.name       = "{desc}"
             filter.graph = {{
                 nodes = [
-                    {{ type = builtin name = bassL label = bq_lowshelf
-                        control = {{ Freq = 200  Q = 0.7  Gain = 6 }} }}
-                    {{ type = builtin name = bassR label = bq_lowshelf
-                        control = {{ Freq = 200  Q = 0.7  Gain = 6 }} }}
+                    {{ type = builtin name = passL label = copy }}
+                    {{ type = builtin name = passR label = copy }}
                 ]
-                inputs  = [ "bassL:In"  "bassR:In"  ]
-                outputs = [ "bassL:Out" "bassR:Out" ]
+                inputs  = [ "passL:In"  "passR:In"  ]
+                outputs = [ "passL:Out" "passR:Out" ]
             }}
             audio.channels = 2
             audio.position = [ FL FR ]
