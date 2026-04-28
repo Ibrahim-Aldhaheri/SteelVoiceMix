@@ -272,7 +272,7 @@ class MixerGUI(QMainWindow):
         tabs = QTabWidget()
         tabs.addTab(self._build_home_tab(), "Home")
         tabs.addTab(self._build_sinks_tab(), "Sinks")
-        tabs.addTab(self._build_eq_tab(), "Equalizer")
+        tabs.addTab(self._build_eq_tab(), "Sonar")
         tabs.addTab(self._build_settings_tab(), "Settings")
         root.addWidget(tabs, 1)
 
@@ -418,25 +418,27 @@ class MixerGUI(QMainWindow):
         layout.setSpacing(12)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        layout.addWidget(_section_title("6-Band Parametric EQ"))
+        layout.addWidget(_section_title("Sonar — 6-band parametric EQ"))
 
-        self.eq_check = QCheckBox("Enable EQ filter chain (Game + Chat)")
+        self.eq_check = QCheckBox("Enable Sonar EQ (🎮 Game + 💬 Chat)")
         self.eq_check.setToolTip(
-            "Inserts a PipeWire filter chain between SteelGame/SteelChat "
-            "and the headset. The user-facing sinks stay put across "
-            "toggles, so Discord/OBS don't lose their connection."
+            "Inserts a PipeWire filter chain between the SteelGame and "
+            "SteelChat sinks and the headset. The user-facing sinks stay "
+            "put across toggles, so Discord and other apps don't lose "
+            "their connection."
         )
         self.eq_check.toggled.connect(self._toggle_eq_enabled)
         layout.addWidget(self.eq_check)
 
-        # Sonar-style per-channel selector: tune Game and Chat
+        # Sonar-style per-channel selector: tune [Game] and [Chat]
         # independently. Sliders display the selected channel's gains;
-        # switching the combo loads that channel's stored values.
+        # switching the combo loads that channel's stored values. Emoji
+        # icons match the Home-tab convention (🎮 / 💬).
         ch_row = QHBoxLayout()
         ch_row.addWidget(QLabel("Channel:"))
         self.eq_channel_combo = QComboBox()
-        self.eq_channel_combo.addItems(["Game", "Chat"])
-        self.eq_channel_combo.setMinimumWidth(120)
+        self.eq_channel_combo.addItems(["🎮 Game", "💬 Chat"])
+        self.eq_channel_combo.setMinimumWidth(140)
         self.eq_channel_combo.currentTextChanged.connect(
             self._on_eq_channel_changed
         )
@@ -892,16 +894,18 @@ class MixerGUI(QMainWindow):
 
     def _on_eq_channel_changed(self, text: str):
         """Combo box changed — load the selected channel's stored gains
-        into the sliders. Signals are blocked so populating the sliders
-        doesn't generate spurious commands back to the daemon."""
-        channel = text.lower().strip()
-        if channel not in self._eq_gains_by_channel:
+        into the sliders. The combo items carry emoji prefixes
+        ('🎮 Game' / '💬 Chat') for visual continuity with the Home tab,
+        so we extract the trailing word to map back to the daemon's
+        channel keys ('game' / 'chat')."""
+        last_word = text.strip().split()[-1].lower() if text.strip() else ""
+        if last_word not in self._eq_gains_by_channel:
             return
-        self._eq_current_channel = channel
+        self._eq_current_channel = last_word
         # Cancel any pending commit from the previous channel.
         self._eq_commit_timer.stop()
         self._eq_pending_band_value.clear()
-        self._render_sliders_for_channel(channel)
+        self._render_sliders_for_channel(last_word)
 
     def _render_sliders_for_channel(self, channel: str):
         """Push the stored gains for `channel` into the slider widgets
