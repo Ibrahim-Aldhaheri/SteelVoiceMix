@@ -200,6 +200,19 @@ class MixerGUI(QMainWindow):
         self.eq_band_sliders: list[QSlider] = []
         self.eq_band_value_labels: list[QLabel] = []
 
+        # EQ slider commits are debounced. While the user drags, we just
+        # update the visible label — sending a daemon command per pixel
+        # of slider travel queues hundreds of chain respawns and stalls
+        # the GUI for minutes. _eq_pending_band_value collects the most
+        # recent value per band; the timer fires 250 ms after the last
+        # change and flushes everything to the daemon in one shot.
+        self._eq_pending_band_value: dict[int, int] = {}
+        from PySide6.QtCore import QTimer as _QTimer
+        self._eq_commit_timer = _QTimer(self)
+        self._eq_commit_timer.setSingleShot(True)
+        self._eq_commit_timer.setInterval(250)
+        self._eq_commit_timer.timeout.connect(self._commit_pending_eq_changes)
+
         self.settings = load_settings()
         self.overlay = DialOverlay()
         self.overlay.set_orientation(
@@ -444,8 +457,14 @@ class MixerGUI(QMainWindow):
             slider.setMinimumHeight(220)
             slider.setFixedWidth(36)
             band_num = idx + 1
+            # valueChanged updates the visible label and queues a debounced
+            # commit. sliderReleased commits immediately on drag end so the
+            # user gets fast feedback when they let go (no 250 ms delay).
             slider.valueChanged.connect(
                 lambda v, b=band_num, lbl=value_lbl: self._on_eq_slider_changed(b, v, lbl)
+            )
+            slider.sliderReleased.connect(
+                lambda b=band_num, s=slider: self._on_eq_slider_released(b, s)
             )
             self.eq_band_sliders.append(slider)
             band_col.addWidget(slider, 0, alignment=Qt.AlignHCenter)
@@ -812,18 +831,36 @@ class MixerGUI(QMainWindow):
         self.daemon_client.send_command("set-eq-enabled", enabled=bool(checked))
 
     def _on_eq_slider_changed(self, band: int, value_tenths: int, label: QLabel):
-        """User dragged a slider. Slider value is dB × 10 (so we get 0.1 dB
-        granularity from an int-only QSlider). Update the visible label
-        immediately and send the command to the daemon. The daemon respawns
-        the chain with the new gain — ~100 ms glitch per change is fine
-        for set-and-forget tuning, less ideal for live drag, but live-update
-        without respawn is Phase 2.2 work."""
+        """User moved a slider. Update the live value label and queue a
+        debounced daemon commit. While the user is actively dragging, no
+        commands go to the daemon — that's what was producing minute-long
+        lag on slider drag (one chain respawn queued per pixel of travel).
+        The 250 ms timer collapses rapid changes into a single command per
+        band per pause."""
         gain_db = value_tenths / 10.0
         sign = "+" if gain_db > 0 else ""
         label.setText(f"{sign}{gain_db:.1f}")
-        self.daemon_client.send_command(
-            "set-eq-band-gain", band=band, gain_db=gain_db
-        )
+        self._eq_pending_band_value[band] = value_tenths
+        self._eq_commit_timer.start()
+
+    def _on_eq_slider_released(self, band: int, slider: QSlider):
+        """Slider released — commit *now* without waiting for the debounce.
+        Gives fast audible feedback the moment the user lets go of the
+        slider, instead of an extra 250 ms delay on top of the chain
+        respawn time."""
+        self._eq_pending_band_value[band] = slider.value()
+        self._eq_commit_timer.stop()
+        self._commit_pending_eq_changes()
+
+    def _commit_pending_eq_changes(self):
+        """Flush queued band-gain changes to the daemon. One command per
+        band that's seen any change since the last commit."""
+        for band, value_tenths in self._eq_pending_band_value.items():
+            gain_db = value_tenths / 10.0
+            self.daemon_client.send_command(
+                "set-eq-band-gain", band=band, gain_db=gain_db
+            )
+        self._eq_pending_band_value.clear()
 
     def _on_eq_band_gains_changed(self, gains: list):
         """Daemon told us the canonical gain values changed. Push them
