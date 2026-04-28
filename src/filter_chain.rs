@@ -48,14 +48,34 @@ use log::{info, warn};
 
 /// Describes one filter-chain instance the daemon manages.
 pub struct FilterChainSpec<'a> {
-    /// `node.name` of the resulting filter-chain sink. Loopback targets
-    /// reference this name (e.g. SteelGame.monitor → SteelGameEQ).
+    /// Logical name suffix — gets prefixed to `effect_input.` for the
+    /// capture-side sink (what loopbacks target) and `effect_output.`
+    /// for the playback-side stream. The `effect_*` prefix is the
+    /// PipeWire convention for internal pipeline nodes; plasma-pa /
+    /// pavucontrol filter these out of the user-facing audio device
+    /// list, so users don't see internal EQ stages as routable
+    /// destinations.
     pub sink_name: &'a str,
     /// Human-readable description shown in plasma-pa / pavucontrol.
     pub description: &'a str,
     /// PipeWire node name of the downstream target — typically the real
     /// headset sink name. The filter chain's playback side binds to this.
     pub playback_target: &'a str,
+}
+
+impl<'a> FilterChainSpec<'a> {
+    /// The prefixed sink name a loopback should target to feed audio
+    /// into this chain.
+    pub fn capture_sink(&self) -> String {
+        format!("effect_input.{}", self.sink_name)
+    }
+
+    /// The prefixed playback-side node name; ports of the form
+    /// `<this>:output_FL` / `:output_FR` are what carry processed audio
+    /// out of the chain.
+    pub fn playback_node(&self) -> String {
+        format!("effect_output.{}", self.sink_name)
+    }
 }
 
 impl<'a> FilterChainSpec<'a> {
@@ -104,11 +124,11 @@ context.modules = [
             audio.channels = 2
             audio.position = [ FL FR ]
             capture.props = {{
-                node.name   = "{name}"
+                node.name   = "effect_input.{name}"
                 media.class = Audio/Sink
             }}
             playback.props = {{
-                node.name   = "output.{name}"
+                node.name   = "effect_output.{name}"
                 node.target = "{target}"
             }}
         }}
@@ -189,8 +209,9 @@ impl FilterChainHandle {
         // either side hasn't registered yet, this fails silently and the
         // user just gets no audio through the chain — same symptom as
         // before, no worse. In practice the 500 ms wait above is enough.
+        let playback_node = spec.playback_node();
         for ch in ["FL", "FR"] {
-            let from = format!("output.{}:output_{ch}", spec.sink_name);
+            let from = format!("{playback_node}:output_{ch}");
             let to = format!("{}:playback_{ch}", spec.playback_target);
             let status = Command::new("pw-link")
                 .args([&from, &to])

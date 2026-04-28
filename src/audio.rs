@@ -433,6 +433,11 @@ fn insert_eq_into_channel(
         description: eq_description,
         playback_target: headset,
     };
+    // Capture the prefixed sink name BEFORE moving spec into spawn — used
+    // below as the loopback target. `effect_input.<name>` is the prefix
+    // PipeWire's convention reserves for filter-chain inputs; plasma-pa
+    // hides it from the user-facing audio device list.
+    let capture_sink = spec.capture_sink();
     let Some(filter) = FilterChainHandle::spawn(&spec) else {
         return false;
     };
@@ -448,7 +453,7 @@ fn insert_eq_into_channel(
     let new_loopback = load_module(&[
         "module-loopback",
         &format!("source={null_sink_name}.monitor"),
-        &format!("sink={eq_sink_name}"),
+        &format!("sink={capture_sink}"),
         "latency_msec=1",
     ]);
 
