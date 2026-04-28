@@ -19,6 +19,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 from .settings import APP_NAME, APP_VERSION, CONFIG_DIR
 
 _RELEASES_URL = "https://api.github.com/repos/Ibrahim-Aldhaheri/SteelVoiceMix/releases/latest"
+_TAGS_URL = "https://api.github.com/repos/Ibrahim-Aldhaheri/SteelVoiceMix/tags?per_page=20"
 _CACHE_FILE = CONFIG_DIR / "update-cache.json"
 _CACHE_TTL_S = 24 * 60 * 60
 _REQUEST_TIMEOUT_S = 5
@@ -59,19 +60,51 @@ def _write_cache(latest_tag: str) -> None:
         pass
 
 
-def _fetch_latest_tag() -> str | None:
-    """Hit the GitHub releases API. Returns the tag string or None on any
-    failure — we never let an update check disrupt the GUI."""
+def _http_get_json(url: str):
+    """Single GET that raises on network failure but returns None on 404
+    (so callers can distinguish 'endpoint has no data' from 'offline')."""
+    req = urllib.request.Request(
+        url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"}
+    )
     try:
-        req = urllib.request.Request(
-            _RELEASES_URL,
-            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"},
-        )
         with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT_S) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        return data.get("tag_name")
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+
+
+def _fetch_latest_tag() -> str | None:
+    """Find the newest version tag on the upstream repo. Try the GitHub
+    Releases API first (richer metadata when releases exist), fall back to
+    the tags endpoint for repos that just push tags without cutting a
+    Release object — which is exactly our workflow.
+
+    Returns the tag string, or None if nothing reachable looks like a
+    version. Raises on actual network errors so the worker can distinguish
+    'no release found' from 'offline'."""
+    rel = _http_get_json(_RELEASES_URL)
+    if rel is not None:
+        tag = rel.get("tag_name")
+        if tag:
+            return tag
+
+    tags = _http_get_json(_TAGS_URL)
+    if not isinstance(tags, list):
         return None
+    # Pick the newest version-like tag (highest semver) — repo may have
+    # other tags (e.g. 'flathub-rebase') we want to ignore.
+    versioned: list[tuple[tuple[int, ...], str]] = []
+    for entry in tags:
+        name = entry.get("name", "") if isinstance(entry, dict) else ""
+        v = _parse_version(name)
+        if v is not None:
+            versioned.append((v, name))
+    if not versioned:
+        return None
+    versioned.sort(reverse=True)
+    return versioned[0][1]
 
 
 class _CheckerWorker(QObject):
@@ -79,26 +112,35 @@ class _CheckerWorker(QObject):
 
     update_available = Signal(str, str)  # latest_tag, current_version
     no_update = Signal()
-    failed = Signal()
+    no_release_found = Signal()           # reachable but nothing tagged yet
+    failed = Signal()                     # actual network / parse error
 
     def run(self) -> None:
         # Cache check first — stays local if we polled within the last day.
         cached = _read_cache()
+        latest: str | None = None
         if cached is not None:
             latest = cached.get("latest_tag")
         else:
-            latest = _fetch_latest_tag()
+            try:
+                latest = _fetch_latest_tag()
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+                # Truly offline / DNS / connection refused. Distinguish from
+                # "endpoint reachable but no version tag found".
+                self.failed.emit()
+                return
             if latest is not None:
                 _write_cache(latest)
 
         if latest is None:
-            self.failed.emit()
+            # Reachable upstream but no tagged release exists.
+            self.no_release_found.emit()
             return
 
         latest_v = _parse_version(latest)
         current_v = _parse_version(APP_VERSION)
         if latest_v is None or current_v is None:
-            self.failed.emit()
+            self.no_release_found.emit()
             return
 
         if latest_v > current_v:
@@ -118,6 +160,7 @@ class UpdateChecker(QObject):
 
     update_available = Signal(str, str)
     no_update = Signal()
+    no_release_found = Signal()
     failed = Signal()
 
     def __init__(self, parent=None):
@@ -133,10 +176,16 @@ class UpdateChecker(QObject):
         self._worker.moveToThread(self._thread)
         self._worker.update_available.connect(self.update_available.emit)
         self._worker.no_update.connect(self.no_update.emit)
+        self._worker.no_release_found.connect(self.no_release_found.emit)
         self._worker.failed.connect(self.failed.emit)
         self._thread.started.connect(self._worker.run)
         # Tear down the thread when worker emits any terminal signal.
-        for sig in (self._worker.update_available, self._worker.no_update, self._worker.failed):
+        for sig in (
+            self._worker.update_available,
+            self._worker.no_update,
+            self._worker.no_release_found,
+            self._worker.failed,
+        ):
             sig.connect(self._thread.quit)
         self._thread.start()
 

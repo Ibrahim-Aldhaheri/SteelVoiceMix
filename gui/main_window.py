@@ -99,7 +99,7 @@ QPushButton:pressed {
     background: palette(mid);
 }
 QPushButton:disabled {
-    color: palette(mid);
+    color: palette(placeholder-text);
 }
 QPushButton:flat {
     border: none;
@@ -117,7 +117,7 @@ QCheckBox {
 QLabel#section-title {
     font-weight: bold;
     font-size: 11px;
-    color: palette(mid);
+    color: palette(placeholder-text);
     text-transform: uppercase;
     letter-spacing: 1px;
     margin-top: 4px;
@@ -142,6 +142,20 @@ def _divider() -> QFrame:
     line.setFrameShape(QFrame.HLine)
     line.setProperty("divider", True)
     return line
+
+
+# Canonical settings key → exact display string used in the position combo.
+# Avoid using .replace("-", " ").title() to derive this — the items in the
+# combo keep the dash, so a space-separated lookup never matches and the
+# selected index doesn't update on profile load (or on startup if the
+# user's saved position isn't the default).
+_POSITION_DISPLAY: dict[str, str] = {
+    "top-right": "Top-right",
+    "top-left": "Top-left",
+    "bottom-right": "Bottom-right",
+    "bottom-left": "Bottom-left",
+    "center": "Center",
+}
 
 
 def _app_icon() -> QIcon:
@@ -233,7 +247,7 @@ class MixerGUI(QMainWindow):
         footer = QHBoxLayout()
         footer.setSpacing(8)
         self.update_label = QLabel("Up to date")
-        self.update_label.setStyleSheet("color: palette(mid); font-size: 10px;")
+        self.update_label.setStyleSheet("color: palette(placeholder-text); font-size: 10px;")
         update_btn = QPushButton("Check for updates")
         update_btn.setFlat(True)
         update_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
@@ -287,7 +301,7 @@ class MixerGUI(QMainWindow):
 
         self.dial_label = QLabel("⚖️ Balanced")
         self.dial_label.setAlignment(Qt.AlignCenter)
-        self.dial_label.setStyleSheet("font-size: 11px; color: palette(mid);")
+        self.dial_label.setStyleSheet("font-size: 11px; color: palette(placeholder-text);")
         layout.addWidget(self.dial_label)
 
         layout.addWidget(_divider())
@@ -343,7 +357,7 @@ class MixerGUI(QMainWindow):
             "music, browsers, or routing audio to a TV/AVR independently "
             "of the headset."
         )
-        sinks_help.setStyleSheet("font-size: 10px; color: palette(mid); padding-top: 4px;")
+        sinks_help.setStyleSheet("font-size: 10px; color: palette(placeholder-text); padding-top: 4px;")
         sinks_help.setWordWrap(True)
         layout.addWidget(sinks_help)
 
@@ -382,14 +396,9 @@ class MixerGUI(QMainWindow):
         pos_lbl = QLabel("Position")
         pos_lbl.setFixedWidth(70)
         self.position_combo = QComboBox()
-        self.position_combo.addItems(
-            ["Top-right", "Top-left", "Bottom-right", "Bottom-left", "Center"]
-        )
-        idx = self.position_combo.findText(
-            normalize_position(self.settings.get("overlay_position", "top-right"))
-            .replace("-", " ")
-            .title()
-        )
+        self.position_combo.addItems(list(_POSITION_DISPLAY.values()))
+        current_pos = normalize_position(self.settings.get("overlay_position", "top-right"))
+        idx = self.position_combo.findText(_POSITION_DISPLAY[current_pos])
         if idx >= 0:
             self.position_combo.setCurrentIndex(idx)
         self.position_combo.currentTextChanged.connect(self._change_position)
@@ -449,7 +458,7 @@ class MixerGUI(QMainWindow):
             "A profile snapshots overlay options + Media/HDMI sink toggles.\n"
             "Save the current setup, switch quickly, restore in one click."
         )
-        profile_help.setStyleSheet("font-size: 10px; color: palette(mid); padding-top: 4px;")
+        profile_help.setStyleSheet("font-size: 10px; color: palette(placeholder-text); padding-top: 4px;")
         profile_help.setWordWrap(True)
         layout.addWidget(profile_help)
 
@@ -734,11 +743,8 @@ class MixerGUI(QMainWindow):
             return
         # Re-render the GUI controls from the (now updated) settings dict.
         self.overlay_check.setChecked(self.settings.get("overlay", True))
-        idx = self.position_combo.findText(
-            normalize_position(self.settings.get("overlay_position", "top-right"))
-            .replace("-", " ")
-            .title()
-        )
+        current_pos = normalize_position(self.settings.get("overlay_position", "top-right"))
+        idx = self.position_combo.findText(_POSITION_DISPLAY[current_pos])
         if idx >= 0:
             self.position_combo.setCurrentIndex(idx)
         idx = self.orient_combo.findText(
@@ -790,9 +796,10 @@ class MixerGUI(QMainWindow):
         self._update_checker = UpdateChecker(self)
         self._update_checker.update_available.connect(self._on_update_available)
         self._update_checker.no_update.connect(self._on_no_update)
+        self._update_checker.no_release_found.connect(self._on_no_release_found)
         self._update_checker.failed.connect(self._on_update_failed)
         self.update_label.setText("Checking for updates…")
-        self.update_label.setStyleSheet("color: #888; font-size: 10px;")
+        self.update_label.setStyleSheet("color: palette(placeholder-text); font-size: 10px;")
         self._update_checker.start()
 
     def _force_update_check(self):
@@ -809,8 +816,15 @@ class MixerGUI(QMainWindow):
 
     def _on_no_update(self):
         self.update_label.setText("Up to date")
-        self.update_label.setStyleSheet("color: #888; font-size: 10px;")
+        self.update_label.setStyleSheet("color: palette(placeholder-text); font-size: 10px;")
+
+    def _on_no_release_found(self):
+        # Reachable upstream but no version tag found — typical for repos
+        # that haven't cut a release yet, or for forks. Different from
+        # offline; don't blame the network.
+        self.update_label.setText("No published release found")
+        self.update_label.setStyleSheet("color: palette(placeholder-text); font-size: 10px;")
 
     def _on_update_failed(self):
         self.update_label.setText("Update check failed (offline?)")
-        self.update_label.setStyleSheet("color: #888; font-size: 10px;")
+        self.update_label.setStyleSheet("color: palette(placeholder-text); font-size: 10px;")
