@@ -83,9 +83,10 @@ impl<'a> FilterChainSpec<'a> {
     /// that, when run via `pipewire -c <file>`, loads exactly this filter
     /// chain into the running PipeWire instance.
     fn to_pipewire_conf(&self) -> String {
-        // Phase 1 graph: stereo passthrough — two `copy` nodes, one per
-        // channel. Real biquad bands and HeSuVi convolvers slot into the
-        // same nodes/links/inputs/outputs structure later.
+        // Phase 2.0 graph: one bq_lowshelf per channel at 200 Hz, +6 dB.
+        // Audibly bass-heavy when enabled, audibly identical to nothing
+        // when disabled — confirmation that the DSP path works end-to-end.
+        // Real per-band sliders + presets land in Phase 2.1.
         format!(
             r#"context.properties = {{
     log.level = 0
@@ -115,11 +116,13 @@ context.modules = [
             media.name       = "{desc}"
             filter.graph = {{
                 nodes = [
-                    {{ type = builtin name = passL label = copy }}
-                    {{ type = builtin name = passR label = copy }}
+                    {{ type = builtin name = bassL label = bq_lowshelf
+                        control = {{ Freq = 200  Q = 0.7  Gain = 6 }} }}
+                    {{ type = builtin name = bassR label = bq_lowshelf
+                        control = {{ Freq = 200  Q = 0.7  Gain = 6 }} }}
                 ]
-                inputs  = [ "passL:In"  "passR:In"  ]
-                outputs = [ "passL:Out" "passR:Out" ]
+                inputs  = [ "bassL:In"  "bassR:In"  ]
+                outputs = [ "bassL:Out" "bassR:Out" ]
             }}
             audio.channels = 2
             audio.position = [ FL FR ]
