@@ -153,7 +153,14 @@ echo "Installing SteelVoiceMix..."
 mkdir -p ~/.local/bin ~/.local/lib/steelvoicemix
 
 debug "Copying: target/release/steelvoicemix → ~/.local/bin/steelvoicemix"
-cp target/release/steelvoicemix ~/.local/bin/steelvoicemix
+# --remove-destination unlinks the existing binary first instead of
+# truncating it in place. Critical when the daemon is currently running
+# (which it usually is on reinstalls) — Linux refuses to overwrite a
+# busy executable with ETXTBSY, but `unlink + create` works fine because
+# the kernel keeps the running inode alive by refcount until the process
+# exits. The next `systemctl restart` at the end of this script picks
+# up the new file cleanly.
+cp --remove-destination target/release/steelvoicemix ~/.local/bin/steelvoicemix
 if [ "$INSTALL_GUI" = "1" ]; then
     debug "Copying: steelvoicemix-gui.py → ~/.local/lib/steelvoicemix/"
     cp steelvoicemix-gui.py ~/.local/lib/steelvoicemix/steelvoicemix-gui.py
