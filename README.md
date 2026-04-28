@@ -4,10 +4,11 @@
 
 > ## Acknowledgments
 >
-> SteelVoiceMix builds on the work of two upstream projects whose protocol
+> SteelVoiceMix builds on the work of three upstream projects whose protocol
 > decoding, sink-routing patterns, and feature designs informed this codebase:
 >
-> - [**Linux-Arctis-Manager**](https://github.com/elegos/Linux-Arctis-Manager) by **elegos** — the original open-source Linux ChatMix manager for the SteelSeries Arctis line. The HID command set, ChatMix dial decoding, and the `module-null-sink` + `module-loopback` virtual-sink pattern all originate from this project.
+> - [**nova-chatmix-linux**](https://github.com/Dymstro/nova-chatmix-linux) by **Dymstro** — reverse-engineered the SteelSeries Arctis Nova Pro Wireless USB HID protocol. Without their work, none of the Linux-side ChatMix tooling for this device would exist.
+> - [**Linux-Arctis-Manager**](https://github.com/elegos/Linux-Arctis-Manager) by **elegos** — the original open-source Linux ChatMix *manager* for the SteelSeries Arctis line. The HID command set, ChatMix dial decoding, and the `module-null-sink` + `module-loopback` virtual-sink pattern all originate from this project.
 > - [**Arctis Sound Manager**](https://github.com/loteran/Arctis-Sound-Manager) by **loteran** — a comprehensive fork of Linux-Arctis-Manager that pioneered the multi-channel mixer (Game / Chat / Media / HDMI), Sonar-style parametric EQ, OLED weather widget, and the HeSuVi-based spatial audio pipeline. SteelVoiceMix's multi-channel and OLED enhancements were designed with reference to ASM.
 >
 > If you want **full SteelSeries Sonar parity** — 312 game EQ presets, audio profiles, multi-language UI, broad device coverage — use **ASM** directly. SteelVoiceMix is a Rust-daemon alternative narrower in scope and Fedora-KDE-first.
@@ -206,10 +207,6 @@ pip install PySide6                 # pip
 ⚠️ **USE AT YOUR OWN RISK.** This project has no association with SteelSeries. The author is not responsible for any damage to your hardware, bricked devices, or voided warranties. If your base station starts playing elevator music on its own, that's between you and the universe.
 
 🧪 **Tested on Fedora KDE only.** Other distributions and desktop environments may work but haven't been verified. If you run it elsewhere and hit problems, please open an issue with your setup details.
-
-## Acknowledgments
-
-Inspired by [nova-chatmix-linux](https://github.com/Dymstro/nova-chatmix-linux) by Dymstro, who reverse-engineered the Arctis Nova Pro Wireless USB HID protocol.
 
 ## License
 
