@@ -17,6 +17,8 @@ pub const MEDIA_SINK: &str = "SteelMedia";
 pub const HDMI_SINK: &str = "SteelHDMI";
 pub const EQ_GAME_SINK: &str = "SteelGameEQ";
 pub const EQ_CHAT_SINK: &str = "SteelChatEQ";
+pub const EQ_MEDIA_SINK: &str = "SteelMediaEQ";
+pub const EQ_HDMI_SINK: &str = "SteelHDMIEQ";
 pub const OUTPUT_MATCH: &str = "SteelSeries_Arctis_Nova_Pro_Wireless";
 
 /// Every sink-name prefix we're responsible for. Keep this in sync with the
@@ -189,33 +191,80 @@ impl SinkManager {
 
     /// Tear down the current EQ chain on `channel` and re-insert one
     /// driven by the latest `eq_state`. No-op if EQ is currently
-    /// disabled or the headset isn't connected — the new state is still
-    /// stored, and `create_sinks` will pick it up on next connect.
+    /// disabled, the channel's null-sink isn't loaded (e.g. user hasn't
+    /// enabled the Media sink), or the chain's downstream target isn't
+    /// known — the new state is still stored, and `create_sinks` /
+    /// `enable_media` / `enable_hdmi` will pick it up on next connect.
     fn respawn_channel_chain(&mut self, channel: EqChannel) {
         if !self.eq_enabled {
             return;
         }
-        let Some(headset) = self.output_sink.clone() else {
+        let new_bands = self.eq_state.for_channel(channel);
+        let routing = self.eq_routing(channel);
+        let Some((slot, null_name, eq_name, eq_desc, target)) = routing else {
             return;
         };
-        let (slot, null_name, eq_name, eq_desc) = match channel {
-            EqChannel::Game => (
-                self.game.as_mut(),
-                GAME_SINK,
-                EQ_GAME_SINK,
-                "SteelVoiceMix Game EQ",
-            ),
-            EqChannel::Chat => (
-                self.chat.as_mut(),
-                CHAT_SINK,
-                EQ_CHAT_SINK,
-                "SteelVoiceMix Chat EQ",
-            ),
-        };
-        let new_bands = self.eq_state.for_channel(channel);
-        if let Some(ch) = slot {
-            let _ = remove_eq_from_channel(ch, null_name, &headset);
-            insert_eq_into_channel(ch, null_name, eq_name, eq_desc, &headset, &new_bands);
+        let _ = remove_eq_from_channel(slot, null_name, &target);
+        insert_eq_into_channel(slot, null_name, eq_name, eq_desc, &target, &new_bands);
+    }
+
+    /// Look up everything needed to (re)insert an EQ chain for a given
+    /// channel: the SinkModules slot, the user-facing null-sink name,
+    /// the EQ sink name + description, and the downstream playback
+    /// target (headset for Game/Chat/Media; HDMI output for Hdmi).
+    /// Returns None when the channel's null-sink isn't loaded or when
+    /// the downstream target hasn't been resolved yet.
+    fn eq_routing(
+        &mut self,
+        channel: EqChannel,
+    ) -> Option<(&mut SinkModules, &'static str, &'static str, &'static str, String)> {
+        match channel {
+            EqChannel::Game => {
+                let headset = self.output_sink.clone()?;
+                let slot = self.game.as_mut()?;
+                Some((
+                    slot,
+                    GAME_SINK,
+                    EQ_GAME_SINK,
+                    "SteelVoiceMix Game EQ",
+                    headset,
+                ))
+            }
+            EqChannel::Chat => {
+                let headset = self.output_sink.clone()?;
+                let slot = self.chat.as_mut()?;
+                Some((
+                    slot,
+                    CHAT_SINK,
+                    EQ_CHAT_SINK,
+                    "SteelVoiceMix Chat EQ",
+                    headset,
+                ))
+            }
+            EqChannel::Media => {
+                let headset = self.output_sink.clone()?;
+                let slot = self.media.as_mut()?;
+                Some((
+                    slot,
+                    MEDIA_SINK,
+                    EQ_MEDIA_SINK,
+                    "SteelVoiceMix Media EQ",
+                    headset,
+                ))
+            }
+            EqChannel::Hdmi => {
+                // HDMI loops to a host-side HDMI output, NOT the headset.
+                // Its EQ chain plays back into the same downstream target.
+                let target = self.hdmi_target.clone()?;
+                let slot = self.hdmi.as_mut()?;
+                Some((
+                    slot,
+                    HDMI_SINK,
+                    EQ_HDMI_SINK,
+                    "SteelVoiceMix HDMI EQ",
+                    target,
+                ))
+            }
         }
     }
 
@@ -235,6 +284,13 @@ impl SinkManager {
             if let Some(out) = self.output_sink.clone() {
                 self.media = create_sink_pair(&out, MEDIA_SINK, "SteelMedia");
             }
+        }
+        // If EQ is on, the freshly-loaded Media null-sink should pick up
+        // its filter chain immediately rather than waiting for the next
+        // disable/enable cycle. respawn covers the install-then-insert
+        // case via eq_routing.
+        if self.eq_enabled && self.media.is_some() {
+            self.respawn_channel_chain(EqChannel::Media);
         }
         true
     }
@@ -270,6 +326,9 @@ impl SinkManager {
                 None => warn!("HDMI sink requested but no HDMI output detected"),
             }
         }
+        if self.eq_enabled && self.hdmi.is_some() {
+            self.respawn_channel_chain(EqChannel::Hdmi);
+        }
         true
     }
 
@@ -284,84 +343,93 @@ impl SinkManager {
         false
     }
 
-    /// Runtime toggle: insert a filter chain between SteelGame/SteelChat and
-    /// the headset. The user-facing null-sinks themselves stay loaded — only
-    /// the loopback target changes — so apps bound to SteelGame (Discord,
-    /// OBS, …) keep their connection across this toggle.
+    /// Runtime toggle: insert a filter chain between every loaded
+    /// virtual sink and its downstream target. The user-facing null-
+    /// sinks themselves stay loaded — only the loopback target changes
+    /// — so apps bound to SteelGame (Discord, OBS, …) keep their
+    /// connection across this toggle. Channels whose null-sinks aren't
+    /// loaded yet (e.g. Media when the user hasn't opted into it) are
+    /// skipped silently; the next `create_sinks` / `enable_media` /
+    /// `enable_hdmi` call will pick them up via the same flag.
     pub fn enable_eq(&mut self) -> bool {
-        if self.eq_enabled && self.game.as_ref().is_some_and(|m| m.eq.is_some()) {
-            return true;
-        }
-        let Some(headset) = self.output_sink.clone() else {
+        // Without the headset (the Game/Chat/Media downstream target),
+        // we can't insert anything yet — record the intent and bail.
+        if self.output_sink.is_none() {
             warn!("EQ enable requested but no headset connected yet — will retry when sinks are created");
             self.eq_enabled = true;
             return true;
-        };
-
-        // Try to insert on each existing channel. If chat fails after game
-        // succeeds, undo game so we end in a consistent state.
-        let game_bands = self.eq_state.game;
-        let chat_bands = self.eq_state.chat;
-        let game_ok = match self.game.as_mut() {
-            Some(ch) => insert_eq_into_channel(
-                ch,
-                GAME_SINK,
-                EQ_GAME_SINK,
-                "SteelVoiceMix Game EQ",
-                &headset,
-                &game_bands,
-            ),
-            None => true,
-        };
-        if !game_ok {
-            return false;
         }
 
-        let chat_ok = match self.chat.as_mut() {
-            Some(ch) => insert_eq_into_channel(
-                ch,
-                CHAT_SINK,
-                EQ_CHAT_SINK,
-                "SteelVoiceMix Chat EQ",
-                &headset,
-                &chat_bands,
-            ),
-            None => true,
-        };
-        if !chat_ok {
-            if let Some(ch) = self.game.as_mut() {
-                let _ = remove_eq_from_channel(ch, GAME_SINK, &headset);
+        // Walk every channel; skip the ones whose sink isn't loaded.
+        // If any later channel fails, roll back the earlier successes
+        // so we don't leave the daemon in a half-EQ state.
+        let mut applied: Vec<EqChannel> = Vec::new();
+        for ch in [
+            EqChannel::Game,
+            EqChannel::Chat,
+            EqChannel::Media,
+            EqChannel::Hdmi,
+        ] {
+            let bands = self.eq_state.for_channel(ch);
+            let routing = self.eq_routing(ch);
+            let Some((slot, null_name, eq_name, eq_desc, target)) = routing else {
+                continue;
+            };
+            let ok = insert_eq_into_channel(
+                slot, null_name, eq_name, eq_desc, &target, &bands,
+            );
+            if ok {
+                applied.push(ch);
+            } else {
+                // Roll back any chains we already inserted this call.
+                for done in applied.drain(..) {
+                    if let Some((slot, null_name, _, _, target)) = self.eq_routing(done) {
+                        let _ = remove_eq_from_channel(slot, null_name, &target);
+                    }
+                }
+                return false;
             }
-            return false;
         }
 
         self.eq_enabled = true;
-        info!("EQ enabled (Game + Chat routed through filter chains)");
+        info!(
+            "EQ enabled (filter chains on: {})",
+            applied
+                .iter()
+                .map(|c| format!("{c:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         true
     }
 
-    /// Runtime toggle: tear down the EQ filter chains and reroute Game/Chat
-    /// loopbacks back to the headset directly.
+    /// Runtime toggle: tear down every active EQ filter chain and reroute
+    /// loopbacks back to their direct downstream targets.
     pub fn disable_eq(&mut self) -> bool {
         self.eq_enabled = false;
-        let Some(headset) = self.output_sink.clone() else {
-            // No headset = sinks gone too. Just clear flag and any
-            // stale insertions defensively.
-            if let Some(ch) = self.game.as_mut() {
-                ch.eq = None;
+        for ch in [
+            EqChannel::Game,
+            EqChannel::Chat,
+            EqChannel::Media,
+            EqChannel::Hdmi,
+        ] {
+            if let Some((slot, null_name, _, _, target)) = self.eq_routing(ch) {
+                let _ = remove_eq_from_channel(slot, null_name, &target);
+            } else {
+                // No null-sink for this channel right now — clear any
+                // stale eq insertion defensively if a slot exists.
+                let slot = match ch {
+                    EqChannel::Game => self.game.as_mut(),
+                    EqChannel::Chat => self.chat.as_mut(),
+                    EqChannel::Media => self.media.as_mut(),
+                    EqChannel::Hdmi => self.hdmi.as_mut(),
+                };
+                if let Some(s) = slot {
+                    s.eq = None;
+                }
             }
-            if let Some(ch) = self.chat.as_mut() {
-                ch.eq = None;
-            }
-            return false;
-        };
-        if let Some(ch) = self.game.as_mut() {
-            let _ = remove_eq_from_channel(ch, GAME_SINK, &headset);
         }
-        if let Some(ch) = self.chat.as_mut() {
-            let _ = remove_eq_from_channel(ch, CHAT_SINK, &headset);
-        }
-        info!("EQ disabled (Game + Chat reverted to direct routing)");
+        info!("EQ disabled (all channels reverted to direct routing)");
         false
     }
 
@@ -452,29 +520,23 @@ impl SinkManager {
 
             // If EQ was on before disconnect (or set via persisted state),
             // re-insert the filter chains now that the sinks exist again.
+            // Reuses the same per-channel helper used by the runtime
+            // enable_eq path so all four channel types get covered.
             if self.eq_enabled {
-                let headset = output_sink.to_string();
-                let game_bands = self.eq_state.game;
-                let chat_bands = self.eq_state.chat;
-                if let Some(ch) = self.game.as_mut() {
-                    insert_eq_into_channel(
-                        ch,
-                        GAME_SINK,
-                        EQ_GAME_SINK,
-                        "SteelVoiceMix Game EQ",
-                        &headset,
-                        &game_bands,
-                    );
-                }
-                if let Some(ch) = self.chat.as_mut() {
-                    insert_eq_into_channel(
-                        ch,
-                        CHAT_SINK,
-                        EQ_CHAT_SINK,
-                        "SteelVoiceMix Chat EQ",
-                        &headset,
-                        &chat_bands,
-                    );
+                for ch in [
+                    EqChannel::Game,
+                    EqChannel::Chat,
+                    EqChannel::Media,
+                    EqChannel::Hdmi,
+                ] {
+                    let bands = self.eq_state.for_channel(ch);
+                    if let Some((slot, null_name, eq_name, eq_desc, target)) =
+                        self.eq_routing(ch)
+                    {
+                        insert_eq_into_channel(
+                            slot, null_name, eq_name, eq_desc, &target, &bands,
+                        );
+                    }
                 }
             }
         } else {

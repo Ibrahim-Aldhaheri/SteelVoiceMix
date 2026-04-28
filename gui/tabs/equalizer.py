@@ -127,8 +127,16 @@ class EqualizerTab(QWidget):
         self._bands_by_channel: dict[str, list[dict]] = {
             "game": _default_channel_bands(),
             "chat": _default_channel_bands(),
+            "media": _default_channel_bands(),
+            "hdmi": _default_channel_bands(),
         }
         self._current_channel: str = "game"
+        # Media and HDMI channels are only present in the channel combo
+        # while the corresponding null-sink is loaded — the daemon
+        # broadcasts media-sink-changed / hdmi-sink-changed and the EQ
+        # tab listens, refreshing the combo when those flip.
+        self._media_sink_enabled: bool = False
+        self._hdmi_sink_enabled: bool = False
 
         # Track which preset is "active" per channel — the one currently
         # selected in the preset combo, or empty if the user has been
@@ -136,7 +144,12 @@ class EqualizerTab(QWidget):
         # auto-fork-to-Custom-N behaviour: if the user starts editing
         # while a built-in preset is active, we fork to a fresh Custom N
         # so the built-in stays clean.
-        self._active_preset_by_channel: dict[str, str] = {"game": "", "chat": ""}
+        self._active_preset_by_channel: dict[str, str] = {
+            "game": "",
+            "chat": "",
+            "media": "",
+            "hdmi": "",
+        }
 
         # Slider commits are debounced. While the user drags, we just
         # update the visible label — sending a daemon command per pixel
@@ -178,11 +191,15 @@ class EqualizerTab(QWidget):
         ch_row = QHBoxLayout()
         ch_row.addWidget(QLabel("Channel:"))
         self.channel_combo = QComboBox()
-        self.channel_combo.addItems(["🎮 Game", "💬 Chat"])
         self.channel_combo.setMinimumWidth(140)
         self.channel_combo.currentTextChanged.connect(self._on_channel_changed)
         ch_row.addWidget(self.channel_combo, 1)
         layout.addLayout(ch_row)
+        # Populate channel combo for the initial sink state (Game + Chat
+        # always; Media/HDMI added if their sinks are enabled). Sink
+        # toggles fire on_media_sink_changed / on_hdmi_sink_changed and
+        # we re-run this populate to keep the combo in sync.
+        self._refresh_channel_combo()
 
         # Preset row: searchable dropdown filtered by the current channel,
         # plus Load / Save / Delete actions. The combo is editable so the
@@ -322,12 +339,57 @@ class EqualizerTab(QWidget):
             self._render_sliders_for_channel(channel)
 
     def on_full_state(self, state: dict) -> None:
-        """Initial Status snapshot delivered both channels' band data at
-        once. Cache both and refresh the visible sliders."""
-        for ch in ("game", "chat"):
+        """Initial Status snapshot delivered every channel's band data
+        at once (Game / Chat / Media / HDMI). Cache them all and refresh
+        the visible sliders."""
+        for ch in ("game", "chat", "media", "hdmi"):
             if ch in state:
                 self._bands_by_channel[ch] = list(state[ch])
         self._render_sliders_for_channel(self._current_channel)
+
+    def on_media_sink_changed(self, enabled: bool) -> None:
+        """Sink toggled in another tab → make Media available (or not)
+        in the channel combo here."""
+        if self._media_sink_enabled == enabled:
+            return
+        self._media_sink_enabled = enabled
+        self._refresh_channel_combo()
+
+    def on_hdmi_sink_changed(self, enabled: bool) -> None:
+        if self._hdmi_sink_enabled == enabled:
+            return
+        self._hdmi_sink_enabled = enabled
+        self._refresh_channel_combo()
+
+    def _refresh_channel_combo(self) -> None:
+        """Rebuild the channel-combo entries based on which sinks are
+        currently loaded. Game + Chat always show; Media + HDMI show
+        only when their sinks are enabled. UserData carries the bare
+        channel key ('game', 'chat', 'media', 'hdmi') so internal
+        lookups don't have to parse the emoji prefix."""
+        labels = [("game", "🎮 Game"), ("chat", "💬 Chat")]
+        if self._media_sink_enabled:
+            labels.append(("media", "🎵 Media"))
+        if self._hdmi_sink_enabled:
+            labels.append(("hdmi", "📺 HDMI"))
+
+        was_blocked = self.channel_combo.blockSignals(True)
+        try:
+            self.channel_combo.clear()
+            for key, label in labels:
+                self.channel_combo.addItem(label, userData=key)
+            # Restore the current channel if it's still available;
+            # otherwise fall back to Game (always present) so the EQ tab
+            # never lands on a non-existent channel.
+            keys = [k for k, _ in labels]
+            if self._current_channel not in keys:
+                self._current_channel = "game"
+            for i in range(self.channel_combo.count()):
+                if self.channel_combo.itemData(i) == self._current_channel:
+                    self.channel_combo.setCurrentIndex(i)
+                    break
+        finally:
+            self.channel_combo.blockSignals(was_blocked)
 
     # ---------------------------------------------------------- input handlers
 
@@ -406,19 +468,19 @@ class EqualizerTab(QWidget):
         # sorting and re-selects the active preset for us.
         self._refresh_preset_combo()
 
-    def _on_channel_changed(self, text: str) -> None:
-        """Combo box changed — load the selected channel's stored bands
-        into the sliders. The combo items carry emoji prefixes
-        ('🎮 Game' / '💬 Chat'), so we extract the trailing word to map
-        back to the daemon's channel keys ('game' / 'chat')."""
-        last_word = text.strip().split()[-1].lower() if text.strip() else ""
-        if last_word not in self._bands_by_channel:
+    def _on_channel_changed(self, _text: str) -> None:
+        """Combo box changed — read the selected row's userData (the
+        bare channel key like 'game' / 'media') and load that channel's
+        stored bands into the sliders. The visible label has an emoji
+        prefix; we ignore it and trust the userData."""
+        key = self.channel_combo.currentData()
+        if not isinstance(key, str) or key not in self._bands_by_channel:
             return
-        self._current_channel = last_word
+        self._current_channel = key
         # Cancel any pending commit from the previous channel.
         self._commit_timer.stop()
         self._pending_band_value.clear()
-        self._render_sliders_for_channel(last_word)
+        self._render_sliders_for_channel(key)
         # Preset list is channel-scoped — repopulate the dropdown so the
         # user only sees presets for the channel they're looking at.
         self._refresh_preset_combo()

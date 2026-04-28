@@ -45,7 +45,7 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         hdmi_sink_enabled: st.hdmi_sink_enabled,
         auto_route_browsers: st.auto_route_browsers,
         eq_enabled: st.eq_enabled,
-        eq_state: st.eq_state,
+        eq_state: Box::new(st.eq_state),
     }
 }
 

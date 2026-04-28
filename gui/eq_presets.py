@@ -128,10 +128,49 @@ CHAT_PRESETS: list[dict] = [
     },
 ]
 
+# Media + HDMI start with a small, music-leaning shelf — Media tends to
+# carry browser/Spotify/YouTube content and HDMI carries TV/AVR audio.
+MEDIA_PRESETS: list[dict] = [
+    {"name": "Flat", "bands": _flat()},
+    {
+        "name": "Music Loudness",
+        # Equal-loudness shelf for low-volume listening.
+        "bands": _override(_flat(), {0: 4, 1: 2, 8: 2, 9: 3}),
+    },
+    {
+        "name": "Bass Boost",
+        "bands": _override(_flat(), {0: 6, 1: 4, 2: 2, 4: -1}),
+    },
+    {
+        "name": "Vocal-Forward",
+        # Mild presence lift for podcast/audiobook clarity.
+        "bands": _override(_flat(), {0: -2, 5: 2, 6: 3, 7: 2}),
+    },
+]
+
+HDMI_PRESETS: list[dict] = [
+    {"name": "Flat", "bands": _flat()},
+    {
+        "name": "Cinematic",
+        # Big-screen V-shape for HDMI movie playback.
+        "bands": _override(
+            _flat(), {0: 5, 1: 3, 4: -2, 5: -3, 6: -1, 8: 3, 9: 4}
+        ),
+    },
+    {
+        "name": "Dialogue Boost",
+        # Tilt toward 1–4 kHz where dialogue lives — useful when the
+        # AVR's centre channel can't be turned up alone.
+        "bands": _override(_flat(), {0: -3, 5: 3, 6: 4, 7: 3}),
+    },
+]
+
 
 BUILT_IN_PRESETS: dict[str, list[dict]] = {
     "game": GAME_PRESETS,
     "chat": CHAT_PRESETS,
+    "media": MEDIA_PRESETS,
+    "hdmi": HDMI_PRESETS,
 }
 
 

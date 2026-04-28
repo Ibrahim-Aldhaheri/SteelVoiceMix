@@ -147,7 +147,11 @@ class DaemonClient:
         elif ev == "eq-bands-changed":
             channel = event.get("channel", "")
             bands = event.get("bands")
-            if channel in ("game", "chat") and isinstance(bands, list) and bands:
+            if (
+                channel in ("game", "chat", "media", "hdmi")
+                and isinstance(bands, list)
+                and bands
+            ):
                 self.signals.eq_bands_changed.emit(channel, _normalize_bands(bands))
         elif ev == "status":
             self.signals.media_sink_changed.emit(
@@ -164,13 +168,11 @@ class DaemonClient:
             )
             eq_state = event.get("eq_state") or event.get("eq_gains")
             if isinstance(eq_state, dict):
-                game = eq_state.get("game")
-                chat = eq_state.get("chat")
-                state = {}
-                if isinstance(game, list) and game:
-                    state["game"] = _normalize_bands(game)
-                if isinstance(chat, list) and chat:
-                    state["chat"] = _normalize_bands(chat)
+                state: dict[str, list[dict]] = {}
+                for ch in ("game", "chat", "media", "hdmi"):
+                    raw = eq_state.get(ch)
+                    if isinstance(raw, list) and raw:
+                        state[ch] = _normalize_bands(raw)
                 if state:
                     self.signals.eq_full_state.emit(state)
             if event.get("connected"):

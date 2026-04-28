@@ -5,14 +5,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::hid::BatteryStatus;
 
-/// Which audio channel an EQ command targets. Per-channel EQ — Game
-/// and Chat each have their own band set so a user can tune game audio
-/// bass-heavy and chat audio mid-forward independently.
+/// Which audio channel an EQ command targets. Per-channel EQ — every
+/// virtual sink gets its own band set, so a user can tune game audio
+/// bass-heavy, chat audio mid-forward, and media audio cinematic
+/// independently. Media and Hdmi only do anything when the
+/// corresponding null-sinks are loaded; if they aren't, an EQ command
+/// for those channels just updates persistent state and waits for the
+/// next time the sink comes up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EqChannel {
     Game,
     Chat,
+    Media,
+    Hdmi,
 }
 
 /// Number of EQ bands per channel. Common parametric-EQ preset JSONs
@@ -86,12 +92,18 @@ pub fn default_channel_bands() -> [EqBand; NUM_BANDS] {
     ]
 }
 
-/// Both channels' band arrays bundled. Replaces the prior `EqGains`
-/// (which held a single gain per band).
+/// Per-channel band arrays bundled into one persistent struct. Media
+/// and Hdmi default to flat just like Game/Chat — even if the user
+/// never enables those sinks, the state survives so toggling EQ on
+/// later doesn't lose tuning they made before.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct EqState {
     pub game: [EqBand; NUM_BANDS],
     pub chat: [EqBand; NUM_BANDS],
+    #[serde(default = "default_channel_bands")]
+    pub media: [EqBand; NUM_BANDS],
+    #[serde(default = "default_channel_bands")]
+    pub hdmi: [EqBand; NUM_BANDS],
 }
 
 impl Default for EqState {
@@ -99,6 +111,8 @@ impl Default for EqState {
         EqState {
             game: default_channel_bands(),
             chat: default_channel_bands(),
+            media: default_channel_bands(),
+            hdmi: default_channel_bands(),
         }
     }
 }
@@ -108,6 +122,8 @@ impl EqState {
         match channel {
             EqChannel::Game => self.game,
             EqChannel::Chat => self.chat,
+            EqChannel::Media => self.media,
+            EqChannel::Hdmi => self.hdmi,
         }
     }
 
@@ -115,6 +131,8 @@ impl EqState {
         match channel {
             EqChannel::Game => &mut self.game,
             EqChannel::Chat => &mut self.chat,
+            EqChannel::Media => &mut self.media,
+            EqChannel::Hdmi => &mut self.hdmi,
         }
     }
 }
@@ -204,7 +222,12 @@ pub enum DaemonEvent {
         hdmi_sink_enabled: bool,
         auto_route_browsers: bool,
         eq_enabled: bool,
-        eq_state: EqState,
+        // Boxed because EqState grew to 4 channels × 10 bands and would
+        // otherwise dwarf every other variant of this enum (clippy's
+        // large_enum_variant lint catches this). serde flattens
+        // Box<EqState> to the same JSON shape as EqState, so the wire
+        // contract is unchanged.
+        eq_state: Box<EqState>,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -308,7 +331,7 @@ mod tests {
             hdmi_sink_enabled: false,
             auto_route_browsers: false,
             eq_enabled: false,
-            eq_state: EqState::default(),
+            eq_state: Box::new(EqState::default()),
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -368,6 +391,29 @@ mod tests {
                 assert_eq!(params.band_type, BandType::Peaking);
             }
             other => panic!("expected SetEqBand, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn eq_channel_accepts_media_and_hdmi() {
+        for (raw, expected) in [
+            (r#""game""#, EqChannel::Game),
+            (r#""chat""#, EqChannel::Chat),
+            (r#""media""#, EqChannel::Media),
+            (r#""hdmi""#, EqChannel::Hdmi),
+        ] {
+            let parsed: EqChannel = from_str(raw).unwrap();
+            assert_eq!(parsed, expected);
+        }
+    }
+
+    #[test]
+    fn eq_state_default_includes_media_and_hdmi() {
+        let st = EqState::default();
+        let json: Value = from_str(&to_string(&st).unwrap()).unwrap();
+        for ch in ["game", "chat", "media", "hdmi"] {
+            let arr = json[ch].as_array().expect(ch);
+            assert_eq!(arr.len(), NUM_BANDS);
         }
     }
 

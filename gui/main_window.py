@@ -177,6 +177,10 @@ class MixerGUI(QMainWindow):
 
         self.signals.media_sink_changed.connect(self.sinks_tab.on_media_changed)
         self.signals.hdmi_sink_changed.connect(self.sinks_tab.on_hdmi_changed)
+        # The EQ tab also tracks sink state so it can show / hide the
+        # Media + HDMI rows in the channel combo dynamically.
+        self.signals.media_sink_changed.connect(self.eq_tab.on_media_sink_changed)
+        self.signals.hdmi_sink_changed.connect(self.eq_tab.on_hdmi_sink_changed)
         self.signals.auto_route_browsers_changed.connect(
             self.sinks_tab.on_auto_route_changed
         )
