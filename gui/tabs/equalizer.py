@@ -10,7 +10,7 @@ grid stays put, and new sections layer below it.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QProcess, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -34,6 +34,7 @@ from ..eq_presets import (
     rename_user_preset,
     save_user_preset,
 )
+from ..eq_test_audio import CHANNEL_TO_SINK, TEST_AUDIO_CATALOGUE
 from ..settings import (
     MAX_FAVOURITES_PER_CHANNEL,
     add_favourite,
@@ -161,6 +162,11 @@ class EqualizerTab(QWidget):
         self._commit_timer.setSingleShot(True)
         self._commit_timer.setInterval(250)
         self._commit_timer.timeout.connect(self._commit_pending_changes)
+
+        # Test-audio playback runs as a managed QProcess so the Stop
+        # button can kill it cleanly mid-clip. Lazily created on first
+        # Play; we never spawn until the user asks.
+        self._test_process: QProcess | None = None
 
         self._build_ui()
         self._render_sliders_for_channel(self._current_channel)
@@ -304,6 +310,27 @@ class EqualizerTab(QWidget):
 
             bands_row.addLayout(band_col)
         layout.addLayout(bands_row)
+
+        # Test-audio row: synthesised reference clips played into the
+        # currently-selected channel's null-sink, so they go through
+        # the full EQ chain. Pink noise is the recommended starting
+        # point — the standard EQ-tuning reference.
+        test_row = QHBoxLayout()
+        test_row.addWidget(QLabel("Test:"))
+        self.test_audio_combo = QComboBox()
+        for label, _factory in TEST_AUDIO_CATALOGUE:
+            self.test_audio_combo.addItem(label)
+        self.test_audio_combo.setMinimumWidth(180)
+        test_row.addWidget(self.test_audio_combo, 1)
+        self.test_play_btn = QPushButton("▶ Play")
+        self.test_play_btn.clicked.connect(self._on_test_play)
+        self.test_stop_btn = QPushButton("⏹")
+        self.test_stop_btn.setFixedWidth(36)
+        self.test_stop_btn.clicked.connect(self._on_test_stop)
+        self.test_stop_btn.setEnabled(False)
+        test_row.addWidget(self.test_play_btn)
+        test_row.addWidget(self.test_stop_btn)
+        layout.addLayout(test_row)
 
         eq_help = QLabel(
             "Drag a slider to boost or cut a frequency band by up to "
@@ -480,6 +507,9 @@ class EqualizerTab(QWidget):
         # Cancel any pending commit from the previous channel.
         self._commit_timer.stop()
         self._pending_band_value.clear()
+        # Test audio is bound to the previous channel's sink — kill it
+        # so the user doesn't keep hearing the old chain after switching.
+        self._on_test_stop()
         self._render_sliders_for_channel(key)
         # Preset list is channel-scoped — repopulate the dropdown so the
         # user only sees presets for the channel they're looking at.
@@ -663,6 +693,75 @@ class EqualizerTab(QWidget):
         )
         self._active_preset_by_channel[self._current_channel] = new_name.strip()
         self._refresh_preset_combo()
+
+    # ----------------------------------------------------------- test audio
+
+    def _on_test_play(self) -> None:
+        """Synthesise the currently-selected clip and stream it via
+        pw-cat into the active channel's null-sink. Stops any prior
+        playback first so back-to-back Play presses don't pile up."""
+        self._on_test_stop()
+        idx = self.test_audio_combo.currentIndex()
+        if idx < 0 or idx >= len(TEST_AUDIO_CATALOGUE):
+            return
+        label, factory = TEST_AUDIO_CATALOGUE[idx]
+        try:
+            wav_path = factory()
+        except Exception as e:
+            QMessageBox.warning(
+                self, "Test audio failed", f"Could not generate {label}: {e}"
+            )
+            return
+
+        sink = CHANNEL_TO_SINK.get(self._current_channel)
+        if not sink:
+            return
+
+        proc = QProcess(self)
+        proc.setProgram("pw-cat")
+        proc.setArguments(["-p", "--target", sink, str(wav_path)])
+        proc.finished.connect(self._on_test_finished)
+        # If the binary's missing the GUI shouldn't blow up — surface
+        # a friendly error instead of a backtrace.
+        proc.errorOccurred.connect(self._on_test_error)
+        self._test_process = proc
+        self.test_play_btn.setEnabled(False)
+        self.test_stop_btn.setEnabled(True)
+        proc.start()
+
+    def _on_test_stop(self) -> None:
+        proc = self._test_process
+        if proc is None:
+            return
+        if proc.state() != QProcess.NotRunning:
+            proc.kill()
+            proc.waitForFinished(500)
+        self._test_process = None
+        self.test_play_btn.setEnabled(True)
+        self.test_stop_btn.setEnabled(False)
+
+    def _on_test_finished(self, _exit_code: int, _exit_status) -> None:
+        # Natural end of clip — reset the buttons. Don't kill the
+        # process here; QProcess auto-cleans on finished.
+        self._test_process = None
+        self.test_play_btn.setEnabled(True)
+        self.test_stop_btn.setEnabled(False)
+
+    def _on_test_error(self, error) -> None:
+        # FailedToStart is the only one we care to surface — the user
+        # is missing pw-cat (i.e. pipewire-utils isn't installed).
+        # Other errors (Crashed, Timedout, …) flow through finished
+        # too, so handle them once there.
+        if error == QProcess.FailedToStart:
+            QMessageBox.warning(
+                self,
+                "pw-cat missing",
+                "Could not run pw-cat — install pipewire-utils to use "
+                "test audio (dnf install pipewire-utils on Fedora).",
+            )
+        self._test_process = None
+        self.test_play_btn.setEnabled(True)
+        self.test_stop_btn.setEnabled(False)
 
     def _on_preset_delete(self) -> None:
         name = self._selected_preset_name()
