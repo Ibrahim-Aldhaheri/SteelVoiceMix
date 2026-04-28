@@ -43,6 +43,7 @@ from .tabs.home import HomeTab
 from .tabs.microphone import MicrophoneTab
 from .tabs.settings import SettingsTab
 from .tabs.sinks import SinksTab
+from .tabs.surround import SurroundTab
 from .update_checker import UpdateChecker
 from .widgets import GLOBAL_QSS, app_icon
 
@@ -53,7 +54,7 @@ class MixerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(DISPLAY_NAME)
-        self.setFixedSize(440, 580)
+        self.setFixedSize(480, 600)
         self.setWindowIcon(app_icon())
         self.setStyleSheet(GLOBAL_QSS)
 
@@ -115,6 +116,7 @@ class MixerGUI(QMainWindow):
         self.home_tab = HomeTab()
         self.sinks_tab = SinksTab(self.daemon_client)
         self.eq_tab = EqualizerTab(self.daemon_client, self.settings)
+        self.surround_tab = SurroundTab(self.daemon_client)
         self.mic_tab = MicrophoneTab(self.daemon_client)
         self.settings_tab = SettingsTab(self.settings, self.overlay, self.sinks_tab)
 
@@ -122,6 +124,7 @@ class MixerGUI(QMainWindow):
         tabs.addTab(self.home_tab, "Home")
         tabs.addTab(self.sinks_tab, "Sinks")
         tabs.addTab(self.eq_tab, "Equalizer")
+        tabs.addTab(self.surround_tab, "Surround")
         tabs.addTab(self.mic_tab, "Microphone")
         tabs.addTab(self.settings_tab, "Settings")
         root.addWidget(tabs, 1)
@@ -188,6 +191,13 @@ class MixerGUI(QMainWindow):
         self.signals.eq_enabled_changed.connect(self.eq_tab.on_enabled_changed)
         self.signals.eq_bands_changed.connect(self.eq_tab.on_bands_changed)
         self.signals.eq_full_state.connect(self.eq_tab.on_full_state)
+
+        self.signals.surround_enabled_changed.connect(
+            self.surround_tab.on_enabled_changed
+        )
+        self.signals.surround_hrir_changed.connect(
+            self.surround_tab.on_hrir_changed
+        )
 
     # ----------------------------------------------------- header + chatmix
 

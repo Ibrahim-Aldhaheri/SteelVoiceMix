@@ -59,15 +59,20 @@ pub struct MixerState {
     pub auto_route_browsers: bool,
     pub eq_enabled: bool,
     pub eq_state: EqState,
+    pub surround_enabled: bool,
+    pub surround_hrir_path: Option<std::path::PathBuf>,
 }
 
 impl MixerState {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         media_sink_enabled: bool,
         hdmi_sink_enabled: bool,
         auto_route_browsers: bool,
         eq_enabled: bool,
         eq_state: EqState,
+        surround_enabled: bool,
+        surround_hrir_path: Option<std::path::PathBuf>,
     ) -> Self {
         MixerState {
             connected: false,
@@ -79,6 +84,8 @@ impl MixerState {
             auto_route_browsers,
             eq_enabled,
             eq_state,
+            surround_enabled,
+            surround_hrir_path,
         }
     }
 }

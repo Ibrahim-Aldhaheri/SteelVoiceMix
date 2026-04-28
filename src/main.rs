@@ -6,6 +6,7 @@ mod hid;
 mod mixer;
 mod protocol;
 mod routing;
+mod surround_chain;
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -46,6 +47,11 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         auto_route_browsers: st.auto_route_browsers,
         eq_enabled: st.eq_enabled,
         eq_state: Box::new(st.eq_state),
+        surround_enabled: st.surround_enabled,
+        surround_hrir_path: st
+            .surround_hrir_path
+            .as_ref()
+            .map(|p| p.display().to_string()),
     }
 }
 
@@ -59,6 +65,8 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         auto_route_browsers: st.auto_route_browsers,
         eq_enabled: st.eq_enabled,
         eq_state: st.eq_state,
+        surround_enabled: st.surround_enabled,
+        surround_hrir_path: st.surround_hrir_path.clone(),
     });
 }
 
@@ -261,6 +269,54 @@ fn handle_client(
                     },
                 );
             }
+            ClientCommand::SetSurroundEnabled { enabled } => {
+                let actual = {
+                    let mut sm = sinks.lock().unwrap();
+                    sm.set_surround_enabled(enabled)
+                };
+                {
+                    let mut st = state.lock().unwrap();
+                    st.surround_enabled = actual;
+                }
+                persist_sink_state(&state);
+                info!(
+                    "GUI requested: set-surround-enabled requested={enabled}, applied={actual}"
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::SurroundEnabledChanged { enabled: actual },
+                );
+            }
+            ClientCommand::SetSurroundHrir { path } => {
+                let new_path: Option<std::path::PathBuf> = path
+                    .as_deref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(std::path::PathBuf::from);
+                let stored = {
+                    let mut sm = sinks.lock().unwrap();
+                    sm.set_surround_hrir(new_path.clone())
+                };
+                {
+                    let mut st = state.lock().unwrap();
+                    st.surround_hrir_path = stored.clone();
+                    // set_surround_hrir disables surround if the path
+                    // gets cleared while running — mirror that here.
+                    if stored.is_none() {
+                        st.surround_enabled = false;
+                    }
+                }
+                persist_sink_state(&state);
+                let display_path = stored.as_ref().map(|p| p.display().to_string());
+                info!(
+                    "GUI requested: set-surround-hrir → {}",
+                    display_path.as_deref().unwrap_or("<cleared>")
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::SurroundHrirChanged { path: display_path },
+                );
+            }
             ClientCommand::SetEqBand {
                 channel,
                 band,
@@ -402,6 +458,8 @@ fn main() {
     let auto_route_browsers = persisted.auto_route_browsers;
     let eq_enabled = persisted.eq_enabled;
     let eq_state = persisted.eq_state;
+    let surround_enabled = persisted.surround_enabled;
+    let surround_hrir_path = persisted.surround_hrir_path.clone();
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -416,6 +474,14 @@ fn main() {
         eq_enabled,
         protocol::NUM_BANDS,
     );
+    info!(
+        "Surround: {} (HRIR: {})",
+        surround_enabled,
+        surround_hrir_path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "<not set>".into()),
+    );
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(
         media_sink_enabled,
@@ -423,6 +489,8 @@ fn main() {
         auto_route_browsers,
         eq_enabled,
         eq_state,
+        surround_enabled,
+        surround_hrir_path.clone(),
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
@@ -431,6 +499,8 @@ fn main() {
         hdmi_sink_enabled,
         eq_enabled,
         eq_state,
+        surround_enabled,
+        surround_hrir_path,
     )));
     let router = Arc::new(RouterState::new(auto_route_browsers));
     spawn_router(router.clone(), running.clone());

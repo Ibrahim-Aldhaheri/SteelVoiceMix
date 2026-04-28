@@ -69,6 +69,10 @@ class DaemonSignals(QObject):
     # the user has interacted with anything. Shape: {"game": [bands],
     # "chat": [bands]}.
     eq_full_state = Signal(dict)
+    # Surround toggle + HRIR path. Path arrives as a str (or "" for
+    # cleared); the GUI normalises empty strings to "no path".
+    surround_enabled_changed = Signal(bool)
+    surround_hrir_changed = Signal(str)
 
 
 class DaemonClient:
@@ -144,6 +148,13 @@ class DaemonClient:
             )
         elif ev == "eq-enabled-changed":
             self.signals.eq_enabled_changed.emit(bool(event.get("enabled", False)))
+        elif ev == "surround-enabled-changed":
+            self.signals.surround_enabled_changed.emit(
+                bool(event.get("enabled", False))
+            )
+        elif ev == "surround-hrir-changed":
+            path = event.get("path") or ""
+            self.signals.surround_hrir_changed.emit(str(path))
         elif ev == "eq-bands-changed":
             channel = event.get("channel", "")
             bands = event.get("bands")
@@ -166,6 +177,11 @@ class DaemonClient:
             self.signals.eq_enabled_changed.emit(
                 bool(event.get("eq_enabled", False))
             )
+            self.signals.surround_enabled_changed.emit(
+                bool(event.get("surround_enabled", False))
+            )
+            hrir = event.get("surround_hrir_path") or ""
+            self.signals.surround_hrir_changed.emit(str(hrir))
             eq_state = event.get("eq_state") or event.get("eq_gains")
             if isinstance(eq_state, dict):
                 state: dict[str, list[dict]] = {}

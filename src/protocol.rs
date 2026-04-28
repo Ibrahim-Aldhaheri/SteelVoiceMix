@@ -191,6 +191,18 @@ pub enum ClientCommand {
         channel: EqChannel,
         bands: [EqBand; NUM_BANDS],
     },
+    /// Toggle the SteelSurround virtual 7.1 sink + HRIR convolver
+    /// chain. Requires `set-surround-hrir` to have been called first
+    /// with a valid HRIR WAV path; the daemon refuses with a warning
+    /// otherwise.
+    #[serde(rename = "set-surround-enabled")]
+    SetSurroundEnabled { enabled: bool },
+    /// Set the HRIR file path used by the surround convolver. Path is
+    /// stored persistently; the user supplies their own HRIR (e.g. from
+    /// HeSuVi or Impulcifer) — we don't bundle one for licensing
+    /// reasons. Sending `null` (or an empty string) clears the path.
+    #[serde(rename = "set-surround-hrir")]
+    SetSurroundHrir { path: Option<String> },
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -228,6 +240,8 @@ pub enum DaemonEvent {
         // Box<EqState> to the same JSON shape as EqState, so the wire
         // contract is unchanged.
         eq_state: Box<EqState>,
+        surround_enabled: bool,
+        surround_hrir_path: Option<String>,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -257,6 +271,14 @@ pub enum DaemonEvent {
         channel: EqChannel,
         bands: [EqBand; NUM_BANDS],
     },
+
+    /// Fired when surround insertion is toggled.
+    #[serde(rename = "surround-enabled-changed")]
+    SurroundEnabledChanged { enabled: bool },
+
+    /// Fired when the HRIR file path changes (saved + applied or cleared).
+    #[serde(rename = "surround-hrir-changed")]
+    SurroundHrirChanged { path: Option<String> },
 }
 
 #[cfg(test)]
@@ -332,6 +354,8 @@ mod tests {
             auto_route_browsers: false,
             eq_enabled: false,
             eq_state: Box::new(EqState::default()),
+            surround_enabled: false,
+            surround_hrir_path: None,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -349,6 +373,8 @@ mod tests {
             json["eq_state"]["game"].as_array().unwrap().len(),
             NUM_BANDS
         );
+        assert_eq!(json["surround_enabled"], false);
+        assert!(json["surround_hrir_path"].is_null());
     }
 
     #[test]
@@ -519,6 +545,48 @@ mod tests {
             ClientCommand::SetAutoRouteBrowsers { enabled } => assert!(enabled),
             other => panic!("expected SetAutoRouteBrowsers, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn set_surround_enabled_command_parses() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-surround-enabled","enabled":true}"#).unwrap();
+        match cmd {
+            ClientCommand::SetSurroundEnabled { enabled } => assert!(enabled),
+            other => panic!("expected SetSurroundEnabled, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_surround_hrir_command_parses_path_and_null() {
+        let with_path: ClientCommand =
+            from_str(r#"{"cmd":"set-surround-hrir","path":"/x/foo.wav"}"#).unwrap();
+        match with_path {
+            ClientCommand::SetSurroundHrir { path } => {
+                assert_eq!(path.as_deref(), Some("/x/foo.wav"))
+            }
+            other => panic!("expected SetSurroundHrir, got {other:?}"),
+        }
+        let cleared: ClientCommand =
+            from_str(r#"{"cmd":"set-surround-hrir","path":null}"#).unwrap();
+        match cleared {
+            ClientCommand::SetSurroundHrir { path } => assert!(path.is_none()),
+            other => panic!("expected SetSurroundHrir, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn surround_event_shapes() {
+        let on = DaemonEvent::SurroundEnabledChanged { enabled: true };
+        let json: Value = from_str(&to_string(&on).unwrap()).unwrap();
+        assert_eq!(json["event"], "surround-enabled-changed");
+        assert_eq!(json["enabled"], true);
+        let path_ev = DaemonEvent::SurroundHrirChanged {
+            path: Some("/x/f.wav".into()),
+        };
+        let json: Value = from_str(&to_string(&path_ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "surround-hrir-changed");
+        assert_eq!(json["path"], "/x/f.wav");
     }
 
     #[test]

@@ -36,6 +36,16 @@ pub struct DaemonState {
     /// the `parametricEQ.filter1..filter10` shape map directly here.
     #[serde(default, alias = "eq_gains")]
     pub eq_state: EqState,
+    /// Whether the SteelSurround virtual 7.1 sink + HRIR convolver
+    /// chain is loaded. Off by default — opt-in, since it requires a
+    /// user-supplied HRIR file.
+    #[serde(default)]
+    pub surround_enabled: bool,
+    /// Path to the user-supplied HRIR WAV (HeSuVi-style 14-channel).
+    /// `None` until the user picks a file via the GUI; surround can't
+    /// be enabled while this is `None`.
+    #[serde(default)]
+    pub surround_hrir_path: Option<PathBuf>,
 }
 
 fn state_path() -> Option<PathBuf> {

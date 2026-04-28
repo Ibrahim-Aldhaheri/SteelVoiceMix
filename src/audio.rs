@@ -8,8 +8,11 @@ use std::process::{Command, Stdio};
 
 use log::{error, info, warn};
 
+use std::path::PathBuf;
+
 use crate::filter_chain::{FilterChainHandle, FilterChainSpec};
 use crate::protocol::{EqBand, EqChannel, EqState, NUM_BANDS};
+use crate::surround_chain::{SurroundChainHandle, SurroundChainSpec};
 
 pub const GAME_SINK: &str = "SteelGame";
 pub const CHAT_SINK: &str = "SteelChat";
@@ -60,6 +63,17 @@ pub struct SinkManager {
     /// When true, EQ filter chains are inserted between SteelGame /
     /// SteelChat and the headset.
     eq_enabled: bool,
+    /// When true, the SteelSurround 7.1 sink + HRIR convolver chain is
+    /// loaded. Requires `surround_hrir` to be Some(path) and the file
+    /// to exist; if either condition fails, the chain isn't spawned
+    /// and the flag stays in the requested state for the next attempt.
+    surround_enabled: bool,
+    /// User-supplied HRIR WAV path. None means surround is unconfigured
+    /// — `enable_surround` will refuse until this is set.
+    surround_hrir: Option<PathBuf>,
+    /// Live surround chain handle when the chain is running. Dropping
+    /// it kills the spawned pipewire child and removes the conf file.
+    surround_chain: Option<SurroundChainHandle>,
     /// Full per-channel EQ state: 10 bands per channel, each with its own
     /// frequency / Q / gain / type. Game and Chat tune independently.
     /// Defaults are flat passthrough at standard graphic-EQ frequencies;
@@ -78,6 +92,8 @@ impl SinkManager {
         hdmi_enabled: bool,
         eq_enabled: bool,
         eq_state: EqState,
+        surround_enabled: bool,
+        surround_hrir: Option<PathBuf>,
     ) -> Self {
         // Sweep up anything a previous crash or manual test left behind.
         cleanup_stale_modules();
@@ -90,8 +106,101 @@ impl SinkManager {
             hdmi_enabled,
             eq_enabled,
             eq_state,
+            surround_enabled,
+            surround_hrir,
+            surround_chain: None,
             output_sink: None,
             hdmi_target: None,
+        }
+    }
+
+    /// Update the HRIR file path. If surround is currently running, the
+    /// chain is restarted with the new file so the change takes effect
+    /// immediately. Returns the path as actually stored — `None` means
+    /// the path was cleared (and surround is disabled as a side
+    /// effect, since it can't run without a file).
+    pub fn set_surround_hrir(&mut self, path: Option<PathBuf>) -> Option<PathBuf> {
+        // Strip empty strings to None so the GUI doesn't have to.
+        let cleaned = path.filter(|p| !p.as_os_str().is_empty());
+        self.surround_hrir = cleaned.clone();
+        if self.surround_chain.is_some() {
+            // Tear down + respawn so the new HRIR takes effect.
+            if let Some(handle) = self.surround_chain.take() {
+                handle.shutdown();
+            }
+            if cleaned.is_some() {
+                self.spawn_surround_chain();
+            } else {
+                // Path cleared while running → surround is no longer
+                // viable. Reflect that in `surround_enabled` too so
+                // the GUI's Status snapshot stays consistent.
+                self.surround_enabled = false;
+            }
+        }
+        cleaned
+    }
+
+    /// Toggle the surround chain. Returns the actual state after the
+    /// attempt — if `enable=true` is passed but no HRIR is configured
+    /// (or the file doesn't exist), the call is logged and false is
+    /// returned without changing state.
+    pub fn set_surround_enabled(&mut self, enable: bool) -> bool {
+        if enable {
+            let Some(path) = self.surround_hrir.clone() else {
+                warn!("Cannot enable surround: no HRIR file configured");
+                return false;
+            };
+            if !path.is_file() {
+                warn!(
+                    "Cannot enable surround: HRIR file {} not found",
+                    path.display()
+                );
+                return false;
+            }
+            if self.surround_chain.is_some() {
+                self.surround_enabled = true;
+                return true;
+            }
+            self.surround_enabled = true;
+            self.spawn_surround_chain();
+            // spawn_surround_chain may fail silently if pipewire is
+            // unhappy; reflect that in the returned state.
+            self.surround_chain.is_some()
+        } else {
+            self.surround_enabled = false;
+            if let Some(handle) = self.surround_chain.take() {
+                handle.shutdown();
+            }
+            false
+        }
+    }
+
+    fn spawn_surround_chain(&mut self) {
+        let Some(path) = self.surround_hrir.clone() else {
+            return;
+        };
+        let Some(headset) = self.output_sink.clone() else {
+            // No headset yet — leave the flag set so the next
+            // `create_sinks` re-spawns once the headset is detected.
+            return;
+        };
+        let spec = SurroundChainSpec {
+            hrir_path: &path,
+            playback_target: &headset,
+        };
+        match SurroundChainHandle::spawn(&spec) {
+            Some(handle) => {
+                self.surround_chain = Some(handle);
+                info!(
+                    "Surround chain online (HRIR: {})",
+                    path.display()
+                );
+            }
+            None => {
+                warn!(
+                    "Failed to spawn surround chain — see prior warnings"
+                );
+            }
         }
     }
 
@@ -539,6 +648,15 @@ impl SinkManager {
                     }
                 }
             }
+            // Same idea for surround — if it was enabled before the
+            // headset went away, re-spawn now that we have a target
+            // again.
+            if self.surround_enabled
+                && self.surround_chain.is_none()
+                && self.surround_hrir.is_some()
+            {
+                self.spawn_surround_chain();
+            }
         } else {
             error!("Failed to create one or more sinks");
         }
@@ -556,6 +674,11 @@ impl SinkManager {
                 unload_module(m.loopback_id);
                 unload_module(m.null_sink_id);
             }
+        }
+        // Surround chain owns its own pipewire child + null-sink; drop
+        // the handle and let its Drop impl clean up.
+        if let Some(handle) = self.surround_chain.take() {
+            handle.shutdown();
         }
         self.output_sink = None;
         self.hdmi_target = None;
