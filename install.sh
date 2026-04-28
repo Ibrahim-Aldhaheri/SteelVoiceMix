@@ -212,11 +212,13 @@ if [ "$INSTALL_GUI" = "1" ]; then
     systemctl --user daemon-reload
     debug "Running: systemctl --user enable steelvoicemix-gui"
     systemctl --user enable steelvoicemix-gui
-    # Start it now if a graphical session is active so the user doesn't have to
-    # log out and back in.
+    # (Re)start it now if a graphical session is active so the user doesn't
+    # have to log out and back in. `restart` instead of `start` is critical:
+    # on subsequent runs the unit is already active, and `start` would be a
+    # no-op — leaving the old binary in memory and the new files unread.
     if systemctl --user is-active --quiet graphical-session.target; then
-        debug "Running: systemctl --user start steelvoicemix-gui"
-        systemctl --user start steelvoicemix-gui 2>/dev/null || true
+        debug "Running: systemctl --user restart steelvoicemix-gui"
+        systemctl --user restart steelvoicemix-gui 2>/dev/null || true
     fi
     echo "✅ GUI will start automatically on login"
 else
@@ -242,9 +244,15 @@ sed -i "s|^ExecStart=/usr/bin/|ExecStart=$HOME/.local/bin/|" \
     ~/.config/systemd/user/steelvoicemix.service
 debug "Running: systemctl --user daemon-reload"
 systemctl --user daemon-reload
-debug "Running: systemctl --user enable steelvoicemix --now"
-systemctl --user enable steelvoicemix --now
-echo "✅ Service enabled and started"
+debug "Running: systemctl --user enable steelvoicemix"
+systemctl --user enable steelvoicemix
+# `restart` instead of `--now` (which is just `start`): on re-installs the
+# service is already active, so `start` would be a no-op and the freshly
+# copied binary wouldn't actually take over. `restart` starts if stopped,
+# restarts if running — idempotent either way.
+debug "Running: systemctl --user restart steelvoicemix"
+systemctl --user restart steelvoicemix
+echo "✅ Service enabled and (re)started"
 
 echo ""
 echo "==========================================="
