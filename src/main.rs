@@ -17,7 +17,7 @@ use std::thread;
 use log::{error, info, warn};
 
 use audio::SinkManager;
-use filter_chain::FilterChainSpec;
+use filter_chain::{FilterChainHandle, FilterChainSpec};
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
 use protocol::{ClientCommand, DaemonEvent};
 use routing::{spawn_router, RouterState};
@@ -367,9 +367,10 @@ fn main() {
     let _ = mixer_thread.join();
 }
 
-/// Diagnostic helper for `--test-filter-chain`. Loads a passthrough
-/// filter-chain sink, sleeps a few seconds so the user can verify it
-/// shows up in `pactl list short sinks`, then unloads it and exits.
+/// Diagnostic helper for `--test-filter-chain`. Spawns a passthrough
+/// filter-chain sink as a managed child pipewire process, sleeps a few
+/// seconds so the user can verify it shows up in `pactl list short sinks`,
+/// then shuts it down cleanly and exits.
 ///
 /// This is the "scaffolding works" smoke test before the full EQ
 /// integration touches `audio.rs` and the loopback wiring.
@@ -388,18 +389,22 @@ fn run_filter_chain_test() {
         description: "SteelVoiceMix filter-chain test",
         playback_target: &headset,
     };
-    let Some(module_id) = spec.load() else {
-        error!("Failed to load test filter chain — see warnings above.");
+    let Some(handle) = FilterChainHandle::spawn(&spec) else {
+        error!("Failed to spawn test filter chain — see warnings above.");
         std::process::exit(1);
     };
 
+    // Give pipewire a moment to actually load the module before we tell
+    // the user to peek at pactl. The child is spawned asynchronously and
+    // module loading inside it takes ~50–200 ms.
+    std::thread::sleep(std::time::Duration::from_millis(500));
     info!(
-        "Filter chain loaded as module #{module_id}. Run: \
+        "Filter chain spawned. Verify: \
          pactl list short sinks | grep SteelGameEQ_test"
     );
-    info!("Sleeping 5s before unload...");
+    info!("Sleeping 5s before shutdown...");
     std::thread::sleep(std::time::Duration::from_secs(5));
 
-    filter_chain::unload(module_id);
-    info!("Test filter chain unloaded. Exiting.");
+    handle.shutdown();
+    info!("Test filter chain shut down. Exiting.");
 }
