@@ -250,6 +250,7 @@ class MixerGUI(QMainWindow):
         tabs = QTabWidget()
         tabs.addTab(self._build_home_tab(), "Home")
         tabs.addTab(self._build_sinks_tab(), "Sinks")
+        tabs.addTab(self._build_eq_tab(), "Equalizer")
         tabs.addTab(self._build_settings_tab(), "Settings")
         root.addWidget(tabs, 1)
 
@@ -386,8 +387,16 @@ class MixerGUI(QMainWindow):
         self.auto_route_check.toggled.connect(self._toggle_auto_route_browsers)
         layout.addWidget(self.auto_route_check)
 
-        layout.addWidget(_divider())
-        layout.addWidget(_section_title("Equalizer"))
+        layout.addStretch(1)
+        return page
+
+    def _build_eq_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        layout.addWidget(_section_title("6-Band Parametric EQ"))
 
         self.eq_check = QCheckBox("Enable EQ filter chain (Game + Chat)")
         self.eq_check.setToolTip(
@@ -398,19 +407,31 @@ class MixerGUI(QMainWindow):
         self.eq_check.toggled.connect(self._toggle_eq_enabled)
         layout.addWidget(self.eq_check)
 
-        # 6-band parametric EQ sliders. Bands match the shape from
-        # PipeWire's canonical sink-eq6.conf: low shelf @ 100 Hz,
-        # peaking @ 100 / 500 / 2k / 5k Hz, high shelf @ 5k Hz.
+        # Bands match PipeWire's canonical sink-eq6.conf shape:
+        # low shelf / peaking x4 / high shelf at 100, 100, 500, 2k, 5k, 5k Hz.
+        # Value label on top (live readout), tall vertical slider, frequency
+        # label on bottom. Sliders get plenty of vertical room since EQ has
+        # its own dedicated tab now.
         bands_row = QHBoxLayout()
-        bands_row.setSpacing(12)
-        BAND_LABELS = ["100 Hz\nshelf", "100 Hz", "500 Hz", "2 kHz", "5 kHz", "5 kHz\nshelf"]
-        for idx, label_text in enumerate(BAND_LABELS):
+        bands_row.setSpacing(8)
+        BAND_LABELS = [
+            ("100 Hz", "Low Shelf"),
+            ("100 Hz", "Peak"),
+            ("500 Hz", "Peak"),
+            ("2 kHz",  "Peak"),
+            ("5 kHz",  "Peak"),
+            ("5 kHz",  "High Shelf"),
+        ]
+        for idx, (freq, kind) in enumerate(BAND_LABELS):
             band_col = QVBoxLayout()
-            band_col.setSpacing(2)
+            band_col.setSpacing(4)
+            band_col.setAlignment(Qt.AlignHCenter)
 
             value_lbl = QLabel("0.0")
             value_lbl.setAlignment(Qt.AlignCenter)
-            value_lbl.setStyleSheet("font-size: 10px; color: palette(placeholder-text);")
+            value_lbl.setStyleSheet(
+                "font-size: 11px; font-weight: bold; min-width: 48px;"
+            )
             self.eq_band_value_labels.append(value_lbl)
             band_col.addWidget(value_lbl)
 
@@ -420,29 +441,40 @@ class MixerGUI(QMainWindow):
             slider.setValue(0)
             slider.setTickPosition(QSlider.TicksRight)
             slider.setTickInterval(60)
-            slider.setMinimumHeight(120)
-            # 1-indexed band number captured by closure for the daemon command.
+            slider.setMinimumHeight(220)
+            slider.setFixedWidth(36)
             band_num = idx + 1
             slider.valueChanged.connect(
                 lambda v, b=band_num, lbl=value_lbl: self._on_eq_slider_changed(b, v, lbl)
             )
             self.eq_band_sliders.append(slider)
-            band_col.addWidget(slider, 1, alignment=Qt.AlignHCenter)
+            band_col.addWidget(slider, 0, alignment=Qt.AlignHCenter)
 
-            freq_lbl = QLabel(label_text)
+            freq_lbl = QLabel(freq)
             freq_lbl.setAlignment(Qt.AlignCenter)
-            freq_lbl.setStyleSheet("font-size: 9px;")
+            freq_lbl.setStyleSheet("font-size: 10px; font-weight: bold;")
             band_col.addWidget(freq_lbl)
 
+            kind_lbl = QLabel(kind)
+            kind_lbl.setAlignment(Qt.AlignCenter)
+            kind_lbl.setStyleSheet(
+                "font-size: 9px; color: palette(placeholder-text);"
+            )
+            band_col.addWidget(kind_lbl)
+
             bands_row.addLayout(band_col)
+        bands_row.addStretch(1)
         layout.addLayout(bands_row)
 
         eq_help = QLabel(
             "Drag a slider to boost or cut a frequency band by up to "
-            "±12 dB. Changes apply on release — the chain respawns with "
-            "the new gains, ~100 ms audio glitch per change."
+            "±12 dB. Each release respawns the filter chain with the new "
+            "gains (~100 ms audio glitch per change). Live param updates "
+            "without respawn are planned for a follow-up."
         )
-        eq_help.setStyleSheet("font-size: 10px; color: palette(placeholder-text); padding-top: 4px;")
+        eq_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text); padding-top: 4px;"
+        )
         eq_help.setWordWrap(True)
         layout.addWidget(eq_help)
 
