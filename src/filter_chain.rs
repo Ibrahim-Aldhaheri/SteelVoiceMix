@@ -46,6 +46,8 @@ use std::process::{Child, Command, Stdio};
 
 use log::{info, warn};
 
+use crate::protocol::{BandType, EqBand, NUM_BANDS};
+
 /// Describes one filter-chain instance the daemon manages.
 pub struct FilterChainSpec<'a> {
     /// Logical name suffix — gets prefixed to `effect_input.` for the
@@ -61,17 +63,14 @@ pub struct FilterChainSpec<'a> {
     /// PipeWire node name of the downstream target — typically the real
     /// headset sink name. The filter chain's playback side binds to this.
     pub playback_target: &'a str,
-    /// Per-band gain in dB. Six entries matching the 6-band shape we
-    /// generate (low shelf at 100 Hz, peaking at 100/500/2k/5k Hz,
-    /// high shelf at 5k Hz). Range expected to be [-12.0, 12.0]; clamping
-    /// happens upstream where the user-facing slider lives.
-    pub band_gains: [f32; 6],
+    /// Full per-band parameters. Frequency, Q, gain (dB) and biquad type
+    /// are all driven from the EqBand records, so a Sonar preset that
+    /// maps `parametricEQ.filter1..filter10` into this array gets
+    /// reproduced verbatim. Disabled bands collapse to passthrough by
+    /// emitting them with gain=0.0 — keeping the chain's node count
+    /// identical between presets simplifies the link list.
+    pub bands: [EqBand; NUM_BANDS],
 }
-
-/// Default flat (passthrough) gains for a fresh chain — used at startup
-/// before the user has touched any sliders. All bands at 0 dB = the chain
-/// processes audio but applies no boost or cut.
-pub const FLAT_GAINS: [f32; 6] = [0.0; 6];
 
 impl<'a> FilterChainSpec<'a> {
     /// The prefixed sink name a loopback should target to feed audio
@@ -94,28 +93,40 @@ impl<'a> FilterChainSpec<'a> {
     /// chain into the running PipeWire instance.
     fn to_pipewire_conf(&self) -> String {
         // Filter graph adapted from PipeWire's canonical `sink-eq6.conf`
-        // (`/usr/share/pipewire/filter-chain/`). Critical idioms preserved
-        // verbatim:
+        // (`/usr/share/pipewire/filter-chain/`), extended to 10 bands so
+        // Sonar's parametricEQ.filter1..filter10 preset shape maps 1:1.
+        //
+        // Critical idioms preserved verbatim:
         //
         //   - Single node per band (not per channel). PipeWire auto-
         //     duplicates each node across channels driven by audio.channels.
-        //     Earlier per-channel pairs (bassL/bassR) confused the graph.
         //   - Quoted control keys with float literals: "Freq" = 100.0 etc.
-        //     Unquoted/integer forms parse but appear to produce silently
-        //     broken biquad coefficients.
+        //     Unquoted/integer forms parse but produce silently broken
+        //     biquad coefficients.
         //   - No explicit inputs/outputs arrays — derived from links.
-        //   - playback.props uses node.passive=true (canonical for filter
-        //     sinks) plus our explicit node.target so wireplumber routes
-        //     output to the headset. Phase-1 attempt without node.passive
-        //     made one direction work; explicit pw-link in spawn() is the
-        //     safety net regardless.
         //
-        // All gains default to 0.0 (passthrough — no audible change yet).
-        // Phase 2.1 will expose these as user-controllable sliders that
-        // respawn the chain with new values. The 6-band shape (low shelf
-        // / 4 peaking / high shelf at 100, 100, 500, 2k, 5k, 5k Hz) is
-        // PipeWire's stock starting point; we can adjust frequency
-        // distribution later if the Sonar-style bands warrant it.
+        // Disabled bands collapse to gain=0.0 rather than being omitted —
+        // keeps the node count and link list constant across presets, so
+        // we never have to renumber when a preset switches which bands
+        // are active.
+        let nodes = self
+            .bands
+            .iter()
+            .enumerate()
+            .map(|(i, b)| render_band_node(i + 1, b))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let links = (1..NUM_BANDS)
+            .map(|i| {
+                format!(
+                    r#"                    {{ output = "eq_band_{a}:Out"  input = "eq_band_{b}:In" }}"#,
+                    a = i,
+                    b = i + 1,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
         format!(
             r#"context.properties = {{
     log.level = 0
@@ -145,49 +156,10 @@ context.modules = [
             media.name       = "{desc}"
             filter.graph = {{
                 nodes = [
-                    {{
-                        type  = builtin
-                        name  = eq_band_1
-                        label = bq_lowshelf
-                        control = {{ "Freq" = 100.0  "Q" = 1.0  "Gain" = {g1:.2} }}
-                    }}
-                    {{
-                        type  = builtin
-                        name  = eq_band_2
-                        label = bq_peaking
-                        control = {{ "Freq" = 100.0  "Q" = 1.0  "Gain" = {g2:.2} }}
-                    }}
-                    {{
-                        type  = builtin
-                        name  = eq_band_3
-                        label = bq_peaking
-                        control = {{ "Freq" = 500.0  "Q" = 1.0  "Gain" = {g3:.2} }}
-                    }}
-                    {{
-                        type  = builtin
-                        name  = eq_band_4
-                        label = bq_peaking
-                        control = {{ "Freq" = 2000.0  "Q" = 1.0  "Gain" = {g4:.2} }}
-                    }}
-                    {{
-                        type  = builtin
-                        name  = eq_band_5
-                        label = bq_peaking
-                        control = {{ "Freq" = 5000.0  "Q" = 1.0  "Gain" = {g5:.2} }}
-                    }}
-                    {{
-                        type  = builtin
-                        name  = eq_band_6
-                        label = bq_highshelf
-                        control = {{ "Freq" = 5000.0  "Q" = 1.0  "Gain" = {g6:.2} }}
-                    }}
+{nodes}
                 ]
                 links = [
-                    {{ output = "eq_band_1:Out"  input = "eq_band_2:In" }}
-                    {{ output = "eq_band_2:Out"  input = "eq_band_3:In" }}
-                    {{ output = "eq_band_3:Out"  input = "eq_band_4:In" }}
-                    {{ output = "eq_band_4:Out"  input = "eq_band_5:In" }}
-                    {{ output = "eq_band_5:Out"  input = "eq_band_6:In" }}
+{links}
                 ]
             }}
             audio.channels = 2
@@ -228,18 +200,43 @@ context.modules = [
 "#,
             desc = self.description,
             name = self.sink_name,
-            // playback_target is intentionally not interpolated into the
-            // conf any more — see the comment block on playback.props
-            // about why we no longer set node.target. The target is used
-            // exclusively by the explicit pw-link in spawn() instead.
-            g1 = self.band_gains[0],
-            g2 = self.band_gains[1],
-            g3 = self.band_gains[2],
-            g4 = self.band_gains[3],
-            g5 = self.band_gains[4],
-            g6 = self.band_gains[5],
         )
     }
+}
+
+fn band_label(t: BandType) -> &'static str {
+    match t {
+        BandType::Lowshelf => "bq_lowshelf",
+        BandType::Peaking => "bq_peaking",
+        BandType::Highshelf => "bq_highshelf",
+        BandType::Lowpass => "bq_lowpass",
+        BandType::Highpass => "bq_highpass",
+        BandType::Bandpass => "bq_bandpass",
+        BandType::Notch => "bq_notch",
+        BandType::Allpass => "bq_allpass",
+    }
+}
+
+fn render_band_node(idx: usize, band: &EqBand) -> String {
+    // Disabled bands stay in the graph but force gain to 0 dB so they're
+    // audibly inert. Keeps the node/link topology constant across preset
+    // swaps. Q is also clamped to a safe minimum — biquads with Q=0
+    // produce NaN coefficients in some PipeWire builds.
+    let gain = if band.enabled { band.gain } else { 0.0 };
+    let q = band.q.max(0.0001);
+    format!(
+        r#"                    {{
+                        type  = builtin
+                        name  = eq_band_{idx}
+                        label = {label}
+                        control = {{ "Freq" = {freq:.4}  "Q" = {q:.4}  "Gain" = {gain:.4} }}
+                    }}"#,
+        idx = idx,
+        label = band_label(band.band_type),
+        freq = band.freq,
+        q = q,
+        gain = gain,
+    )
 }
 
 /// Live filter-chain instance: owns the spawned `pipewire` child + its

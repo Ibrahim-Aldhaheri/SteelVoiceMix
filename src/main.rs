@@ -19,7 +19,7 @@ use log::{error, info, warn};
 use audio::SinkManager;
 use filter_chain::{FilterChainHandle, FilterChainSpec};
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
-use protocol::{ClientCommand, DaemonEvent};
+use protocol::{default_channel_bands, ClientCommand, DaemonEvent};
 use routing::{spawn_router, RouterState};
 
 fn socket_path() -> PathBuf {
@@ -45,7 +45,7 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         hdmi_sink_enabled: st.hdmi_sink_enabled,
         auto_route_browsers: st.auto_route_browsers,
         eq_enabled: st.eq_enabled,
-        eq_gains: st.eq_gains,
+        eq_state: st.eq_state,
     }
 }
 
@@ -58,7 +58,7 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         hdmi_sink_enabled: st.hdmi_sink_enabled,
         auto_route_browsers: st.auto_route_browsers,
         eq_enabled: st.eq_enabled,
-        eq_gains: st.eq_gains,
+        eq_state: st.eq_state,
     });
 }
 
@@ -210,23 +210,58 @@ fn handle_client(
                     );
                     continue;
                 }
-                let new_gains_all = sinks.lock().unwrap().eq_gains();
+                let new_state_all = sinks.lock().unwrap().eq_state();
                 {
                     let mut st = state.lock().unwrap();
-                    st.eq_gains = new_gains_all;
+                    st.eq_state = new_state_all;
                 }
                 persist_sink_state(&state);
-                let channel_gains = new_gains_all.for_channel(channel);
+                let channel_bands = new_state_all.for_channel(channel);
                 info!(
                     "GUI requested: set-eq-band-gain → channel={:?} band={band} gain={:.2} dB",
                     channel,
-                    channel_gains[(band - 1) as usize]
+                    channel_bands[(band - 1) as usize].gain
                 );
                 broadcast_event(
                     &subscribers,
-                    DaemonEvent::EqBandGainsChanged {
+                    DaemonEvent::EqBandsChanged {
                         channel,
-                        gains: channel_gains,
+                        bands: channel_bands,
+                    },
+                );
+            }
+            ClientCommand::SetEqBand {
+                channel,
+                band,
+                params,
+            } => {
+                let result = {
+                    let mut sm = sinks.lock().unwrap();
+                    sm.set_eq_band(channel, band, params)
+                };
+                if result.is_none() {
+                    warn!(
+                        "Invalid set-eq-band (channel={:?}, band={band}, params={:?})",
+                        channel, params
+                    );
+                    continue;
+                }
+                let new_state_all = sinks.lock().unwrap().eq_state();
+                {
+                    let mut st = state.lock().unwrap();
+                    st.eq_state = new_state_all;
+                }
+                persist_sink_state(&state);
+                let channel_bands = new_state_all.for_channel(channel);
+                info!(
+                    "GUI requested: set-eq-band → channel={:?} band={band} params={:?}",
+                    channel, channel_bands[(band - 1) as usize]
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::EqBandsChanged {
+                        channel,
+                        bands: channel_bands,
                     },
                 );
             }
@@ -335,7 +370,7 @@ fn main() {
     let hdmi_sink_enabled = if no_hdmi_sink { false } else { persisted.hdmi_sink_enabled };
     let auto_route_browsers = persisted.auto_route_browsers;
     let eq_enabled = persisted.eq_enabled;
-    let eq_gains = persisted.eq_gains;
+    let eq_state = persisted.eq_state;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -346,8 +381,9 @@ fn main() {
     );
     info!("Browser auto-routing: {}", auto_route_browsers);
     info!(
-        "EQ filter chains: {} (game={:?}, chat={:?})",
-        eq_enabled, eq_gains.game, eq_gains.chat
+        "EQ filter chains: {} ({} bands per channel)",
+        eq_enabled,
+        protocol::NUM_BANDS,
     );
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(
@@ -355,7 +391,7 @@ fn main() {
         hdmi_sink_enabled,
         auto_route_browsers,
         eq_enabled,
-        eq_gains,
+        eq_state,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
@@ -363,7 +399,7 @@ fn main() {
         media_sink_enabled,
         hdmi_sink_enabled,
         eq_enabled,
-        eq_gains,
+        eq_state,
     )));
     let router = Arc::new(RouterState::new(auto_route_browsers));
     spawn_router(router.clone(), running.clone());
@@ -461,7 +497,7 @@ fn run_filter_chain_test() {
         sink_name: "SteelGameEQ_test",
         description: "SteelVoiceMix filter-chain test",
         playback_target: &headset,
-        band_gains: filter_chain::FLAT_GAINS,
+        bands: default_channel_bands(),
     };
     let Some(handle) = FilterChainHandle::spawn(&spec) else {
         error!("Failed to spawn test filter chain — see warnings above.");

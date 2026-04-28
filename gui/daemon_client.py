@@ -15,6 +15,39 @@ from PySide6.QtCore import QObject, Signal
 from .settings import socket_path
 
 
+def _normalize_bands(raw: list) -> list[dict]:
+    """Coerce daemon-sent band dicts into a uniform GUI-side shape.
+
+    The daemon emits each band as `{freq, q, gain, type, enabled}` (matching
+    the Sonar `parametricEQ.filterN` JSON layout). We always return a list
+    of dicts with those exact keys and type-coerced numeric values, so
+    downstream slots never have to defend against partial / legacy shapes.
+    Older `eq_gains` snapshots — bare floats — get wrapped into peaking
+    bands at 1 kHz so the GUI still has something coherent to show until
+    the next live event refreshes the real frequencies.
+    """
+    out: list[dict] = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            out.append({
+                "freq": float(entry.get("freq", 1000.0)),
+                "q": float(entry.get("q", 1.0)),
+                "gain": float(entry.get("gain", 0.0)),
+                "type": str(entry.get("type", "peaking")),
+                "enabled": bool(entry.get("enabled", True)),
+            })
+        else:
+            # Backwards-compat for the old EqGains shape (bare gain floats).
+            out.append({
+                "freq": 1000.0,
+                "q": 1.0,
+                "gain": float(entry),
+                "type": "peaking",
+                "enabled": True,
+            })
+    return out
+
+
 class DaemonSignals(QObject):
     connected = Signal()
     disconnected = Signal()
@@ -25,12 +58,16 @@ class DaemonSignals(QObject):
     hdmi_sink_changed = Signal(bool)
     auto_route_browsers_changed = Signal(bool)
     eq_enabled_changed = Signal(bool)
-    # Emits (channel, gains) where channel is "game" or "chat" and gains
-    # is a Python list of 6 floats (dB).
-    eq_band_gains_changed = Signal(str, list)
-    # One-shot: full Status snapshot's per-channel gains, sent at startup
-    # so the GUI can populate both Game and Chat sliders before the user
-    # has interacted with anything.
+    # Emits (channel, bands) where channel is "game" or "chat" and bands
+    # is a Python list of NUM_BANDS dicts, each shaped like the EqBand
+    # struct on the daemon side: {freq, q, gain, type, enabled}. The full
+    # band parameters (not just gain) come along so a preset load can
+    # update frequency / Q / type labels too.
+    eq_bands_changed = Signal(str, list)
+    # One-shot: full Status snapshot's per-channel band data, sent at
+    # startup so the GUI can populate both Game and Chat sliders before
+    # the user has interacted with anything. Shape: {"game": [bands],
+    # "chat": [bands]}.
     eq_full_state = Signal(dict)
 
 
@@ -107,17 +144,11 @@ class DaemonClient:
             )
         elif ev == "eq-enabled-changed":
             self.signals.eq_enabled_changed.emit(bool(event.get("enabled", False)))
-        elif ev == "eq-band-gains-changed":
+        elif ev == "eq-bands-changed":
             channel = event.get("channel", "")
-            gains = event.get("gains")
-            if (
-                channel in ("game", "chat")
-                and isinstance(gains, list)
-                and len(gains) == 6
-            ):
-                self.signals.eq_band_gains_changed.emit(
-                    channel, [float(g) for g in gains]
-                )
+            bands = event.get("bands")
+            if channel in ("game", "chat") and isinstance(bands, list) and bands:
+                self.signals.eq_bands_changed.emit(channel, _normalize_bands(bands))
         elif ev == "status":
             self.signals.media_sink_changed.emit(
                 bool(event.get("media_sink_enabled", True))
@@ -131,15 +162,15 @@ class DaemonClient:
             self.signals.eq_enabled_changed.emit(
                 bool(event.get("eq_enabled", False))
             )
-            eq_gains = event.get("eq_gains")
-            if isinstance(eq_gains, dict):
-                game = eq_gains.get("game")
-                chat = eq_gains.get("chat")
+            eq_state = event.get("eq_state") or event.get("eq_gains")
+            if isinstance(eq_state, dict):
+                game = eq_state.get("game")
+                chat = eq_state.get("chat")
                 state = {}
-                if isinstance(game, list) and len(game) == 6:
-                    state["game"] = [float(g) for g in game]
-                if isinstance(chat, list) and len(chat) == 6:
-                    state["chat"] = [float(g) for g in chat]
+                if isinstance(game, list) and game:
+                    state["game"] = _normalize_bands(game)
+                if isinstance(chat, list) and chat:
+                    state["chat"] = _normalize_bands(chat)
                 if state:
                     self.signals.eq_full_state.emit(state)
             if event.get("connected"):

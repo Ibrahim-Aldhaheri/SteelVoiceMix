@@ -159,6 +159,71 @@ _POSITION_DISPLAY: dict[str, str] = {
 }
 
 
+# Sonar's parametric EQ exposes 10 bands. Matching that count means a Sonar
+# preset's filter1..filter10 maps slot-for-slot into our state.
+NUM_EQ_BANDS = 10
+
+
+def _default_eq_band(idx: int) -> dict:
+    """Default starting band for slot `idx` (0..9). Mirrors the Rust
+    `default_channel_bands()`: low shelf at 32 Hz, peaking 64 → 8 k, high
+    shelf at 16 k. Used both as initial state pre-handshake and as a
+    safety net if the daemon ever sends a malformed band."""
+    template = [
+        (32.0, 0.7, "lowshelf"),
+        (64.0, 1.0, "peaking"),
+        (125.0, 1.0, "peaking"),
+        (250.0, 1.0, "peaking"),
+        (500.0, 1.0, "peaking"),
+        (1000.0, 1.0, "peaking"),
+        (2000.0, 1.0, "peaking"),
+        (4000.0, 1.0, "peaking"),
+        (8000.0, 1.0, "peaking"),
+        (16000.0, 0.7, "highshelf"),
+    ]
+    f, q, t = template[max(0, min(idx, len(template) - 1))]
+    return {"freq": f, "q": q, "gain": 0.0, "type": t, "enabled": True}
+
+
+def _default_channel_bands() -> list[dict]:
+    return [_default_eq_band(i) for i in range(NUM_EQ_BANDS)]
+
+
+def _format_freq(hz: float) -> str:
+    """Compact frequency label. Sub-1 kHz → 'NNN Hz', otherwise kHz."""
+    if hz < 1000:
+        return f"{int(round(hz))} Hz"
+    khz = hz / 1000.0
+    if abs(khz - round(khz)) < 0.05:
+        return f"{int(round(khz))} kHz"
+    return f"{khz:.1f} kHz"
+
+
+def _band_name_for(freq: float) -> str:
+    """Musical band name from centre frequency. Boundaries follow the
+    common audio-engineering split — keeps labels meaningful even when a
+    preset places bands at non-standard frequencies."""
+    if freq < 60:
+        return "Sub Bass"
+    if freq < 120:
+        return "Bass"
+    if freq < 250:
+        return "Low Bass"
+    if freq < 500:
+        return "Lower Mids"
+    if freq < 1000:
+        return "Low Mids"
+    if freq < 2000:
+        return "Mids"
+    if freq < 4000:
+        return "Upper Mids"
+    if freq < 8000:
+        return "Presence"
+    if freq < 14000:
+        return "Brilliance"
+    return "Air"
+
+
 def _app_icon() -> QIcon:
     """Return our installed icon, falling back to the generic theme icon
     when running from a source checkout that hasn't been installed yet."""
@@ -185,7 +250,7 @@ class MixerGUI(QMainWindow):
             self._on_auto_route_browsers_changed
         )
         self.signals.eq_enabled_changed.connect(self._on_eq_enabled_changed)
-        self.signals.eq_band_gains_changed.connect(self._on_eq_band_gains_changed)
+        self.signals.eq_bands_changed.connect(self._on_eq_bands_changed)
         self.signals.eq_full_state.connect(self._on_eq_full_state)
         # Track the daemon's reported sink-toggle states so the buttons
         # render correctly. Daemon defaults are "off until the user opts in"
@@ -194,20 +259,27 @@ class MixerGUI(QMainWindow):
         self._hdmi_sink_enabled = False
         self._auto_route_browsers = False
         self._eq_enabled = False
-        # Sonar-style per-channel EQ: separate gain arrays for Game and
-        # Chat. The sliders display whichever channel is currently
-        # selected via the channel combo box; switching the combo loads
-        # that channel's stored gains into the sliders.
-        self._eq_gains_by_channel: dict[str, list[float]] = {
-            "game": [0.0] * 6,
-            "chat": [0.0] * 6,
+        # Sonar-style per-channel EQ: separate band arrays for Game and
+        # Chat. Each band carries its full {freq, q, gain, type, enabled}
+        # — sliders bind to `gain`, labels read `freq` and derive a
+        # musical name from it. The sliders display whichever channel is
+        # currently selected via the channel combo box; switching the
+        # combo re-renders sliders + labels from that channel's bands.
+        # Defaults match the Rust daemon's default_channel_bands() so
+        # the GUI shows a sane shape before the first status snapshot.
+        self._eq_bands_by_channel: dict[str, list[dict]] = {
+            "game": _default_channel_bands(),
+            "chat": _default_channel_bands(),
         }
         self._eq_current_channel: str = "game"
-        # Slider widgets, populated in _build_eq_tab. Cached so the
+        # Slider + label widgets, populated in _build_eq_tab. Cached so
         # channel-switch and daemon-broadcast handlers can update them
-        # without triggering signal storms.
+        # without triggering signal storms. Name + freq labels are kept
+        # so preset loads (which can change frequencies) refresh them.
         self.eq_band_sliders: list[QSlider] = []
         self.eq_band_value_labels: list[QLabel] = []
+        self.eq_band_name_labels: list[QLabel] = []
+        self.eq_band_freq_labels: list[QLabel] = []
 
         # EQ slider commits are debounced. While the user drags, we just
         # update the visible label — sending a daemon command per pixel
@@ -418,7 +490,7 @@ class MixerGUI(QMainWindow):
         layout.setSpacing(12)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        layout.addWidget(_section_title("Sonar — 6-band parametric EQ"))
+        layout.addWidget(_section_title(f"Sonar — {NUM_EQ_BANDS}-band parametric EQ"))
 
         self.eq_check = QCheckBox("Enable Sonar EQ (🎮 Game + 💬 Chat)")
         self.eq_check.setToolTip(
@@ -445,32 +517,22 @@ class MixerGUI(QMainWindow):
         ch_row.addWidget(self.eq_channel_combo, 1)
         layout.addLayout(ch_row)
 
-        # Bands match PipeWire's canonical sink-eq6.conf shape:
-        # low shelf / peaking x4 / high shelf at 100, 100, 500, 2k, 5k, 5k Hz.
-        # Value label on top (live readout), tall vertical slider, musical
-        # band name + frequency below. Musical names mean more to users
-        # than the underlying filter-type names (Low Shelf / Peak / High
-        # Shelf) — which only matter to people who already know what
-        # bq_lowshelf vs bq_peaking does.
+        # 10 vertical sliders, one per band. The musical name + frequency
+        # labels are populated dynamically from the current channel's
+        # band data — preset loads can move bands around without us
+        # having to relabel manually. Slimmer columns than the prior 6-
+        # band layout to keep all 10 visible without horizontal scroll.
         bands_row = QHBoxLayout()
-        bands_row.setSpacing(8)
-        BAND_LABELS = [
-            ("Sub Bass",   "100 Hz"),
-            ("Bass",       "100 Hz"),
-            ("Low Mids",   "500 Hz"),
-            ("Mids",       "2 kHz"),
-            ("Treble",     "5 kHz"),
-            ("Air",        "5 kHz"),
-        ]
-        for idx, (name, freq) in enumerate(BAND_LABELS):
+        bands_row.setSpacing(4)
+        for idx in range(NUM_EQ_BANDS):
             band_col = QVBoxLayout()
-            band_col.setSpacing(4)
+            band_col.setSpacing(3)
             band_col.setAlignment(Qt.AlignHCenter)
 
             value_lbl = QLabel("0.0")
             value_lbl.setAlignment(Qt.AlignCenter)
             value_lbl.setStyleSheet(
-                "font-size: 11px; font-weight: bold; min-width: 48px;"
+                "font-size: 10px; font-weight: bold; min-width: 36px;"
             )
             self.eq_band_value_labels.append(value_lbl)
             band_col.addWidget(value_lbl)
@@ -481,8 +543,8 @@ class MixerGUI(QMainWindow):
             slider.setValue(0)
             slider.setTickPosition(QSlider.TicksRight)
             slider.setTickInterval(60)
-            slider.setMinimumHeight(220)
-            slider.setFixedWidth(36)
+            slider.setMinimumHeight(200)
+            slider.setFixedWidth(28)
             band_num = idx + 1
             # valueChanged updates the visible label and queues a debounced
             # commit. sliderReleased commits immediately on drag end so the
@@ -496,21 +558,27 @@ class MixerGUI(QMainWindow):
             self.eq_band_sliders.append(slider)
             band_col.addWidget(slider, 0, alignment=Qt.AlignHCenter)
 
-            name_lbl = QLabel(name)
+            name_lbl = QLabel("")
             name_lbl.setAlignment(Qt.AlignCenter)
-            name_lbl.setStyleSheet("font-size: 10px; font-weight: bold;")
+            name_lbl.setStyleSheet("font-size: 9px; font-weight: bold;")
+            name_lbl.setWordWrap(True)
+            self.eq_band_name_labels.append(name_lbl)
             band_col.addWidget(name_lbl)
 
-            freq_lbl = QLabel(freq)
+            freq_lbl = QLabel("")
             freq_lbl.setAlignment(Qt.AlignCenter)
             freq_lbl.setStyleSheet(
                 "font-size: 9px; color: palette(placeholder-text);"
             )
+            self.eq_band_freq_labels.append(freq_lbl)
             band_col.addWidget(freq_lbl)
 
             bands_row.addLayout(band_col)
-        bands_row.addStretch(1)
         layout.addLayout(bands_row)
+        # Render initial labels from the default band shape so the EQ tab
+        # has populated frequency / name labels even before the first
+        # daemon status arrives.
+        self._render_sliders_for_channel(self._eq_current_channel)
 
         eq_help = QLabel(
             "Drag a slider to boost or cut a frequency band by up to "
@@ -859,7 +927,7 @@ class MixerGUI(QMainWindow):
 
     def _on_eq_slider_changed(self, band: int, value_tenths: int, label: QLabel):
         """User moved a slider. Update the live value label, store the
-        new value in the current channel's gain array, and queue a
+        new value in the current channel's bands array, and queue a
         debounced daemon commit. While the user is actively dragging,
         no commands go to the daemon — that's what was producing
         minute-long lag (one chain respawn queued per pixel of travel).
@@ -868,9 +936,11 @@ class MixerGUI(QMainWindow):
         gain_db = value_tenths / 10.0
         sign = "+" if gain_db > 0 else ""
         label.setText(f"{sign}{gain_db:.1f}")
-        # Update the LOCAL view of the current channel's gains so a
+        # Update the LOCAL view of the current channel's bands so a
         # channel switch + switch-back doesn't lose the in-progress edit.
-        self._eq_gains_by_channel[self._eq_current_channel][band - 1] = gain_db
+        bands = self._eq_bands_by_channel[self._eq_current_channel]
+        if 1 <= band <= len(bands):
+            bands[band - 1]["gain"] = gain_db
         self._eq_pending_band_value[band] = value_tenths
         self._eq_commit_timer.start()
 
@@ -895,13 +965,13 @@ class MixerGUI(QMainWindow):
         self._eq_pending_band_value.clear()
 
     def _on_eq_channel_changed(self, text: str):
-        """Combo box changed — load the selected channel's stored gains
+        """Combo box changed — load the selected channel's stored bands
         into the sliders. The combo items carry emoji prefixes
         ('🎮 Game' / '💬 Chat') for visual continuity with the Home tab,
         so we extract the trailing word to map back to the daemon's
         channel keys ('game' / 'chat')."""
         last_word = text.strip().split()[-1].lower() if text.strip() else ""
-        if last_word not in self._eq_gains_by_channel:
+        if last_word not in self._eq_bands_by_channel:
             return
         self._eq_current_channel = last_word
         # Cancel any pending commit from the previous channel.
@@ -910,39 +980,47 @@ class MixerGUI(QMainWindow):
         self._render_sliders_for_channel(last_word)
 
     def _render_sliders_for_channel(self, channel: str):
-        """Push the stored gains for `channel` into the slider widgets
-        without re-emitting valueChanged → daemon commands."""
-        gains = self._eq_gains_by_channel.get(channel, [0.0] * 6)
-        for idx, gain_db in enumerate(gains):
-            if idx >= len(self.eq_band_sliders):
-                break
+        """Push the stored bands for `channel` into the slider widgets
+        AND refresh the per-band name + frequency labels. Preset loads
+        change frequencies, so the labels can't be static."""
+        bands = self._eq_bands_by_channel.get(channel) or _default_channel_bands()
+        for idx in range(len(self.eq_band_sliders)):
+            band = bands[idx] if idx < len(bands) else _default_eq_band(idx)
+            gain_db = float(band.get("gain", 0.0))
+            freq = float(band.get("freq", 1000.0))
+
             slider = self.eq_band_sliders[idx]
-            label = self.eq_band_value_labels[idx]
+            value_lbl = self.eq_band_value_labels[idx]
+            name_lbl = self.eq_band_name_labels[idx]
+            freq_lbl = self.eq_band_freq_labels[idx]
+
             value_tenths = int(round(gain_db * 10))
             was_blocked = slider.blockSignals(True)
             slider.setValue(value_tenths)
             slider.blockSignals(was_blocked)
             sign = "+" if gain_db > 0 else ""
-            label.setText(f"{sign}{gain_db:.1f}")
+            value_lbl.setText(f"{sign}{gain_db:.1f}")
+            name_lbl.setText(_band_name_for(freq))
+            freq_lbl.setText(_format_freq(freq))
 
-    def _on_eq_band_gains_changed(self, channel: str, gains: list):
-        """Daemon broadcast: the gains for `channel` changed (perhaps
-        because we just sent the change, perhaps from another client).
-        Always update the local cache; if it's the channel currently
-        on screen, refresh the sliders too."""
-        if channel not in self._eq_gains_by_channel:
+    def _on_eq_bands_changed(self, channel: str, bands: list):
+        """Daemon broadcast: the bands for `channel` changed (perhaps
+        because we just sent the change, perhaps from another client or
+        a preset load). Always update the local cache; if it's the
+        channel currently on screen, refresh sliders + labels too."""
+        if channel not in self._eq_bands_by_channel:
             return
-        self._eq_gains_by_channel[channel] = list(gains)
+        self._eq_bands_by_channel[channel] = list(bands)
         if channel == self._eq_current_channel:
             self._render_sliders_for_channel(channel)
 
     def _on_eq_full_state(self, state: dict):
-        """Initial Status snapshot delivered both channels' gains at
+        """Initial Status snapshot delivered both channels' band data at
         once (Game and Chat). Cache both and refresh the visible sliders
         for whichever channel is currently selected."""
         for ch in ("game", "chat"):
             if ch in state:
-                self._eq_gains_by_channel[ch] = list(state[ch])
+                self._eq_bands_by_channel[ch] = list(state[ch])
         self._render_sliders_for_channel(self._eq_current_channel)
 
     # -------------------------------------------------------------- profiles

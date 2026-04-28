@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::EqGains;
+use crate::protocol::EqState;
 
 /// What the daemon remembers across restarts. Default-derived: a fresh
 /// install loads as all-false so we don't surprise anyone with extra
@@ -30,12 +30,12 @@ pub struct DaemonState {
     /// startup. Toggling this re-runs the loopback-swap dance.
     #[serde(default)]
     pub eq_enabled: bool,
-    /// Per-band gains in dB for the 6-band EQ, separate arrays for
-    /// the Game and Chat channels (low shelf @ 100 Hz, peaking @ 100 /
-    /// 500 / 2000 / 5000 Hz, high shelf @ 5000 Hz). Range [-12.0, 12.0];
-    /// clamping enforced upstream. Zero = passthrough.
-    #[serde(default)]
-    pub eq_gains: EqGains,
+    /// Full per-band EQ state for both channels. Each channel carries
+    /// 10 `EqBand`s (freq / Q / gain / type / enabled). Default = flat
+    /// passthrough at standard graphic-EQ frequencies. Sonar preset
+    /// JSONs map directly into this shape.
+    #[serde(default, alias = "eq_gains")]
+    pub eq_state: EqState,
 }
 
 fn state_path() -> Option<PathBuf> {

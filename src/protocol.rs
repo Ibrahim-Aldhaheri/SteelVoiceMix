@@ -16,33 +16,102 @@ pub enum EqChannel {
     Chat,
 }
 
-/// Both channels' EQ gain arrays bundled together. Lives in the daemon
-/// state, status snapshot, and persistence — saves wiring two parallel
-/// arrays everywhere.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct EqGains {
-    pub game: [f32; 6],
-    pub chat: [f32; 6],
+/// Number of EQ bands per channel. Sonar uses 10 — matching that here so
+/// Sonar preset JSONs (which always carry filter1..filter10) load 1:1.
+pub const NUM_BANDS: usize = 10;
+
+/// Filter type for a single biquad band. Names match PipeWire's
+/// `bq_*` builtin labels; the wire format is lowercase JSON
+/// (`"lowshelf"` etc.) for parity with Sonar preset files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BandType {
+    Lowshelf,
+    Peaking,
+    Highshelf,
+    Lowpass,
+    Highpass,
+    Bandpass,
+    Notch,
+    Allpass,
 }
 
-impl Default for EqGains {
-    fn default() -> Self {
-        EqGains {
-            game: [0.0; 6],
-            chat: [0.0; 6],
+/// One EQ band's parameters. Maps directly to a PipeWire builtin biquad
+/// node and the `parametricEQ.filterN` shape in Sonar preset JSONs.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct EqBand {
+    pub freq: f32,
+    pub q: f32,
+    pub gain: f32,
+    #[serde(rename = "type")]
+    pub band_type: BandType,
+    pub enabled: bool,
+}
+
+impl EqBand {
+    /// Convenience constructor for the common case.
+    pub const fn new(freq: f32, q: f32, gain: f32, band_type: BandType) -> Self {
+        EqBand {
+            freq,
+            q,
+            gain,
+            band_type,
+            enabled: true,
         }
     }
 }
 
-impl EqGains {
-    pub fn for_channel(&self, channel: EqChannel) -> [f32; 6] {
+impl Default for EqBand {
+    fn default() -> Self {
+        EqBand::new(1000.0, 1.0, 0.0, BandType::Peaking)
+    }
+}
+
+/// Default 10-band shape — standard graphic-EQ frequencies, all gains
+/// at 0 (passthrough). When a preset loads, every band's freq / q /
+/// gain / type can be replaced; the slider UI tracks whatever the
+/// current band parameters are.
+pub fn default_channel_bands() -> [EqBand; NUM_BANDS] {
+    [
+        EqBand::new(   32.0, 0.7, 0.0, BandType::Lowshelf),
+        EqBand::new(   64.0, 1.0, 0.0, BandType::Peaking),
+        EqBand::new(  125.0, 1.0, 0.0, BandType::Peaking),
+        EqBand::new(  250.0, 1.0, 0.0, BandType::Peaking),
+        EqBand::new(  500.0, 1.0, 0.0, BandType::Peaking),
+        EqBand::new( 1000.0, 1.0, 0.0, BandType::Peaking),
+        EqBand::new( 2000.0, 1.0, 0.0, BandType::Peaking),
+        EqBand::new( 4000.0, 1.0, 0.0, BandType::Peaking),
+        EqBand::new( 8000.0, 1.0, 0.0, BandType::Peaking),
+        EqBand::new(16000.0, 0.7, 0.0, BandType::Highshelf),
+    ]
+}
+
+/// Both channels' band arrays bundled. Replaces the prior `EqGains`
+/// (which held a single gain per band).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct EqState {
+    pub game: [EqBand; NUM_BANDS],
+    pub chat: [EqBand; NUM_BANDS],
+}
+
+impl Default for EqState {
+    fn default() -> Self {
+        EqState {
+            game: default_channel_bands(),
+            chat: default_channel_bands(),
+        }
+    }
+}
+
+impl EqState {
+    pub fn for_channel(&self, channel: EqChannel) -> [EqBand; NUM_BANDS] {
         match channel {
             EqChannel::Game => self.game,
             EqChannel::Chat => self.chat,
         }
     }
 
-    pub fn for_channel_mut(&mut self, channel: EqChannel) -> &mut [f32; 6] {
+    pub fn for_channel_mut(&mut self, channel: EqChannel) -> &mut [EqBand; NUM_BANDS] {
         match channel {
             EqChannel::Game => &mut self.game,
             EqChannel::Chat => &mut self.chat,
@@ -75,16 +144,25 @@ pub enum ClientCommand {
     /// architecture before bands land.
     #[serde(rename = "set-eq-enabled")]
     SetEqEnabled { enabled: bool },
-    /// Set the gain (dB) of one EQ band on one channel. Bands are 1..=6
-    /// in the order: low shelf @ 100, peaking @ 100, peaking @ 500,
-    /// peaking @ 2000, peaking @ 5000, high shelf @ 5000 Hz. Daemon
-    /// clamps gain to [-12.0, 12.0]. If EQ is currently enabled, only
-    /// the affected channel's chain respawns (~100 ms audio glitch).
+    /// Set just the gain (dB) of one EQ band on one channel. Bands are
+    /// 1..=10 (NUM_BANDS). Daemon clamps gain to [-12.0, 12.0]. The
+    /// other band parameters (freq, Q, type, enabled) stay unchanged —
+    /// useful for slider drags where only gain moves. If EQ is enabled,
+    /// only the affected channel's chain respawns.
     #[serde(rename = "set-eq-band-gain")]
     SetEqBandGain {
         channel: EqChannel,
         band: u8,
         gain_db: f32,
+    },
+    /// Replace one EQ band wholesale — used when loading a preset
+    /// where freq, Q, gain, and type all change at once. `band` is
+    /// 1..=NUM_BANDS. Same chain-respawn behaviour as SetEqBandGain.
+    #[serde(rename = "set-eq-band")]
+    SetEqBand {
+        channel: EqChannel,
+        band: u8,
+        params: EqBand,
     },
 }
 
@@ -117,7 +195,7 @@ pub enum DaemonEvent {
         hdmi_sink_enabled: bool,
         auto_route_browsers: bool,
         eq_enabled: bool,
-        eq_gains: EqGains,
+        eq_state: EqState,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -137,14 +215,15 @@ pub enum DaemonEvent {
     #[serde(rename = "eq-enabled-changed")]
     EqEnabledChanged { enabled: bool },
 
-    /// Fired whenever any EQ band's gain changes — emits the affected
-    /// channel and its full 6-band array so the GUI can refresh all
-    /// sliders for that channel at once and stay in sync if multiple
-    /// changes happen close together.
-    #[serde(rename = "eq-band-gains-changed")]
-    EqBandGainsChanged {
+    /// Fired whenever any band on a channel changes — emits the full
+    /// 10-band array for that channel so the GUI can refresh every
+    /// slider + frequency label at once and stay in sync. Carries the
+    /// FULL band parameters (not just gains) so preset loads update
+    /// frequency labels too.
+    #[serde(rename = "eq-bands-changed")]
+    EqBandsChanged {
         channel: EqChannel,
-        gains: [f32; 6],
+        bands: [EqBand; NUM_BANDS],
     },
 }
 
@@ -220,7 +299,7 @@ mod tests {
             hdmi_sink_enabled: false,
             auto_route_browsers: false,
             eq_enabled: false,
-            eq_gains: EqGains::default(),
+            eq_state: EqState::default(),
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -233,28 +312,11 @@ mod tests {
         assert_eq!(json["hdmi_sink_enabled"], false);
         assert_eq!(json["auto_route_browsers"], false);
         assert_eq!(json["eq_enabled"], false);
-        assert!(json["eq_gains"]["game"].is_array());
-        assert!(json["eq_gains"]["chat"].is_array());
-
-        let without_bat = DaemonEvent::Status {
-            connected: false,
-            game_vol: 100,
-            chat_vol: 100,
-            battery: None,
-            media_sink_enabled: false,
-            hdmi_sink_enabled: true,
-            auto_route_browsers: true,
-            eq_enabled: true,
-            eq_gains: EqGains {
-                game: [-3.0, 0.0, 0.0, 0.0, 0.0, 6.0],
-                chat: [0.0, 2.0, 0.0, 0.0, 0.0, 0.0],
-            },
-        };
-        let json: Value = from_str(&to_string(&without_bat).unwrap()).unwrap();
-        assert!(json["battery"].is_null());
-        assert_eq!(json["eq_gains"]["game"][0], -3.0);
-        assert_eq!(json["eq_gains"]["game"][5], 6.0);
-        assert_eq!(json["eq_gains"]["chat"][1], 2.0);
+        assert!(json["eq_state"]["game"].is_array());
+        assert_eq!(
+            json["eq_state"]["game"].as_array().unwrap().len(),
+            NUM_BANDS
+        );
     }
 
     #[test]
@@ -277,16 +339,41 @@ mod tests {
     }
 
     #[test]
-    fn eq_band_gains_changed_event_shape() {
-        let ev = DaemonEvent::EqBandGainsChanged {
+    fn set_eq_band_command_parses() {
+        let cmd: ClientCommand = from_str(
+            r#"{"cmd":"set-eq-band","channel":"game","band":4,
+                "params":{"freq":250.0,"q":0.7071,"gain":5.0,
+                          "type":"peaking","enabled":true}}"#,
+        )
+        .unwrap();
+        match cmd {
+            ClientCommand::SetEqBand {
+                channel,
+                band,
+                params,
+            } => {
+                assert_eq!(channel, EqChannel::Game);
+                assert_eq!(band, 4);
+                assert!((params.freq - 250.0).abs() < 1e-3);
+                assert!((params.gain - 5.0).abs() < 1e-3);
+                assert_eq!(params.band_type, BandType::Peaking);
+            }
+            other => panic!("expected SetEqBand, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn eq_bands_changed_event_shape() {
+        let ev = DaemonEvent::EqBandsChanged {
             channel: EqChannel::Game,
-            gains: [1.0, -2.0, 0.0, 0.0, 0.0, 0.0],
+            bands: default_channel_bands(),
         };
         let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
-        assert_eq!(json["event"], "eq-band-gains-changed");
+        assert_eq!(json["event"], "eq-bands-changed");
         assert_eq!(json["channel"], "game");
-        assert_eq!(json["gains"][0], 1.0);
-        assert_eq!(json["gains"][1], -2.0);
+        assert_eq!(json["bands"].as_array().unwrap().len(), NUM_BANDS);
+        assert_eq!(json["bands"][0]["freq"], 32.0);
+        assert_eq!(json["bands"][0]["type"], "lowshelf");
     }
 
     #[test]
