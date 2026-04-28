@@ -188,15 +188,28 @@ context.modules = [
             }}
             playback.props = {{
                 node.name           = "effect_output.{name}"
-                node.target         = "{target}"
                 node.passive        = true
-                # Critical when the user has any session-managed default sink
-                # (EasyEffects, etc.) — without this, WirePlumber auto-adds a
-                # link from this output to whatever the current default is,
-                # which on top of our explicit pw-link to the headset creates
-                # a second downstream and (if the default sink loops back to
-                # SteelGame, as EasyEffects can) a feedback cycle that
-                # PipeWire breaks by silencing one or both edges.
+                # All three flags are needed when the user has a non-headset
+                # default sink (EasyEffects, etc.):
+                #   - node.target is DELIBERATELY OMITTED. Setting it makes
+                #     WirePlumber treat the node as 'ready to be routed' and
+                #     it adds an auto-link to the default sink in addition to
+                #     the requested target.
+                #   - node.autoconnect = false stops WirePlumber's session
+                #     policy from auto-creating any link at all. Our explicit
+                #     pw-link in spawn() is the only link that gets created.
+                #   - node.dont-reconnect = true is belt + suspenders for the
+                #     case where the link breaks at runtime — don't fall back
+                #     to the default sink.
+                #
+                # Why this matters: with EasyEffects as default sink, an
+                # auto-link from effect_output.SteelGameEQ to easyeffects_sink
+                # creates a feedback loop (chain output → easyeffects → its
+                # configured target SteelGame → loopback → chain input →
+                # chain output ...). PipeWire detects the cycle and breaks
+                # it by silencing one edge, so SteelGame audio never reaches
+                # the headset.
+                node.autoconnect    = false
                 node.dont-reconnect = true
             }}
         }}
