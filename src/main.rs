@@ -230,6 +230,37 @@ fn handle_client(
                     },
                 );
             }
+            ClientCommand::SetEqChannel { channel, bands } => {
+                let result = {
+                    let mut sm = sinks.lock().unwrap();
+                    sm.set_eq_channel_bands(channel, bands)
+                };
+                if result.is_none() {
+                    warn!(
+                        "Invalid set-eq-channel (channel={:?}, malformed bands)",
+                        channel
+                    );
+                    continue;
+                }
+                let new_state_all = sinks.lock().unwrap().eq_state();
+                {
+                    let mut st = state.lock().unwrap();
+                    st.eq_state = new_state_all;
+                }
+                persist_sink_state(&state);
+                let channel_bands = new_state_all.for_channel(channel);
+                info!(
+                    "GUI requested: set-eq-channel → channel={:?} (preset load)",
+                    channel
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::EqBandsChanged {
+                        channel,
+                        bands: channel_bands,
+                    },
+                );
+            }
             ClientCommand::SetEqBand {
                 channel,
                 band,

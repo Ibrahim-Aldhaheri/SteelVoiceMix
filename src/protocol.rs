@@ -164,6 +164,15 @@ pub enum ClientCommand {
         band: u8,
         params: EqBand,
     },
+    /// Replace ALL bands on a channel atomically. Used when loading a
+    /// preset — sending 10 individual SetEqBand calls would respawn the
+    /// channel's filter chain 10 times in a row (and emit 10 broadcast
+    /// events). This batches them into a single respawn + one event.
+    #[serde(rename = "set-eq-channel")]
+    SetEqChannel {
+        channel: EqChannel,
+        bands: [EqBand; NUM_BANDS],
+    },
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -359,6 +368,28 @@ mod tests {
                 assert_eq!(params.band_type, BandType::Peaking);
             }
             other => panic!("expected SetEqBand, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_eq_channel_command_parses() {
+        let bands = default_channel_bands();
+        let payload = format!(
+            r#"{{"cmd":"set-eq-channel","channel":"chat","bands":{}}}"#,
+            serde_json::to_string(&bands).unwrap()
+        );
+        let cmd: ClientCommand = from_str(&payload).unwrap();
+        match cmd {
+            ClientCommand::SetEqChannel {
+                channel,
+                bands: parsed,
+            } => {
+                assert_eq!(channel, EqChannel::Chat);
+                assert_eq!(parsed.len(), NUM_BANDS);
+                assert_eq!(parsed[0].band_type, BandType::Lowshelf);
+                assert_eq!(parsed[NUM_BANDS - 1].band_type, BandType::Highshelf);
+            }
+            other => panic!("expected SetEqChannel, got {other:?}"),
         }
     }
 

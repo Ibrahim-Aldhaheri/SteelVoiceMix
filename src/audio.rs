@@ -158,6 +158,35 @@ impl SinkManager {
         Some(clean)
     }
 
+    /// Replace every band on a channel in one shot — used by preset
+    /// loads. Sending 10 SetEqBand calls would respawn the chain 10
+    /// times and emit 10 broadcast events; this batches into a single
+    /// respawn + caller emits one event. Each band's freq/q/gain are
+    /// clamped to their safe ranges (same as `set_eq_band`). Returns
+    /// the bands as actually stored (post-clamp).
+    pub fn set_eq_channel_bands(
+        &mut self,
+        channel: EqChannel,
+        bands: [EqBand; NUM_BANDS],
+    ) -> Option<[EqBand; NUM_BANDS]> {
+        let mut clean: [EqBand; NUM_BANDS] = bands;
+        for b in clean.iter_mut() {
+            if !b.freq.is_finite() || !b.q.is_finite() || !b.gain.is_finite() {
+                return None;
+            }
+            b.gain = b.gain.clamp(-12.0, 12.0);
+            b.freq = b.freq.clamp(20.0, 20_000.0);
+            b.q = b.q.max(0.05);
+        }
+        let arr = self.eq_state.for_channel_mut(channel);
+        if *arr == clean {
+            return Some(clean);
+        }
+        *arr = clean;
+        self.respawn_channel_chain(channel);
+        Some(clean)
+    }
+
     /// Tear down the current EQ chain on `channel` and re-insert one
     /// driven by the latest `eq_state`. No-op if EQ is currently
     /// disabled or the headset isn't connected — the new state is still

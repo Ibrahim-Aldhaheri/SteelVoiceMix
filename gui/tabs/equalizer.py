@@ -14,13 +14,24 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QCompleter,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QMessageBox,
+    QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
 
+from ..eq_presets import (
+    delete_user_preset,
+    find_preset,
+    is_user_preset,
+    list_presets,
+    save_user_preset,
+)
 from ..widgets import section_title
 
 
@@ -151,6 +162,36 @@ class EqualizerTab(QWidget):
         self.channel_combo.currentTextChanged.connect(self._on_channel_changed)
         ch_row.addWidget(self.channel_combo, 1)
         layout.addLayout(ch_row)
+
+        # Preset row: searchable dropdown filtered by the current channel,
+        # plus Load / Save / Delete actions. The combo is editable so the
+        # user can type to filter (the QCompleter does substring match
+        # against built-in + user preset names).
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(QLabel("Preset:"))
+        self.preset_combo = QComboBox()
+        self.preset_combo.setEditable(True)
+        self.preset_combo.setInsertPolicy(QComboBox.NoInsert)
+        completer = self.preset_combo.completer()
+        if completer is not None:
+            completer.setFilterMode(Qt.MatchContains)
+            completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.preset_combo.setMinimumWidth(160)
+        self.preset_combo.currentTextChanged.connect(self._on_preset_text_changed)
+        preset_row.addWidget(self.preset_combo, 1)
+        self.preset_load_btn = QPushButton("Load")
+        self.preset_load_btn.clicked.connect(self._on_preset_load)
+        self.preset_save_btn = QPushButton("Save…")
+        self.preset_save_btn.clicked.connect(self._on_preset_save)
+        self.preset_delete_btn = QPushButton("Delete")
+        self.preset_delete_btn.clicked.connect(self._on_preset_delete)
+        self.preset_delete_btn.setEnabled(False)
+        preset_row.addWidget(self.preset_load_btn)
+        preset_row.addWidget(self.preset_save_btn)
+        preset_row.addWidget(self.preset_delete_btn)
+        layout.addLayout(preset_row)
+        # Populate the combo for the initial channel before any signals fire.
+        self._refresh_preset_combo()
 
         # 10 vertical sliders, one per band. The musical name + frequency
         # labels are populated dynamically from the current channel's
@@ -304,6 +345,100 @@ class EqualizerTab(QWidget):
         self._commit_timer.stop()
         self._pending_band_value.clear()
         self._render_sliders_for_channel(last_word)
+        # Preset list is channel-scoped — repopulate the dropdown so the
+        # user only sees presets for the channel they're looking at.
+        self._refresh_preset_combo()
+
+    # ---------------------------------------------------------------- presets
+
+    def _refresh_preset_combo(self) -> None:
+        """Rebuild the preset combo for the current channel. Block
+        signals while we mutate the model so the active selection
+        change doesn't fire spurious 'load this preset' edits."""
+        was_blocked = self.preset_combo.blockSignals(True)
+        try:
+            self.preset_combo.clear()
+            for preset in list_presets(self._current_channel):
+                self.preset_combo.addItem(preset["name"])
+        finally:
+            self.preset_combo.blockSignals(was_blocked)
+        self._update_delete_button()
+
+    def _on_preset_text_changed(self, _text: str) -> None:
+        # Delete is only meaningful for user-saved presets — toggle it
+        # whenever the dropdown's selected name changes.
+        self._update_delete_button()
+
+    def _update_delete_button(self) -> None:
+        name = self.preset_combo.currentText().strip()
+        self.preset_delete_btn.setEnabled(
+            bool(name) and is_user_preset(name, self._current_channel)
+        )
+
+    def _on_preset_load(self) -> None:
+        name = self.preset_combo.currentText().strip()
+        if not name:
+            return
+        preset = find_preset(name, self._current_channel)
+        if preset is None:
+            QMessageBox.information(
+                self,
+                "Preset not found",
+                f"No preset named '{name}' on the {self._current_channel} channel.",
+            )
+            return
+        # Apply locally first so the sliders update without waiting on
+        # the daemon round-trip — then send the atomic set-eq-channel so
+        # the chain respawns once with the full preset.
+        self._bands_by_channel[self._current_channel] = [
+            dict(b) for b in preset["bands"]
+        ]
+        self._render_sliders_for_channel(self._current_channel)
+        self._daemon.send_command(
+            "set-eq-channel",
+            channel=self._current_channel,
+            bands=preset["bands"],
+        )
+
+    def _on_preset_save(self) -> None:
+        suggested = self.preset_combo.currentText().strip() or "My Preset"
+        name, ok = QInputDialog.getText(
+            self,
+            "Save preset",
+            f"Save current {self._current_channel} EQ as:",
+            text=suggested,
+        )
+        if not ok or not name.strip():
+            return
+        try:
+            save_user_preset(
+                name.strip(),
+                self._current_channel,
+                self._bands_by_channel[self._current_channel],
+            )
+        except ValueError as e:
+            QMessageBox.warning(self, "Could not save preset", str(e))
+            return
+        self._refresh_preset_combo()
+        # Reselect the saved name so Delete becomes available immediately.
+        idx = self.preset_combo.findText(name.strip())
+        if idx >= 0:
+            self.preset_combo.setCurrentIndex(idx)
+
+    def _on_preset_delete(self) -> None:
+        name = self.preset_combo.currentText().strip()
+        if not name or not is_user_preset(name, self._current_channel):
+            return
+        ok = QMessageBox.question(
+            self,
+            "Delete preset",
+            f"Delete preset '{name}' from the {self._current_channel} channel?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if ok != QMessageBox.Yes:
+            return
+        delete_user_preset(name, self._current_channel)
+        self._refresh_preset_combo()
 
     def _render_sliders_for_channel(self, channel: str) -> None:
         """Push the stored bands for `channel` into the slider widgets
