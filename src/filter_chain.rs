@@ -139,7 +139,7 @@ context.modules = [
                         type  = builtin
                         name  = eq_band_1
                         label = bq_lowshelf
-                        control = {{ "Freq" = 100.0  "Q" = 1.0  "Gain" = 0.0 }}
+                        control = {{ "Freq" = 100.0  "Q" = 1.0  "Gain" = 12.0 }}
                     }}
                     {{
                         type  = builtin
