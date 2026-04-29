@@ -1,0 +1,76 @@
+{
+  "name": "Yakuza Kiwami 3",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 53.4,
+      "q": 0.707,
+      "gain": 7.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 117.6,
+      "q": 0.707,
+      "gain": -3.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 258.0,
+      "q": 0.707,
+      "gain": 7.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 814.1,
+      "q": 1.0,
+      "gain": 4.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6500.0,
+      "q": 1.0,
+      "gain": 8.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

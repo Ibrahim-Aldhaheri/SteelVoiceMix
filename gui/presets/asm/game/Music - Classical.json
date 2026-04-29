@@ -1,0 +1,76 @@
+{
+  "name": "Music - Classical",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 80.0,
+      "q": 0.707,
+      "gain": 1.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 150.0,
+      "q": 0.707,
+      "gain": 1.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4570.0,
+      "q": 0.707,
+      "gain": 1.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

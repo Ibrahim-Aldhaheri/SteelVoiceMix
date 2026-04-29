@@ -39,6 +39,22 @@ install -Dm755 target/release/steelvoicemix %{buildroot}%{_bindir}/steelvoicemix
 install -Dm644 steelvoicemix-gui.py %{buildroot}%{_datadir}/%{name}/steelvoicemix-gui.py
 install -d %{buildroot}%{_datadir}/%{name}/gui
 install -Dm644 gui/*.py %{buildroot}%{_datadir}/%{name}/gui/
+install -d %{buildroot}%{_datadir}/%{name}/gui/tabs
+install -Dm644 gui/tabs/*.py %{buildroot}%{_datadir}/%{name}/gui/tabs/
+
+# Bundled ASM preset library (~400 game/chat tunings) — read-only,
+# refreshed by the maintainer via scripts/fetch_asm_presets.py.
+install -d %{buildroot}%{_datadir}/%{name}/gui/presets/asm/game
+install -Dm644 gui/presets/asm/game/*.json \
+    %{buildroot}%{_datadir}/%{name}/gui/presets/asm/game/
+install -d %{buildroot}%{_datadir}/%{name}/gui/presets/asm/chat
+install -Dm644 gui/presets/asm/chat/*.json \
+    %{buildroot}%{_datadir}/%{name}/gui/presets/asm/chat/
+
+# Bundled default HRIR (HeSuVi-format 14-channel WAV).
+install -d %{buildroot}%{_datadir}/%{name}/gui/data/hrir
+install -Dm644 gui/data/hrir/EAC_Default.wav \
+    %{buildroot}%{_datadir}/%{name}/gui/data/hrir/EAC_Default.wav
 
 # GUI launcher — force XCB so overlay positioning works under Wayland
 cat > %{buildroot}%{_bindir}/steelvoicemix-gui << 'EOF'

@@ -1,0 +1,76 @@
+{
+  "name": "Crimson Desert",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 50.9,
+      "q": 0.707,
+      "gain": 4.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 110.8,
+      "q": 0.707,
+      "gain": 2.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 342.7,
+      "q": 1.5,
+      "gain": -3.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 714.6,
+      "q": 1.0,
+      "gain": 4.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1110.0,
+      "q": 0.707,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2150.0,
+      "q": 2.0,
+      "gain": -3.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4860.0,
+      "q": 0.707,
+      "gain": 8.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 15020.0,
+      "q": 0.707,
+      "gain": 2.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

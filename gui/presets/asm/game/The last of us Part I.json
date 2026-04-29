@@ -1,0 +1,76 @@
+{
+  "name": "The last of us Part I",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 60.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 100.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 500.0,
+      "q": 2.5,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 700.0,
+      "q": 10.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1250.0,
+      "q": 10.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 10.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 0.707,
+      "gain": -3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7000.0,
+      "q": 0.5,
+      "gain": 7.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

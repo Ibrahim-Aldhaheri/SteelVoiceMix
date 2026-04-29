@@ -18,14 +18,11 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QMessageBox,
-    QProgressDialog,
     QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
-
-from ..asm_import import AsmPresetImporter
 
 from ..eq_presets import (
     delete_user_preset,
@@ -252,16 +249,6 @@ class EqualizerTab(QWidget):
         preset_btn_row.addWidget(self.preset_save_btn)
         preset_btn_row.addWidget(self.preset_rename_btn)
         preset_btn_row.addWidget(self.preset_delete_btn)
-        preset_btn_row.addStretch(1)
-        self.preset_import_btn = QPushButton("Import ASM presets…")
-        self.preset_import_btn.setToolTip(
-            "Fetch the Arctis Sound Manager preset library "
-            "(400+ game/chat tunings) from upstream GitHub. Each is "
-            "saved as a user preset with an [ASM] prefix so you can "
-            "tell them apart from your own."
-        )
-        self.preset_import_btn.clicked.connect(self._on_preset_import)
-        preset_btn_row.addWidget(self.preset_import_btn)
 
         layout.addWidget(card("Preset", preset_picker_row, preset_btn_row))
         # Populate the combo for the initial channel before any signals fire.
@@ -717,64 +704,6 @@ class EqualizerTab(QWidget):
         )
         self._active_preset_by_channel[self._current_channel] = new_name.strip()
         self._refresh_preset_combo()
-
-    def _on_preset_import(self) -> None:
-        """Kick off the ASM preset importer in a background thread.
-        While it runs, show a cancellable progress dialog. On success,
-        refresh the preset combo so the new entries appear immediately."""
-        confirm = QMessageBox.question(
-            self,
-            "Import ASM presets",
-            "Fetch the full Arctis Sound Manager preset library from "
-            "GitHub? This downloads around 400 small JSON files (~1 MB "
-            "total) into your user preset folder, each tagged '[ASM]' "
-            "so you can tell them apart from your own. Existing "
-            "presets with the same name will be overwritten.\n\n"
-            "Continue?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
-        if confirm != QMessageBox.Yes:
-            return
-
-        self._asm_importer = AsmPresetImporter(self)
-        # Maximum is set to 1 initially; the first progress event
-        # corrects it once the listing fetch returns the real count.
-        self._asm_progress = QProgressDialog(
-            "Fetching preset listing…", "Cancel", 0, 1, self
-        )
-        self._asm_progress.setWindowTitle("Importing ASM presets")
-        self._asm_progress.setMinimumDuration(0)
-        self._asm_progress.canceled.connect(self._asm_importer.cancel)
-        self._asm_importer.progress.connect(self._on_asm_progress)
-        self._asm_importer.finished_with_summary.connect(
-            self._on_asm_finished
-        )
-        self.preset_import_btn.setEnabled(False)
-        self._asm_importer.start()
-
-    def _on_asm_progress(self, done: int, total: int, name: str) -> None:
-        if self._asm_progress.maximum() != total:
-            self._asm_progress.setMaximum(total)
-        self._asm_progress.setValue(done)
-        self._asm_progress.setLabelText(f"Saving {name}…")
-
-    def _on_asm_finished(
-        self, saved: int, skipped: int, error: str
-    ) -> None:
-        self._asm_progress.close()
-        self.preset_import_btn.setEnabled(True)
-        if error:
-            QMessageBox.warning(
-                self, "ASM import failed", f"Could not import presets: {error}"
-            )
-            return
-        self._refresh_preset_combo()
-        msg = f"Saved {saved} preset"
-        if saved != 1:
-            msg += "s"
-        if skipped:
-            msg += f"; skipped {skipped} (unsupported filter type or fetch error)"
-        QMessageBox.information(self, "ASM import complete", msg + ".")
 
     # ----------------------------------------------------------- test audio
 

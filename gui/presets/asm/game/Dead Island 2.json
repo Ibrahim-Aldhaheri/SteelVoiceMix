@@ -1,0 +1,76 @@
+{
+  "name": "Dead Island 2",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 70.0,
+      "q": 0.707,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 120.0,
+      "q": 1.0,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 200.0,
+      "q": 1.0,
+      "gain": -2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 700.0,
+      "q": 4.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4500.0,
+      "q": 1.0,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6500.0,
+      "q": 1.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 11000.0,
+      "q": 0.707,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

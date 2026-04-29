@@ -1,0 +1,76 @@
+{
+  "name": "Geometry Dash",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 57.4,
+      "q": 0.707,
+      "gain": 5.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 151.1,
+      "q": 0.707,
+      "gain": 3.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 755.4,
+      "q": 0.707,
+      "gain": 4.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2540.0,
+      "q": 0.707,
+      "gain": 5.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 9070.0,
+      "q": 0.707,
+      "gain": 1.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

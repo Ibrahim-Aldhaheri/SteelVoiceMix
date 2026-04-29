@@ -1,0 +1,76 @@
+{
+  "name": "Rainbow Six Siege",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 80.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "highpass",
+      "enabled": true
+    },
+    {
+      "freq": 200.0,
+      "q": 2.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 600.0,
+      "q": 10.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 800.0,
+      "q": 1.5,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 860.0,
+      "q": 10.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1916.0,
+      "q": 10.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3320.0,
+      "q": 10.0,
+      "gain": -6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3838.0,
+      "q": 10.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 8000.0,
+      "q": 1.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 16000.0,
+      "q": 0.7,
+      "gain": 0.0,
+      "type": "highshelf",
+      "enabled": true
+    }
+  ]
+}

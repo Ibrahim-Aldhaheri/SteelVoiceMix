@@ -1,0 +1,76 @@
+{
+  "name": "Sniper Elite_ Resistance",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 25.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "highpass",
+      "enabled": true
+    },
+    {
+      "freq": 60.0,
+      "q": 0.707,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 100.0,
+      "q": 0.707,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 120.0,
+      "q": 0.707,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 200.0,
+      "q": 0.707,
+      "gain": 1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1700.0,
+      "q": 4.0,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 0.707,
+      "gain": 1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 2.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6000.0,
+      "q": 2.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 12000.0,
+      "q": 1.0,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}

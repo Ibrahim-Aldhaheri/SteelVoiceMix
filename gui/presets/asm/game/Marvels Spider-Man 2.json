@@ -1,0 +1,76 @@
+{
+  "name": "Marvel's Spider-Man 2",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 20.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "highpass",
+      "enabled": true
+    },
+    {
+      "freq": 40.0,
+      "q": 0.707,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 60.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 120.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 200.0,
+      "q": 1.0,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 1.0,
+      "gain": 1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 0.707,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6000.0,
+      "q": 0.707,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 9000.0,
+      "q": 0.707,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}

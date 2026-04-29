@@ -1,0 +1,76 @@
+{
+  "name": "Resident Evil Requiem",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 56.0,
+      "q": 0.707,
+      "gain": 4.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 103.6,
+      "q": 0.707,
+      "gain": 4.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 271.8,
+      "q": 1.0,
+      "gain": 2.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 684.3,
+      "q": 1.5,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1530.0,
+      "q": 0.707,
+      "gain": 2.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7110.0,
+      "q": 0.707,
+      "gain": 4.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

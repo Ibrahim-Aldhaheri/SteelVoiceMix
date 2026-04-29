@@ -1,0 +1,76 @@
+{
+  "name": "COD MWIII by ATL FaZe",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 20.0,
+      "q": 1.41,
+      "gain": -3.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 39.0,
+      "q": 1.41,
+      "gain": -0.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 100.0,
+      "q": 1.41,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 220.0,
+      "q": 1.41,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 427.0,
+      "q": 1.41,
+      "gain": -1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2750.0,
+      "q": 1.41,
+      "gain": -2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3100.0,
+      "q": 1.41,
+      "gain": 7.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7020.0,
+      "q": 1.41,
+      "gain": 5.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10860.0,
+      "q": 1.41,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 20000.0,
+      "q": 1.414,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "name": "LEGO Horizon Adventures",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 80.0,
+      "q": 0.707,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 182.0,
+      "q": 0.707,
+      "gain": 2.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 0.707,
+      "gain": -1.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1500.0,
+      "q": 0.707,
+      "gain": 4.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7300.0,
+      "q": 0.707,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

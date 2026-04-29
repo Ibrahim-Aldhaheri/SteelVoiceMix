@@ -1,0 +1,76 @@
+{
+  "name": "Sid Meier's Civilization VII",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 136.4,
+      "q": 0.707,
+      "gain": 2.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 239.7,
+      "q": 0.707,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 845.9,
+      "q": 0.707,
+      "gain": -1.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3070.0,
+      "q": 0.707,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6900.0,
+      "q": 0.707,
+      "gain": 5.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

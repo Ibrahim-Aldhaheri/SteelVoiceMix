@@ -1,0 +1,76 @@
+{
+  "name": "Team Fortress 2",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 35.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "highpass",
+      "enabled": true
+    },
+    {
+      "freq": 100.0,
+      "q": 0.7071,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 120.0,
+      "q": 0.7071,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 500.0,
+      "q": 0.7071,
+      "gain": -4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 650.0,
+      "q": 6.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 0.7071,
+      "gain": -2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3500.0,
+      "q": 0.7071,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 1.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 2.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

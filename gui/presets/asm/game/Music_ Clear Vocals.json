@@ -1,0 +1,76 @@
+{
+  "name": "Music_ Clear Vocals",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 31.25,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 62.5,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 125.0,
+      "q": 1.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 350.0,
+      "q": 0.707,
+      "gain": -2.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 500.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3000.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 11000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 16000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}

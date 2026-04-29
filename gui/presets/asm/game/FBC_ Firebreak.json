@@ -1,0 +1,76 @@
+{
+  "name": "FBC_ Firebreak",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 49.5,
+      "q": 0.707,
+      "gain": 4.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 89.8,
+      "q": 0.707,
+      "gain": 4.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 243.1,
+      "q": 0.707,
+      "gain": 5.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 5740.0,
+      "q": 0.707,
+      "gain": 6.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 14950.0,
+      "q": 0.707,
+      "gain": 1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

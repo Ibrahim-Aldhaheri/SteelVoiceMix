@@ -1,0 +1,76 @@
+{
+  "name": "Balatro",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 300.1,
+      "q": 0.707,
+      "gain": 3.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 412.1,
+      "q": 0.707,
+      "gain": 2.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2610.0,
+      "q": 0.707,
+      "gain": 6.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3640.0,
+      "q": 3.0,
+      "gain": -8.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4720.0,
+      "q": 0.707,
+      "gain": 4.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7400.0,
+      "q": 0.707,
+      "gain": 2.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

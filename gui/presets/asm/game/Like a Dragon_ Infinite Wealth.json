@@ -1,0 +1,76 @@
+{
+  "name": "Like a Dragon_ Infinite Wealth",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 60.0,
+      "q": 0.707,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 120.0,
+      "q": 0.707,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 250.0,
+      "q": 1.0,
+      "gain": -1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 2.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4600.0,
+      "q": 10.0,
+      "gain": -2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6000.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "name": "Atomic Heart",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 54.0,
+      "q": 0.707,
+      "gain": 8.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 450.0,
+      "q": 10.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 600.0,
+      "q": 10.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2400.0,
+      "q": 10.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3300.0,
+      "q": 10.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7000.0,
+      "q": 2.0,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 8.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

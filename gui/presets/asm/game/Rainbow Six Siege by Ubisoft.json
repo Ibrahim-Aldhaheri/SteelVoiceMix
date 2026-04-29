@@ -1,0 +1,76 @@
+{
+  "name": "Rainbow Six Siege by Ubisoft",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 32.0,
+      "q": 0.7,
+      "gain": 0.0,
+      "type": "lowshelf",
+      "enabled": true
+    },
+    {
+      "freq": 86.0,
+      "q": 0.7071,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 220.0,
+      "q": 0.5,
+      "gain": -1.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 0.5,
+      "gain": 1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1750.0,
+      "q": 1.657,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 5500.0,
+      "q": 0.865,
+      "gain": 2.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 1.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 8000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 16000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "name": "The Elder Scrolls Online",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 35.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "highpass",
+      "enabled": true
+    },
+    {
+      "freq": 80.0,
+      "q": 0.707,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 180.0,
+      "q": 1.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 250.0,
+      "q": 1.0,
+      "gain": -1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 600.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 12000.0,
+      "q": 1.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.5,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

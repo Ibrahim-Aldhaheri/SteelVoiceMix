@@ -1,0 +1,76 @@
+{
+  "name": "Mafia_ The Old Country",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 75.9,
+      "q": 0.707,
+      "gain": 3.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 183.8,
+      "q": 0.707,
+      "gain": -1.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 350.7,
+      "q": 0.707,
+      "gain": 4.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 728.4,
+      "q": 0.707,
+      "gain": -2.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1330.0,
+      "q": 0.707,
+      "gain": 3.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4830.0,
+      "q": 0.707,
+      "gain": 4.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

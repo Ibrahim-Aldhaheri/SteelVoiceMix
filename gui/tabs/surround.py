@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..hrir_default import DefaultHrirFetcher, cached_default_path
+from ..hrir_default import bundled_default_path, has_default
 from ..widgets import card, labelled_toggle
 
 
@@ -132,30 +132,20 @@ class SurroundTab(QWidget):
     # --------------------------------------------------------- input handlers
 
     def _on_use_default(self) -> None:
-        """Fetch the default HRIR (or use the cached copy if it's
-        already on disk) and tell the daemon to use that path."""
-        cached = cached_default_path()
-        if cached.is_file() and cached.stat().st_size > 0:
-            # Already cached — short-circuit the network round-trip.
-            self._daemon.send_command("set-surround-hrir", path=str(cached))
-            return
-        self.default_btn.setEnabled(False)
-        self.default_btn.setText("Downloading…")
-        self._hrir_fetcher = DefaultHrirFetcher(self)
-        self._hrir_fetcher.finished_with_path.connect(self._on_default_fetched)
-        self._hrir_fetcher.start()
-
-    def _on_default_fetched(self, path: str, error: str) -> None:
-        self.default_btn.setEnabled(True)
-        self.default_btn.setText("Use Default")
-        if error or not path:
+        """Point the daemon at the bundled HRIR. Instant — the file is
+        shipped with the package, no network round-trip."""
+        if not has_default():
             QMessageBox.warning(
                 self,
-                "Default HRIR fetch failed",
-                error or "Could not fetch the default HRIR from upstream.",
+                "Default HRIR missing",
+                "The bundled default HRIR file is missing — your install "
+                "may be incomplete. Try reinstalling steelvoicemix or "
+                "supply your own HRIR via Browse.",
             )
             return
-        self._daemon.send_command("set-surround-hrir", path=path)
+        self._daemon.send_command(
+            "set-surround-hrir", path=str(bundled_default_path())
+        )
 
     def _on_browse(self) -> None:
         start_dir = os.path.expanduser("~/Downloads")

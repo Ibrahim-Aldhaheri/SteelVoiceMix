@@ -1,0 +1,76 @@
+{
+  "name": "ROMEO IS A DEAD MAN",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 53.1,
+      "q": 0.707,
+      "gain": 3.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 99.5,
+      "q": 0.707,
+      "gain": 3.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 245.9,
+      "q": 2.0,
+      "gain": 2.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1300.0,
+      "q": 2.0,
+      "gain": 6.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2700.0,
+      "q": 1.0,
+      "gain": 3.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 5010.0,
+      "q": 2.0,
+      "gain": -3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7950.0,
+      "q": 1.0,
+      "gain": 3.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "name": "Ark survival evolved",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 80.0,
+      "q": 1.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 120.0,
+      "q": 0.707,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 350.0,
+      "q": 0.707,
+      "gain": -1.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6500.0,
+      "q": 0.707,
+      "gain": 1.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 11500.0,
+      "q": 0.707,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 16000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}

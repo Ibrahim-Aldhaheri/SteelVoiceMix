@@ -1,0 +1,76 @@
+{
+  "name": "CODE VEIN II",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 76.3,
+      "q": 0.707,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 146.5,
+      "q": 0.707,
+      "gain": 4.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 302.1,
+      "q": 1.0,
+      "gain": -4.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 694.9,
+      "q": 0.707,
+      "gain": 2.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1800.0,
+      "q": 0.707,
+      "gain": 4.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4050.0,
+      "q": 0.707,
+      "gain": 3.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 9780.0,
+      "q": 1.0,
+      "gain": 3.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

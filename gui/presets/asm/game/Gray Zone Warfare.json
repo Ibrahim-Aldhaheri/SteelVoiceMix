@@ -1,0 +1,76 @@
+{
+  "name": "Gray Zone Warfare",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 30.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "highpass",
+      "enabled": true
+    },
+    {
+      "freq": 60.0,
+      "q": 0.707,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 120.0,
+      "q": 0.707,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 300.0,
+      "q": 1.0,
+      "gain": -2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 600.0,
+      "q": 2.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 2.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 1.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 10.0,
+      "gain": -12.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7500.0,
+      "q": 10.0,
+      "gain": -12.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 11850.0,
+      "q": 10.0,
+      "gain": -12.0,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}

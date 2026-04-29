@@ -1,0 +1,76 @@
+{
+  "name": "Highguard",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 54.7,
+      "q": 0.707,
+      "gain": 3.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 94.9,
+      "q": 0.707,
+      "gain": 3.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 272.9,
+      "q": 1.0,
+      "gain": 4.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 763.4,
+      "q": 1.0,
+      "gain": 3.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 5930.0,
+      "q": 1.0,
+      "gain": 5.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

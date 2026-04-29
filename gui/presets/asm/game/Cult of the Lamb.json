@@ -1,0 +1,76 @@
+{
+  "name": "Cult of the Lamb",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 82.4,
+      "q": 0.707,
+      "gain": 2.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 210.9,
+      "q": 0.707,
+      "gain": 3.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 450.6,
+      "q": 0.707,
+      "gain": -1.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 974.3,
+      "q": 0.707,
+      "gain": 3.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1800.0,
+      "q": 0.707,
+      "gain": 2.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 5800.0,
+      "q": 0.707,
+      "gain": 3.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

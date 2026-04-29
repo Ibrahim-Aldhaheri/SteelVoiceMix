@@ -1,0 +1,76 @@
+{
+  "name": "COD - Black Ops 7",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 43.9,
+      "q": 0.707,
+      "gain": -2.4,
+      "type": "highpass",
+      "enabled": true
+    },
+    {
+      "freq": 71.2,
+      "q": 0.707,
+      "gain": 1.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 104.3,
+      "q": 0.707,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 269.7,
+      "q": 0.707,
+      "gain": 5.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3000.0,
+      "q": 1.5,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6550.0,
+      "q": 3.0,
+      "gain": 5.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

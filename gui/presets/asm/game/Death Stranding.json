@@ -1,0 +1,76 @@
+{
+  "name": "Death Stranding",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 49.6,
+      "q": 0.707,
+      "gain": 4.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 130.7,
+      "q": 0.707,
+      "gain": 5.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 607.8,
+      "q": 0.707,
+      "gain": -1.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1820.0,
+      "q": 0.707,
+      "gain": 5.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4580.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

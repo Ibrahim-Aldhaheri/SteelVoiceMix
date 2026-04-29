@@ -1,0 +1,76 @@
+{
+  "name": "Fortnite by SKY",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 90.0,
+      "q": 1.5,
+      "gain": 8.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 114.0,
+      "q": 10.0,
+      "gain": -12.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 150.0,
+      "q": 1.5,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 175.0,
+      "q": 10.0,
+      "gain": -12.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 200.0,
+      "q": 4.0,
+      "gain": 8.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 220.0,
+      "q": 10.0,
+      "gain": -12.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 350.0,
+      "q": 3.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 645.0,
+      "q": 10.0,
+      "gain": 9.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 0.707,
+      "gain": -5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3910.0,
+      "q": 1.0,
+      "gain": 4.1,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "name": "Hollow Knight_ Silksong",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 134.2,
+      "q": 1.5,
+      "gain": 1.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 616.9,
+      "q": 0.707,
+      "gain": 2.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1500.0,
+      "q": 0.707,
+      "gain": 4.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2900.0,
+      "q": 0.707,
+      "gain": 2.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 5120.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

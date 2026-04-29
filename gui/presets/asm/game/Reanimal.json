@@ -1,0 +1,76 @@
+{
+  "name": "Reanimal",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 53.1,
+      "q": 0.707,
+      "gain": 4.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 94.9,
+      "q": 0.707,
+      "gain": 3.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 232.9,
+      "q": 1.5,
+      "gain": 3.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1390.0,
+      "q": 0.707,
+      "gain": 6.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3130.0,
+      "q": 1.0,
+      "gain": 3.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 9260.0,
+      "q": 1.0,
+      "gain": 4.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

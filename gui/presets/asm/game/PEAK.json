@@ -1,0 +1,76 @@
+{
+  "name": "PEAK",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 148.1,
+      "q": 0.707,
+      "gain": 5.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 247.8,
+      "q": 0.707,
+      "gain": 1.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 636.8,
+      "q": 0.707,
+      "gain": -1.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1490.0,
+      "q": 0.707,
+      "gain": 4.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3400.0,
+      "q": 0.707,
+      "gain": 3.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7300.0,
+      "q": 0.707,
+      "gain": -1.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 14010.0,
+      "q": 0.707,
+      "gain": 3.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

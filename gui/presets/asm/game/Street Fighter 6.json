@@ -1,0 +1,76 @@
+{
+  "name": "Street Fighter 6",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 80.0,
+      "q": 0.707,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 150.0,
+      "q": 0.707,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 0.707,
+      "gain": -1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 250.0,
+      "q": 1.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7000.0,
+      "q": 2.0,
+      "gain": 1.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 1.0,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 12000.0,
+      "q": 1.0,
+      "gain": -3.5,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 7000.0,
+      "q": 0.5,
+      "gain": 7.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 12000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

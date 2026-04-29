@@ -1,0 +1,76 @@
+{
+  "name": "Valorant Pro Preset",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 100.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "highpass",
+      "enabled": true
+    },
+    {
+      "freq": 100.0,
+      "q": 2.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 250.0,
+      "q": 2.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3136.0,
+      "q": 10.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3505.0,
+      "q": 10.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6270.0,
+      "q": 10.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7010.0,
+      "q": 10.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 1.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 8000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 16000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}

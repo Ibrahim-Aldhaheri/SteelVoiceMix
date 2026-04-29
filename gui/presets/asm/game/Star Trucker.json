@@ -1,0 +1,76 @@
+{
+  "name": "Star Trucker",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 42.27,
+      "q": 0.5,
+      "gain": 5.44,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 120.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 227.85,
+      "q": 2.607,
+      "gain": -4.08,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3361.63,
+      "q": 0.707,
+      "gain": 2.32,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 18000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 943.29,
+      "q": 3.715,
+      "gain": -2.74,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

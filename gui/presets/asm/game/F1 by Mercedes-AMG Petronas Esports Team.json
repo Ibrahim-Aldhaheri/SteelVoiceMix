@@ -1,0 +1,76 @@
+{
+  "name": "F1 by Mercedes-AMG Petronas Esports Team",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 38.3,
+      "q": 0.7071,
+      "gain": -4.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 110.0,
+      "q": 10.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 170.0,
+      "q": 8.0,
+      "gain": 12.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 249.0,
+      "q": 9.16,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 377.0,
+      "q": 10.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 898.0,
+      "q": 10.0,
+      "gain": 12.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1310.0,
+      "q": 10.0,
+      "gain": 3.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 5380.0,
+      "q": 10.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 18000.0,
+      "q": 0.7071,
+      "gain": -0.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 16000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "name": "FATAL FURY_ City of the Wolves",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 95.4,
+      "q": 0.707,
+      "gain": 3.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 192.7,
+      "q": 0.707,
+      "gain": 4.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 483.9,
+      "q": 0.707,
+      "gain": -2.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1530.0,
+      "q": 0.707,
+      "gain": 7.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3680.0,
+      "q": 0.707,
+      "gain": -3.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 8200.0,
+      "q": 0.707,
+      "gain": 6.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

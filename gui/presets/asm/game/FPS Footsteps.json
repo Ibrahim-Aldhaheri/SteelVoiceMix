@@ -1,0 +1,76 @@
+{
+  "name": "FPS Footsteps",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 32.0,
+      "q": 0.7,
+      "gain": 0.0,
+      "type": "lowshelf",
+      "enabled": true
+    },
+    {
+      "freq": 50.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "highpass",
+      "enabled": true
+    },
+    {
+      "freq": 125.0,
+      "q": 1.5,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 180.0,
+      "q": 1.5,
+      "gain": 2.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 250.0,
+      "q": 1.5,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 8000.0,
+      "q": 0.7071,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 16000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}

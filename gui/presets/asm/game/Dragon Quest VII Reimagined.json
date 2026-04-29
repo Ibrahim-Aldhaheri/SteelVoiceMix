@@ -1,0 +1,76 @@
+{
+  "name": "Dragon Quest VII Reimagined",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 58.8,
+      "q": 0.707,
+      "gain": 3.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 94.7,
+      "q": 0.707,
+      "gain": 2.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 337.2,
+      "q": 0.707,
+      "gain": -0.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 549.3,
+      "q": 0.707,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1150.0,
+      "q": 0.707,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1740.0,
+      "q": 1.0,
+      "gain": 3.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3090.0,
+      "q": 1.0,
+      "gain": 2.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6730.0,
+      "q": 0.707,
+      "gain": 2.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

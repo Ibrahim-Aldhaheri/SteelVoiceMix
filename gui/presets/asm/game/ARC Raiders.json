@@ -1,0 +1,76 @@
+{
+  "name": "ARC Raiders",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 45.6,
+      "q": 0.707,
+      "gain": 6.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 199.9,
+      "q": 0.707,
+      "gain": 1.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 343.7,
+      "q": 0.707,
+      "gain": 0.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1780.0,
+      "q": 5.0,
+      "gain": 1.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3360.0,
+      "q": 5.0,
+      "gain": 1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7620.0,
+      "q": 0.707,
+      "gain": 4.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

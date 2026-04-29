@@ -1,0 +1,76 @@
+{
+  "name": "Diablo IV by Blizzard",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 35.0,
+      "q": 0.77,
+      "gain": 0.0,
+      "type": "highpass",
+      "enabled": true
+    },
+    {
+      "freq": 60.0,
+      "q": 1.2,
+      "gain": 3.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 224.4,
+      "q": 2.9,
+      "gain": -2.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 519.7,
+      "q": 1.608,
+      "gain": 1.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1180.0,
+      "q": 0.7,
+      "gain": -2.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 1.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3040.0,
+      "q": 3.557,
+      "gain": -1.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 14000.0,
+      "q": 1.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 8000.0,
+      "q": 1.0,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 16000.0,
+      "q": 0.7071,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

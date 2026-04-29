@@ -1,0 +1,76 @@
+{
+  "name": "SILENT HILL f",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 34.4,
+      "q": 0.707,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 72.8,
+      "q": 0.707,
+      "gain": 5.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 167.4,
+      "q": 2.0,
+      "gain": -1.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 360.3,
+      "q": 1.0,
+      "gain": 5.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1340.0,
+      "q": 0.707,
+      "gain": 3.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4000.0,
+      "q": 1.5,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10580.0,
+      "q": 0.707,
+      "gain": 3.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 12230.0,
+      "q": 0.707,
+      "gain": 3.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 16850.0,
+      "q": 0.707,
+      "gain": -4.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

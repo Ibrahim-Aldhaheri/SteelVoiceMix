@@ -1,0 +1,76 @@
+{
+  "name": "RV There Yet_",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 120.3,
+      "q": 0.707,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 252.0,
+      "q": 0.707,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 607.6,
+      "q": 0.707,
+      "gain": -0.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 974.0,
+      "q": 2.0,
+      "gain": 4.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2530.0,
+      "q": 2.0,
+      "gain": 3.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10430.0,
+      "q": 0.707,
+      "gain": 3.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

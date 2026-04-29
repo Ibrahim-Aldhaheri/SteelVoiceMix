@@ -220,11 +220,54 @@ def list_user_presets(channel: str) -> list[dict]:
     return out
 
 
+def bundled_asm_dir(channel: str) -> Path:
+    """Where the package-bundled ASM presets for a channel live. Read-
+    only at runtime — refreshing the bundle is the maintainer's job
+    via `scripts/fetch_asm_presets.py`. Path resolves relative to this
+    file so it works whether the GUI is run from a source checkout, a
+    Fedora `/usr/lib/python.../gui/` install, or a Flatpak sandbox."""
+    return Path(__file__).resolve().parent / "presets" / "asm" / channel
+
+
+def list_bundled_asm_presets(channel: str) -> list[dict]:
+    """Read-only ASM-curated presets shipped with the package. Same
+    JSON shape as user presets so list_presets can fold them in
+    without conversion."""
+    d = bundled_asm_dir(channel)
+    if not d.is_dir():
+        return []
+    out: list[dict] = []
+    for path in sorted(d.glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            log.warning("Skipping unreadable bundled preset %s: %s", path, e)
+            continue
+        bands = data.get("bands")
+        if not isinstance(bands, list) or len(bands) != NUM_BANDS:
+            continue
+        # Display the ASM name with an "[ASM] " prefix so users can
+        # distinguish them from built-ins and their own saves at a
+        # glance — same convention the (now retired) network importer
+        # used.
+        display = data.get("name", path.stem)
+        out.append({"name": f"[ASM] {display}", "bands": bands})
+    return out
+
+
 def list_presets(channel: str) -> list[dict]:
-    """All presets visible for `channel` — built-ins first, then user
-    presets in alphabetical order. Returns a list of dicts with `name`
-    and `bands` keys."""
-    return list(BUILT_IN_PRESETS.get(channel, [])) + list_user_presets(channel)
+    """All presets visible for `channel`:
+        1. Built-in starter set (small, hand-tuned)
+        2. Bundled ASM library (~400 presets, package-shipped)
+        3. User-saved presets in $XDG_CONFIG_HOME
+
+    All three sources share the same `{name, bands}` dict shape so the
+    EQ tab can iterate without caring where each entry came from."""
+    return (
+        list(BUILT_IN_PRESETS.get(channel, []))
+        + list_bundled_asm_presets(channel)
+        + list_user_presets(channel)
+    )
 
 
 def save_user_preset(name: str, channel: str, bands: list[dict]) -> str:
@@ -262,8 +305,12 @@ def delete_user_preset(name: str, channel: str) -> bool:
 
 
 def is_user_preset(name: str, channel: str) -> bool:
-    """True iff the named preset is user-saved (not a built-in). The
-    Delete button only enables for these."""
+    """True iff the named preset is user-saved (not a built-in or a
+    bundled ASM preset). The Delete + Rename buttons only enable for
+    these. Bundled ASM presets carry the ASM_NAME_PREFIX so we can
+    short-circuit the check without doing file IO."""
+    if name.startswith(ASM_NAME_PREFIX):
+        return False
     builtin_names = {p["name"] for p in BUILT_IN_PRESETS.get(channel, [])}
     return name not in builtin_names
 
@@ -293,6 +340,11 @@ ASM_PRESETS_RAW = (
     "https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/"
     "src/arctis_sound_manager/gui/presets/"
 )
+
+# Visible-name prefix for bundled ASM presets in the dropdown. Used by
+# both the package bundle (gui/presets/asm/) and any future on-demand
+# importer to make ASM-sourced entries easy to spot.
+ASM_NAME_PREFIX = "[ASM] "
 
 # ASM uses `[Tag]` in the filename to scope a preset to a channel. We
 # only import the headphone-side tags (Game + Chat) — Mic tunings target

@@ -1,0 +1,76 @@
+{
+  "name": "Clair Obscur_ Expedition 33",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 67.9,
+      "q": 0.707,
+      "gain": 2.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 123.7,
+      "q": 0.707,
+      "gain": 3.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 207.5,
+      "q": 1.5,
+      "gain": -5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 338.6,
+      "q": 0.707,
+      "gain": 3.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 671.9,
+      "q": 1.5,
+      "gain": -4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1170.0,
+      "q": 0.707,
+      "gain": 3.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2910.0,
+      "q": 0.707,
+      "gain": 2.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4810.0,
+      "q": 0.707,
+      "gain": 1.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

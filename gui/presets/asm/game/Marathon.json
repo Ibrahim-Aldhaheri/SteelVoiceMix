@@ -1,0 +1,76 @@
+{
+  "name": "Marathon",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 61.5,
+      "q": 0.707,
+      "gain": 5.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 86.6,
+      "q": 0.707,
+      "gain": 0.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 122.8,
+      "q": 0.707,
+      "gain": 4.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 824.0,
+      "q": 1.0,
+      "gain": 5.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3150.0,
+      "q": 1.0,
+      "gain": 6.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 9660.0,
+      "q": 0.707,
+      "gain": 5.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

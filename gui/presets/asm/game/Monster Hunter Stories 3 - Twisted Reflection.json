@@ -1,0 +1,76 @@
+{
+  "name": "Monster Hunter Stories 3 - Twisted Reflection",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 49.5,
+      "q": 0.707,
+      "gain": 6.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 123.6,
+      "q": 0.707,
+      "gain": 3.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 617.9,
+      "q": 2.0,
+      "gain": 1.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1760.0,
+      "q": 1.0,
+      "gain": 6.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4750.0,
+      "q": 1.0,
+      "gain": 3.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 13330.0,
+      "q": 0.707,
+      "gain": 4.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

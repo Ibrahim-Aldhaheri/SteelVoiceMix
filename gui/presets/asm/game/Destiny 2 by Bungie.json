@@ -1,0 +1,76 @@
+{
+  "name": "Destiny 2 by Bungie",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 32.0,
+      "q": 0.7,
+      "gain": 0.0,
+      "type": "lowshelf",
+      "enabled": true
+    },
+    {
+      "freq": 86.31,
+      "q": 2.752,
+      "gain": 1.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 215.59,
+      "q": 0.707,
+      "gain": -1.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 272.47,
+      "q": 0.707,
+      "gain": -0.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 500.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1010.0,
+      "q": 1.934,
+      "gain": 2.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2000.0,
+      "q": 0.707,
+      "gain": -0.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3640.0,
+      "q": 1.034,
+      "gain": 2.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 5060.0,
+      "q": 3.652,
+      "gain": 1.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 9900.0,
+      "q": 2.055,
+      "gain": 1.5,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}

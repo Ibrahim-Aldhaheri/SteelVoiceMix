@@ -1,0 +1,76 @@
+{
+  "name": "Persona5 - The Phantom X",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 101.6,
+      "q": 0.707,
+      "gain": 5.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2080.0,
+      "q": 0.707,
+      "gain": 5.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 337.0,
+      "q": 0.707,
+      "gain": -4.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 5510.0,
+      "q": 0.707,
+      "gain": 4.5,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10500.0,
+      "q": 0.707,
+      "gain": 2.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "name": "No Man's Sky",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 59.7,
+      "q": 0.707,
+      "gain": 4.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 85.6,
+      "q": 0.707,
+      "gain": -0.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 131.8,
+      "q": 0.707,
+      "gain": 4.4,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 446.9,
+      "q": 2.0,
+      "gain": 1.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1520.0,
+      "q": 1.0,
+      "gain": 2.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3750.0,
+      "q": 1.0,
+      "gain": 3.9,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 8790.0,
+      "q": 0.707,
+      "gain": 2.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}

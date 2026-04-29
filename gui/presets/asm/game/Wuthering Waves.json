@@ -1,0 +1,76 @@
+{
+  "name": "Wuthering Waves",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 68.3,
+      "q": 0.707,
+      "gain": 4.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 156.6,
+      "q": 0.707,
+      "gain": 4.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 220.6,
+      "q": 0.707,
+      "gain": -0.8,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 336.7,
+      "q": 1.5,
+      "gain": 3.7,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 943.4,
+      "q": 0.707,
+      "gain": -2.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2020.0,
+      "q": 1.0,
+      "gain": 5.2,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3680.0,
+      "q": 0.707,
+      "gain": 2.3,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 6470.0,
+      "q": 0.707,
+      "gain": -1.6,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 11200.0,
+      "q": 0.707,
+      "gain": 4.1,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 10000.0,
+      "q": 0.707,
+      "gain": 0.0,
+      "type": "peaking",
+      "enabled": false
+    }
+  ]
+}
