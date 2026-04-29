@@ -406,8 +406,11 @@ class MixerGUI(QMainWindow):
 
     # -------------------------------------------------------- update checker
 
-    def _start_update_check(self) -> None:
-        """Spawn the background update check on first show."""
+    def _start_update_check(self, *, force: bool = False) -> None:
+        """Spawn the background update check. When `force=True` the
+        checker bypasses the 24-hour on-disk cache and queries GitHub
+        every time — used by the manual 'Check for updates' button so
+        it actually checks instead of replaying yesterday's answer."""
         if getattr(self, "_update_checker", None) is not None:
             return
         self._update_checker = UpdateChecker(self)
@@ -419,13 +422,18 @@ class MixerGUI(QMainWindow):
         self.update_label.setStyleSheet(
             "color: palette(placeholder-text); font-size: 10px;"
         )
-        self._update_checker.start()
+        if force:
+            self._update_checker.force_check()
+        else:
+            self._update_checker.start()
 
     def _force_update_check(self) -> None:
-        """Forced re-check from the user-visible button."""
+        """Forced re-check from the user-visible button. Wipes the
+        cache before querying so the result reflects what's on GitHub
+        right now, not whatever was cached up to 24 h ago."""
         self._update_checker = None
         self.update_label.setText("Checking…")
-        self._start_update_check()
+        self._start_update_check(force=True)
 
     def _on_update_available(self, latest_tag: str, current_version: str) -> None:
         self.update_label.setText(
