@@ -13,12 +13,26 @@ class DialOverlay(QWidget):
     """Floating overlay that appears briefly when the dial is turned."""
 
     def __init__(self, parent=None):
+        # Window-flag combo for KDE Plasma 6: Qt.Tool alone wasn't enough
+        # to keep the overlay out of the taskbar — Plasma was treating
+        # each show() as a new task entry. Adding Qt.SplashScreen pushes
+        # the window into the splash-screen window-type bucket which
+        # Plasma's task-manager applet excludes by default. The
+        # X11NetWmWindowTypeNotification attribute is the Wayland-side
+        # equivalent (sets `_NET_WM_WINDOW_TYPE_NOTIFICATION`), so
+        # whichever session the user runs gets the right hint. Both are
+        # additive — they don't conflict with each other or with our
+        # frameless / always-on-top requirements.
         super().__init__(
             parent,
-            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool,
+            Qt.FramelessWindowHint
+            | Qt.WindowStaysOnTopHint
+            | Qt.Tool
+            | Qt.SplashScreen,
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_X11NetWmWindowTypeNotification)
 
         self.orientation = "horizontal"
         self.setFixedSize(340, 80)

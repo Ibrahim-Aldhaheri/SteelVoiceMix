@@ -54,6 +54,11 @@ DEFAULTS: dict[str, Any] = {
     # entries each via add_favourite(). Used by the EQ tab to pin
     # favourite presets to the top of the preset dropdown.
     "eq_favourites": {},
+    # Notification preferences. The minimize-to-tray toast was the
+    # specifically-flagged annoyance — closing the window with the X
+    # button popped a toast every single time. Default off so new
+    # users aren't pestered; users who want the reminder can re-enable.
+    "notify_minimize_hint": False,
 }
 
 # Star-tier capacity per channel. Five is enough to cover the main use

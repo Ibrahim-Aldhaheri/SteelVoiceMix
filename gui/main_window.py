@@ -315,12 +315,16 @@ class MixerGUI(QMainWindow):
             return
         event.ignore()
         self.hide()
-        self.tray.showMessage(
-            DISPLAY_NAME,
-            "Minimized to tray",
-            QSystemTrayIcon.Information,
-            2000,
-        )
+        # Only show the minimize-to-tray toast when the user has
+        # explicitly opted in via Settings — this was the most-flagged
+        # annoyance: a toast on every X-button click adds up fast.
+        if self.settings.get("notify_minimize_hint", False):
+            self.tray.showMessage(
+                DISPLAY_NAME,
+                "Minimized to tray",
+                QSystemTrayIcon.Information,
+                2000,
+            )
 
     def _quit(self) -> None:
         self.daemon_client.stop()

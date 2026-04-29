@@ -97,6 +97,25 @@ class SettingsTab(QWidget):
         self.autostart_toggle.toggled.connect(self._toggle_autostart)
         layout.addWidget(card("Startup", autostart_row))
 
+        # Notifications card -------------------------------------------
+        # Only the minimize-to-tray hint is GUI-side; daemon notifications
+        # (connect/disconnect via notify-send) currently live behind the
+        # `--no-notify` CLI flag and would need a daemon protocol change
+        # to be runtime-toggleable. Not flagged urgent yet.
+        minimize_row, self.minimize_toggle = labelled_toggle(
+            "Show toast when minimised to tray",
+            tooltip=(
+                "When the window is closed with the X button, it hides "
+                "to the system tray. Enable this to see a confirmation "
+                "toast every time that happens. Off by default."
+            ),
+        )
+        self.minimize_toggle.setChecked(
+            self._settings.get("notify_minimize_hint", False)
+        )
+        self.minimize_toggle.toggled.connect(self._toggle_minimize_hint)
+        layout.addWidget(card("Notifications", minimize_row))
+
         # Profiles card ------------------------------------------------
         profile_row = QHBoxLayout()
         profile_row.addWidget(QLabel("Saved:"))
@@ -164,6 +183,10 @@ class SettingsTab(QWidget):
             getattr(self._overlay, "chat_vol", 100),
             normalize_position(self._settings.get("overlay_position", "top-right")),
         )
+
+    def _toggle_minimize_hint(self, checked: bool) -> None:
+        self._settings["notify_minimize_hint"] = checked
+        save_settings(self._settings)
 
     def _toggle_autostart(self, checked: bool) -> None:
         self._settings["autostart"] = checked
