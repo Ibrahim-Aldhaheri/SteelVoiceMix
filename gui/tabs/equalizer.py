@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, QProcess, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QCompleter,
     QHBoxLayout,
@@ -43,7 +42,7 @@ from ..settings import (
     remove_favourite,
     rename_favourite,
 )
-from ..widgets import section_title
+from ..widgets import card, labelled_toggle
 
 
 # Common parametric-EQ preset JSONs use 10 filter slots
@@ -176,43 +175,44 @@ class EqualizerTab(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(16, 16, 16, 16)
 
-        layout.addWidget(section_title(f"{NUM_EQ_BANDS}-band parametric EQ"))
-
-        self.eq_check = QCheckBox("Enable parametric EQ (🎮 Game + 💬 Chat)")
-        self.eq_check.setToolTip(
-            "Inserts a PipeWire filter chain between the SteelGame and "
-            "SteelChat sinks and the headset. The user-facing sinks stay "
-            "put across toggles, so Discord and other apps don't lose "
-            "their connection."
+        # Enable + channel selector card -------------------------------
+        enable_row, self.eq_toggle = labelled_toggle(
+            f"Enable {NUM_EQ_BANDS}-band parametric EQ",
+            tooltip=(
+                "Inserts a PipeWire filter chain between every loaded "
+                "virtual sink (Game / Chat / Media / HDMI) and the "
+                "downstream target. The user-facing sinks stay put across "
+                "toggles, so Discord and other apps don't lose their "
+                "connection."
+            ),
         )
-        self.eq_check.toggled.connect(self._toggle_enabled)
-        layout.addWidget(self.eq_check)
+        self.eq_toggle.toggled.connect(self._toggle_enabled)
 
         # Per-channel selector: tune [Game] and [Chat] independently.
         # Sliders display the selected channel's bands; switching the
         # combo loads that channel's stored values. Emoji icons match
         # the Home-tab convention (🎮 / 💬).
         ch_row = QHBoxLayout()
-        ch_row.addWidget(QLabel("Channel:"))
+        ch_row.addWidget(QLabel("Channel"))
         self.channel_combo = QComboBox()
         self.channel_combo.setMinimumWidth(140)
         self.channel_combo.currentTextChanged.connect(self._on_channel_changed)
         ch_row.addWidget(self.channel_combo, 1)
-        layout.addLayout(ch_row)
         # Populate channel combo for the initial sink state (Game + Chat
         # always; Media/HDMI added if their sinks are enabled). Sink
         # toggles fire on_media_sink_changed / on_hdmi_sink_changed and
         # we re-run this populate to keep the combo in sync.
         self._refresh_channel_combo()
 
+        layout.addWidget(card("Equalizer", enable_row, ch_row))
+
         # Preset row: searchable dropdown filtered by the current channel,
         # plus Load / Save / Delete actions. The combo is editable so the
         # user can type to filter (the QCompleter does substring match
         # against built-in + user preset names).
-        preset_row = QHBoxLayout()
-        preset_row.addWidget(QLabel("Preset:"))
+        preset_picker_row = QHBoxLayout()
         self.preset_combo = QComboBox()
         self.preset_combo.setEditable(True)
         self.preset_combo.setInsertPolicy(QComboBox.NoInsert)
@@ -220,19 +220,21 @@ class EqualizerTab(QWidget):
         if completer is not None:
             completer.setFilterMode(Qt.MatchContains)
             completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.preset_combo.setMinimumWidth(160)
+        self.preset_combo.setMinimumWidth(180)
         self.preset_combo.currentTextChanged.connect(self._on_preset_text_changed)
-        preset_row.addWidget(self.preset_combo, 1)
+        preset_picker_row.addWidget(self.preset_combo, 1)
         # Star toggle. Outline = not favourited, filled = favourited.
         # Limited to MAX_FAVOURITES_PER_CHANNEL on each channel; trying
         # to add a sixth pops a message asking the user to clear one.
         self.preset_fav_btn = QPushButton("☆")
-        self.preset_fav_btn.setFixedWidth(32)
+        self.preset_fav_btn.setFixedWidth(36)
         self.preset_fav_btn.setToolTip(
             f"Favourite this preset (up to {MAX_FAVOURITES_PER_CHANNEL} per channel)"
         )
         self.preset_fav_btn.clicked.connect(self._on_preset_favourite_toggled)
-        preset_row.addWidget(self.preset_fav_btn)
+        preset_picker_row.addWidget(self.preset_fav_btn)
+
+        preset_btn_row = QHBoxLayout()
         self.preset_load_btn = QPushButton("Load")
         self.preset_load_btn.clicked.connect(self._on_preset_load)
         self.preset_save_btn = QPushButton("Save…")
@@ -243,11 +245,12 @@ class EqualizerTab(QWidget):
         self.preset_delete_btn = QPushButton("Delete")
         self.preset_delete_btn.clicked.connect(self._on_preset_delete)
         self.preset_delete_btn.setEnabled(False)
-        preset_row.addWidget(self.preset_load_btn)
-        preset_row.addWidget(self.preset_save_btn)
-        preset_row.addWidget(self.preset_rename_btn)
-        preset_row.addWidget(self.preset_delete_btn)
-        layout.addLayout(preset_row)
+        preset_btn_row.addWidget(self.preset_load_btn)
+        preset_btn_row.addWidget(self.preset_save_btn)
+        preset_btn_row.addWidget(self.preset_rename_btn)
+        preset_btn_row.addWidget(self.preset_delete_btn)
+
+        layout.addWidget(card("Preset", preset_picker_row, preset_btn_row))
         # Populate the combo for the initial channel before any signals fire.
         self._refresh_preset_combo()
 
@@ -309,18 +312,24 @@ class EqualizerTab(QWidget):
             band_col.addWidget(freq_lbl)
 
             bands_row.addLayout(band_col)
-        layout.addLayout(bands_row)
 
-        # Test-audio row: synthesised reference clips played into the
-        # currently-selected channel's null-sink, so they go through
-        # the full EQ chain. Pink noise is the recommended starting
-        # point — the standard EQ-tuning reference.
+        eq_help = QLabel(
+            "Drag a slider to boost or cut a frequency band by up to "
+            "±12 dB. Each release respawns the filter chain with the new "
+            "gains (~100 ms audio glitch per change)."
+        )
+        eq_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+        eq_help.setWordWrap(True)
+        layout.addWidget(card("Bands", bands_row, eq_help))
+
+        # Test-audio card ----------------------------------------------
         test_row = QHBoxLayout()
-        test_row.addWidget(QLabel("Test:"))
         self.test_audio_combo = QComboBox()
         for label, _factory in TEST_AUDIO_CATALOGUE:
             self.test_audio_combo.addItem(label)
-        self.test_audio_combo.setMinimumWidth(180)
+        self.test_audio_combo.setMinimumWidth(200)
         test_row.addWidget(self.test_audio_combo, 1)
         self.test_play_btn = QPushButton("▶ Play")
         self.test_play_btn.clicked.connect(self._on_test_play)
@@ -330,19 +339,7 @@ class EqualizerTab(QWidget):
         self.test_stop_btn.setEnabled(False)
         test_row.addWidget(self.test_play_btn)
         test_row.addWidget(self.test_stop_btn)
-        layout.addLayout(test_row)
-
-        eq_help = QLabel(
-            "Drag a slider to boost or cut a frequency band by up to "
-            "±12 dB. Each release respawns the filter chain with the new "
-            "gains (~100 ms audio glitch per change). Live param updates "
-            "without respawn are planned for a follow-up."
-        )
-        eq_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text); padding-top: 4px;"
-        )
-        eq_help.setWordWrap(True)
-        layout.addWidget(eq_help)
+        layout.addWidget(card("Test Audio", test_row))
 
         layout.addStretch(1)
 
@@ -350,9 +347,9 @@ class EqualizerTab(QWidget):
 
     def on_enabled_changed(self, enabled: bool) -> None:
         self._eq_enabled = enabled
-        was_blocked = self.eq_check.blockSignals(True)
-        self.eq_check.setChecked(enabled)
-        self.eq_check.blockSignals(was_blocked)
+        was_blocked = self.eq_toggle.blockSignals(True)
+        self.eq_toggle.setChecked(enabled)
+        self.eq_toggle.blockSignals(was_blocked)
 
     def on_bands_changed(self, channel: str, bands: list) -> None:
         """Daemon broadcast: bands for `channel` changed (perhaps because

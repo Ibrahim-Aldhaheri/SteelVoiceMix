@@ -14,17 +14,19 @@ import logging
 import os
 import threading
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QPushButton,
+    QStackedWidget,
     QSystemTrayIcon,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -54,7 +56,7 @@ class MixerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(DISPLAY_NAME)
-        self.setFixedSize(480, 600)
+        self.setFixedSize(680, 640)
         self.setWindowIcon(app_icon())
         self.setStyleSheet(GLOBAL_QSS)
 
@@ -103,13 +105,22 @@ class MixerGUI(QMainWindow):
         root.setSpacing(8)
         root.setContentsMargins(12, 12, 12, 12)
 
-        # Persistent header — connection status always visible above the tabs.
-        self.status_label = QLabel("🔍 Connecting to daemon...")
+        # Persistent header — connection status as a coloured pill so
+        # the daemon-link state is unmistakable. The pill's `state`
+        # property drives the QSS colour (ok = green, bad = red,
+        # default = neutral).
+        header = QHBoxLayout()
+        header.setSpacing(10)
+        title = QLabel(DISPLAY_NAME)
+        title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        header.addWidget(title)
+        header.addStretch(1)
+        self.status_label = QLabel("🔍  Connecting…")
+        self.status_label.setObjectName("status-pill")
+        self.status_label.setProperty("state", "")
         self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet(
-            "font-size: 13px; font-weight: bold; padding: 4px;"
-        )
-        root.addWidget(self.status_label)
+        header.addWidget(self.status_label, 0, alignment=Qt.AlignVCenter)
+        root.addLayout(header)
 
         # Tabs — instantiated as full widgets so they own their state and
         # handlers. The window only routes daemon events to them.
@@ -120,14 +131,37 @@ class MixerGUI(QMainWindow):
         self.mic_tab = MicrophoneTab(self.daemon_client)
         self.settings_tab = SettingsTab(self.settings, self.overlay, self.sinks_tab)
 
-        tabs = QTabWidget()
-        tabs.addTab(self.home_tab, "Home")
-        tabs.addTab(self.sinks_tab, "Sinks")
-        tabs.addTab(self.eq_tab, "Equalizer")
-        tabs.addTab(self.surround_tab, "Surround")
-        tabs.addTab(self.mic_tab, "Microphone")
-        tabs.addTab(self.settings_tab, "Settings")
-        root.addWidget(tabs, 1)
+        # Sidebar nav: a vertical QListWidget on the left that drives a
+        # QStackedWidget on the right. With six pages, top tabs ran out
+        # of horizontal room and felt cramped; the sidebar gives each
+        # entry generous padding plus an emoji icon.
+        self.nav = QListWidget()
+        self.nav.setObjectName("sidebar")
+        self.nav.setFixedWidth(168)
+        self.nav.setIconSize(QSize(20, 20))
+        self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.stack = QStackedWidget()
+
+        for label, widget in (
+            ("🏠   Home", self.home_tab),
+            ("🔊   Sinks", self.sinks_tab),
+            ("🎛   Equalizer", self.eq_tab),
+            ("🎬   Surround", self.surround_tab),
+            ("🎙   Microphone", self.mic_tab),
+            ("⚙   Settings", self.settings_tab),
+        ):
+            item = QListWidgetItem(label)
+            self.nav.addItem(item)
+            self.stack.addWidget(widget)
+        self.nav.setCurrentRow(0)
+        self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        body.addWidget(self.nav)
+        body.addWidget(self.stack, 1)
+        root.addLayout(body, 1)
 
         # Persistent footer — update status + check-now + about, always visible.
         footer = QHBoxLayout()
@@ -202,20 +236,29 @@ class MixerGUI(QMainWindow):
     # ----------------------------------------------------- header + chatmix
 
     def _on_connected(self) -> None:
-        self.status_label.setText("🟢 Connected — ChatMix Active")
-        self.status_label.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: #4CAF50;"
-        )
+        self._set_status_pill("●  Connected", "ok")
 
     def _on_disconnected(self) -> None:
-        self.status_label.setText("🔴 Disconnected — Reconnecting...")
-        self.status_label.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: #f44336;"
-        )
+        self._set_status_pill("●  Reconnecting…", "bad")
         self.home_tab.on_disconnected()
 
     def _on_status_message(self, msg: str) -> None:
-        self.status_label.setText(msg)
+        # Free-form status (e.g. "Connecting to daemon…") — neutral pill,
+        # no colour. The connected/disconnected handlers later replace it
+        # with the proper coloured state.
+        self._set_status_pill(msg, "")
+
+    def _set_status_pill(self, text: str, state: str) -> None:
+        """Update the header status pill's text and `state` property.
+        QSS reads the property to drive the colour, so a `polish` round
+        is needed after the property changes for the new style to apply."""
+        self.status_label.setText(text)
+        self.status_label.setProperty("state", state)
+        # Re-evaluate the stylesheet so the new property selector takes
+        # effect — Qt doesn't restyle automatically when properties
+        # change at runtime.
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)
 
     def _on_battery_for_tray(self, level: int, status: str) -> None:
         if self.has_tray:

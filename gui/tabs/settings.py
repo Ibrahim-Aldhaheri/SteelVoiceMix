@@ -6,7 +6,6 @@ import logging
 import subprocess
 
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QInputDialog,
@@ -29,7 +28,7 @@ from ..settings import (
     save as save_settings,
     save_profile,
 )
-from ..widgets import POSITION_DISPLAY, divider, section_title
+from ..widgets import POSITION_DISPLAY, card, labelled_toggle
 
 log = logging.getLogger(__name__)
 
@@ -47,19 +46,19 @@ class SettingsTab(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
 
-        layout.addWidget(section_title("Overlay"))
-
-        self.overlay_check = QCheckBox("Show overlay when dial is turned")
-        self.overlay_check.setChecked(self._settings.get("overlay", True))
-        self.overlay_check.toggled.connect(self._toggle_overlay)
-        layout.addWidget(self.overlay_check)
+        # Overlay card -------------------------------------------------
+        overlay_row, self.overlay_toggle = labelled_toggle(
+            "Show overlay when dial is turned"
+        )
+        self.overlay_toggle.setChecked(self._settings.get("overlay", True))
+        self.overlay_toggle.toggled.connect(self._toggle_overlay)
 
         position_row = QHBoxLayout()
         pos_lbl = QLabel("Position")
-        pos_lbl.setFixedWidth(70)
+        pos_lbl.setFixedWidth(80)
         self.position_combo = QComboBox()
         self.position_combo.addItems(list(POSITION_DISPLAY.values()))
         current_pos = normalize_position(
@@ -71,11 +70,10 @@ class SettingsTab(QWidget):
         self.position_combo.currentTextChanged.connect(self._change_position)
         position_row.addWidget(pos_lbl)
         position_row.addWidget(self.position_combo, 1)
-        layout.addLayout(position_row)
 
         orient_row = QHBoxLayout()
         ori_lbl = QLabel("Style")
-        ori_lbl.setFixedWidth(70)
+        ori_lbl.setFixedWidth(80)
         self.orient_combo = QComboBox()
         self.orient_combo.addItems(["Horizontal", "Vertical"])
         idx = self.orient_combo.findText(
@@ -88,26 +86,24 @@ class SettingsTab(QWidget):
         self.orient_combo.currentTextChanged.connect(self._change_orientation)
         orient_row.addWidget(ori_lbl)
         orient_row.addWidget(self.orient_combo, 1)
-        layout.addLayout(orient_row)
 
-        layout.addWidget(divider())
-        layout.addWidget(section_title("Startup"))
+        layout.addWidget(card("Overlay", overlay_row, position_row, orient_row))
 
-        self.autostart_check = QCheckBox("Start with system")
-        self.autostart_check.setChecked(self._settings.get("autostart", True))
-        self.autostart_check.toggled.connect(self._toggle_autostart)
-        layout.addWidget(self.autostart_check)
+        # Startup card -------------------------------------------------
+        autostart_row, self.autostart_toggle = labelled_toggle(
+            "Start with system"
+        )
+        self.autostart_toggle.setChecked(self._settings.get("autostart", True))
+        self.autostart_toggle.toggled.connect(self._toggle_autostart)
+        layout.addWidget(card("Startup", autostart_row))
 
-        layout.addWidget(divider())
-        layout.addWidget(section_title("Audio Profiles"))
-
+        # Profiles card ------------------------------------------------
         profile_row = QHBoxLayout()
         profile_row.addWidget(QLabel("Saved:"))
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(140)
         self._refresh_profile_combo()
         profile_row.addWidget(self.profile_combo, 1)
-        layout.addLayout(profile_row)
 
         profile_btns = QHBoxLayout()
         load_btn = QPushButton("Load")
@@ -119,17 +115,19 @@ class SettingsTab(QWidget):
         profile_btns.addWidget(load_btn)
         profile_btns.addWidget(save_btn)
         profile_btns.addWidget(del_btn)
-        layout.addLayout(profile_btns)
 
         profile_help = QLabel(
-            "A profile snapshots overlay options + Media/HDMI sink toggles.\n"
+            "A profile snapshots overlay options + Media/HDMI sink toggles. "
             "Save the current setup, switch quickly, restore in one click."
         )
         profile_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text); padding-top: 4px;"
+            "font-size: 10px; color: palette(placeholder-text);"
         )
         profile_help.setWordWrap(True)
-        layout.addWidget(profile_help)
+
+        layout.addWidget(
+            card("Audio Profiles", profile_row, profile_btns, profile_help)
+        )
 
         layout.addStretch(1)
 
@@ -222,7 +220,7 @@ class SettingsTab(QWidget):
         if profile is None:
             return
         # Re-render the GUI controls from the (now updated) settings dict.
-        self.overlay_check.setChecked(self._settings.get("overlay", True))
+        self.overlay_toggle.setChecked(self._settings.get("overlay", True))
         current_pos = normalize_position(
             self._settings.get("overlay_position", "top-right")
         )

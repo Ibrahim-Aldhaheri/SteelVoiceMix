@@ -5,44 +5,42 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
-from ..widgets import divider, make_bar, section_title
+from ..widgets import card, make_bar
 
 
 class HomeTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
 
-        layout.addWidget(section_title("ChatMix"))
-
+        # ChatMix card --------------------------------------------------
         game_row = QHBoxLayout()
-        game_label = QLabel("🎮 Game")
-        game_label.setFixedWidth(70)
+        game_label = QLabel("🎮  Game")
+        game_label.setFixedWidth(80)
         self.game_bar = make_bar("#4CAF50")
         game_row.addWidget(game_label)
         game_row.addWidget(self.game_bar)
-        layout.addLayout(game_row)
 
         chat_row = QHBoxLayout()
-        chat_label = QLabel("💬 Chat")
-        chat_label.setFixedWidth(70)
+        chat_label = QLabel("💬  Chat")
+        chat_label.setFixedWidth(80)
         self.chat_bar = make_bar("#2196F3")
         chat_row.addWidget(chat_label)
         chat_row.addWidget(self.chat_bar)
-        layout.addLayout(chat_row)
 
-        self.dial_label = QLabel("⚖️ Balanced")
+        self.dial_label = QLabel("⚖️  Balanced")
         self.dial_label.setAlignment(Qt.AlignCenter)
-        self.dial_label.setStyleSheet("font-size: 11px; color: palette(placeholder-text);")
-        layout.addWidget(self.dial_label)
+        self.dial_label.setStyleSheet(
+            "font-size: 12px; color: palette(placeholder-text);"
+        )
 
-        layout.addWidget(divider())
-        layout.addWidget(section_title("Headset"))
+        layout.addWidget(card("ChatMix", game_row, chat_row, self.dial_label))
 
+        # Headset card --------------------------------------------------
         battery_row = QHBoxLayout()
-        self.battery_label = QLabel("🔋 Battery")
+        self.battery_label = QLabel("🔋  Battery")
         self.battery_label.setFixedWidth(90)
         self.battery_bar = QProgressBar()
         self.battery_bar.setRange(0, 100)
@@ -52,7 +50,8 @@ class HomeTab(QWidget):
         self._set_battery_chunk("#FF9800")
         battery_row.addWidget(self.battery_label)
         battery_row.addWidget(self.battery_bar)
-        layout.addLayout(battery_row)
+
+        layout.addWidget(card("Headset", battery_row))
 
         layout.addStretch(1)
 
@@ -64,17 +63,17 @@ class HomeTab(QWidget):
 
         diff = game_vol - chat_vol
         if abs(diff) < 10:
-            label = "⚖️ Balanced"
+            label = "⚖️  Balanced"
         elif diff > 0:
-            label = f"🎮 Game +{diff}"
+            label = f"🎮  Game +{diff}"
         else:
-            label = f"💬 Chat +{-diff}"
+            label = f"💬  Chat +{-diff}"
         self.dial_label.setText(label)
 
     def on_disconnected(self) -> None:
         self.game_bar.setValue(0)
         self.chat_bar.setValue(0)
-        self.dial_label.setText("⚖️ —")
+        self.dial_label.setText("⚖️  —")
 
     def on_battery(self, level: int, status: str) -> None:
         self.battery_bar.setValue(level)
@@ -92,7 +91,7 @@ class HomeTab(QWidget):
 
     def _set_battery_chunk(self, chunk: str) -> None:
         self.battery_bar.setStyleSheet(
-            "QProgressBar { border: 1px solid palette(mid); border-radius: 4px; "
-            "height: 22px; text-align: center; }"
-            f"QProgressBar::chunk {{ background: {chunk}; border-radius: 3px; }}"
+            "QProgressBar { border: 1px solid palette(mid); border-radius: 6px; "
+            "height: 22px; text-align: center; background: palette(base); }"
+            f"QProgressBar::chunk {{ background: {chunk}; border-radius: 5px; }}"
         )

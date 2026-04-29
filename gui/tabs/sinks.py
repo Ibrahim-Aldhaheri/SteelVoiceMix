@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QCheckBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -12,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..widgets import divider, section_title
+from ..widgets import card, labelled_toggle
 
 
 class SinksTab(QWidget):
@@ -23,28 +22,25 @@ class SinksTab(QWidget):
         self._hdmi_enabled = False
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
 
-        layout.addWidget(section_title("Virtual Sinks"))
-
+        # Virtual sinks card -------------------------------------------
         media_row = QHBoxLayout()
-        media_lbl = QLabel("Media")
-        media_lbl.setFixedWidth(70)
+        media_lbl = QLabel("🎵  Media")
+        media_lbl.setFixedWidth(80)
         self.media_btn = QPushButton("Add Media")
         self.media_btn.clicked.connect(self._toggle_media)
         media_row.addWidget(media_lbl)
         media_row.addWidget(self.media_btn, 1)
-        layout.addLayout(media_row)
 
         hdmi_row = QHBoxLayout()
-        hdmi_lbl = QLabel("HDMI")
-        hdmi_lbl.setFixedWidth(70)
+        hdmi_lbl = QLabel("📺  HDMI")
+        hdmi_lbl.setFixedWidth(80)
         self.hdmi_btn = QPushButton("Add HDMI")
         self.hdmi_btn.clicked.connect(self._toggle_hdmi)
         hdmi_row.addWidget(hdmi_lbl)
         hdmi_row.addWidget(self.hdmi_btn, 1)
-        layout.addLayout(hdmi_row)
 
         sinks_help = QLabel(
             "Media and HDMI sinks bypass the ChatMix dial — useful for "
@@ -52,25 +48,25 @@ class SinksTab(QWidget):
             "of the headset."
         )
         sinks_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text); padding-top: 4px;"
+            "font-size: 10px; color: palette(placeholder-text);"
         )
         sinks_help.setWordWrap(True)
-        layout.addWidget(sinks_help)
 
-        layout.addWidget(divider())
-        layout.addWidget(section_title("Auto-Routing"))
+        layout.addWidget(card("Virtual Sinks", media_row, hdmi_row, sinks_help))
 
-        self.auto_route_check = QCheckBox(
-            "Route browsers and media players to SteelMedia automatically"
+        # Auto-routing card --------------------------------------------
+        auto_row, self.auto_route_toggle = labelled_toggle(
+            "Route browsers and media players to SteelMedia automatically",
+            tooltip=(
+                "When enabled, the daemon moves new browser and media-player "
+                "audio streams (Firefox, Chromium, mpv, VLC…) to the "
+                "SteelMedia sink so they bypass the ChatMix dial. Manual "
+                "moves stick — the daemon only acts on first-seen streams."
+            ),
         )
-        self.auto_route_check.setToolTip(
-            "When enabled, the daemon moves new browser and media-player "
-            "audio streams (Firefox, Chromium, mpv, VLC…) to the SteelMedia "
-            "sink so they bypass the ChatMix dial. Manual moves stick — "
-            "the daemon only acts on first-seen streams."
-        )
-        self.auto_route_check.toggled.connect(self._toggle_auto_route)
-        layout.addWidget(self.auto_route_check)
+        self.auto_route_toggle.toggled.connect(self._toggle_auto_route)
+
+        layout.addWidget(card("Auto-Routing", auto_row))
 
         layout.addStretch(1)
 
@@ -105,9 +101,9 @@ class SinksTab(QWidget):
         )
 
     def on_auto_route_changed(self, enabled: bool) -> None:
-        was_blocked = self.auto_route_check.blockSignals(True)
-        self.auto_route_check.setChecked(enabled)
-        self.auto_route_check.blockSignals(was_blocked)
+        was_blocked = self.auto_route_toggle.blockSignals(True)
+        self.auto_route_toggle.setChecked(enabled)
+        self.auto_route_toggle.blockSignals(was_blocked)
 
     # ---------------------------------------------------------- input handlers
 
