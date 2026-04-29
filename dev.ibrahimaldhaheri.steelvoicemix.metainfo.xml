@@ -39,6 +39,46 @@
     <modalias>usb:v1038p12E0*</modalias>
   </provides>
   <releases>
+    <release version="0.3.0" date="2026-04-30" type="development">
+      <description>
+        <p>
+          Big release. Two major features land alongside a complete
+          GUI overhaul.
+        </p>
+        <p>10-band parametric EQ:</p>
+        <ul>
+          <li>Per-channel tunings for Game, Chat, Media, and HDMI sinks via PipeWire filter chains.</li>
+          <li>Searchable preset library — 391 ASM-curated game/chat presets bundled with the package.</li>
+          <li>Up to 5 favourites per channel pinned to a quick-access bar above the sliders.</li>
+          <li>Auto-forks to a Custom-N user preset when you start editing a built-in.</li>
+          <li>Built-in test audio (pink noise, sweeps, tones) for ear-checking the chain.</li>
+        </ul>
+        <p>Virtual surround:</p>
+        <ul>
+          <li>SteelSurround 7.1 sink + HRIR convolver chain over the headset.</li>
+          <li>Generic HeSuVi-format reference HRIR bundled (`EAC_Default.wav`); Browse for a personalised one any time.</li>
+          <li>On by default; routes Game / Chat / Media through the convolver. HDMI bypasses (TV / AVR handles surround natively).</li>
+        </ul>
+        <p>GUI overhaul:</p>
+        <ul>
+          <li>Left sidebar navigation replaces top-tab strip.</li>
+          <li>Card-style section grouping across every tab.</li>
+          <li>Animated iOS-style toggle widgets where on/off.</li>
+          <li>Coloured status pill in the header.</li>
+          <li>JS-style searchable select for the EQ preset picker (mouse-wheel ignored).</li>
+          <li>New Microphone tab placeholder for upcoming noise-gate / NR / AI-NC features.</li>
+          <li>Reset-to-defaults button in Settings (preserves saved audio profiles).</li>
+        </ul>
+        <p>Fixes:</p>
+        <ul>
+          <li>Surround channel mapping bug that caused right-channel audio to bleed into the left ear.</li>
+          <li>Dial overlay no longer appears in the KDE Plasma 6 taskbar.</li>
+          <li>Minimize-to-tray toast is now opt-in.</li>
+          <li>Test-audio clips have a 200 ms fade-in and conservative reference levels.</li>
+        </ul>
+      </description>
+      <url>https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/releases/tag/v0.3.0</url>
+    </release>
     <release version="0.2.4" date="2026-04-24" type="development">
       <description>
         <p>

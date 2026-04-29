@@ -1,5 +1,5 @@
 Name:           steelvoicemix
-Version:        0.2.4
+Version:        0.3.0
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta)
 
@@ -14,6 +14,7 @@ BuildRequires:  systemd-rpm-macros
 
 Requires:       pipewire
 Requires:       pulseaudio-utils
+Requires:       pipewire-utils
 Requires:       libnotify
 Requires:       hidapi
 
@@ -107,6 +108,44 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
+* Thu Apr 30 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.3.0-1
+- Major feature: 10-band parametric EQ. Per-channel (Game / Chat /
+  Media / HDMI) tunings driven by PipeWire filter chains, with a
+  searchable preset library. 391 ASM-curated game/chat presets are
+  bundled in the package; users can save / rename / delete their own
+  via the EQ tab. Up to 5 favourites per channel pinned to a quick-
+  access bar above the sliders. Editing a built-in preset auto-forks
+  to a Custom-N user preset so originals stay clean.
+- Major feature: virtual surround over headphones. New SteelSurround
+  7.1 sink + HRIR convolver chain (HeSuVi-format reference HRIR
+  bundled). Surround is on by default; every headphone-path channel
+  (Game / Chat / Media) routes through the convolver before reaching
+  the headset. HDMI bypasses the HRIR chain since the downstream
+  device handles surround natively.
+- GUI overhaul: left sidebar nav replaces the top-tab strip; each
+  tab uses card-style sections; animated ToggleSwitch replaces the
+  plain QCheckBox where used as on/off; status pill in the header
+  goes green/red on connection state. Window grew to 880×720 with
+  scrollable tab pages.
+- New tabs: Equalizer, Surround, Microphone (placeholder for noise
+  gate / NR / AI noise cancellation — UI only this release).
+- New: settings reset-to-defaults button (preserves saved audio
+  profiles), test-audio clips synthesised at runtime (pink noise,
+  white noise, sweeps, tones) for ear-checking the EQ chain at
+  conservative reference levels with 200 ms fade-in.
+- New: SearchableSelect widget — JS-style dropdown with integrated
+  search field, keyboard nav, and ignored mouse-wheel events.
+- Fix: surround channel mapping (HeSuVi 14-channel WAV layout).
+  Previous rev had FR_L/FR_R reversed past channel 6, causing right-
+  channel content to bleed into the left ear.
+- Fix: dial overlay no longer shows in the KDE Plasma 6 taskbar.
+- Fix: minimize-to-tray toast is now opt-in (disabled by default).
+- Tooling: scripts/fetch_asm_presets.py refreshes the bundled preset
+  set from upstream on demand.
+- Trademark hygiene: scrubbed all references to 'Sonar' from the
+  application surface (kept descriptive nominative use in README
+  context only).
+
 * Fri Apr 24 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.2.4-1
 - Fix: the dial overlay now always appears on the primary monitor.
   Previously it followed the mouse cursor, which put the gauge on
