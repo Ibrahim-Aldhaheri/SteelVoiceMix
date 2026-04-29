@@ -268,6 +268,115 @@ def is_user_preset(name: str, channel: str) -> bool:
     return name not in builtin_names
 
 
+# ----------------------------------------------------- ASM preset import
+#
+# Arctis Sound Manager (https://github.com/loteran/Arctis-Sound-Manager)
+# ships a curated library of 400+ Sonar-format preset JSONs covering most
+# popular games, several chat presets, and microphone tunings. They sit
+# under `src/arctis_sound_manager/gui/presets/` and are tagged in the
+# filename: `Game Title [Game].json`, `Service [Chat].json`,
+# `Headset Mic [Mic].json`.
+#
+# The format is Sonar's own export shape (`parametricEQ.filterN` with
+# `frequency` / `qFactor` / `gain` / `type` / `enabled`). We don't bundle
+# them — licensing on the underlying tunings is murky and the upstream
+# list grows. Instead, the user clicks "Import ASM presets" once and we
+# fetch them at runtime, convert the type names to our serde-lowercase
+# convention, and save under the normal user-preset directory tagged
+# with an [ASM] prefix so they're easy to spot.
+
+ASM_PRESETS_API = (
+    "https://api.github.com/repos/loteran/Arctis-Sound-Manager/contents/"
+    "src/arctis_sound_manager/gui/presets"
+)
+ASM_PRESETS_RAW = (
+    "https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/main/"
+    "src/arctis_sound_manager/gui/presets/"
+)
+
+# ASM uses `[Tag]` in the filename to scope a preset to a channel. We
+# only import the headphone-side tags (Game + Chat) — Mic tunings target
+# microphone capture-path filters that the daemon doesn't have yet.
+_ASM_TAG_TO_CHANNEL: dict[str, str] = {
+    "Game": "game",
+    "Chat": "chat",
+}
+
+# Sonar's filter-type names → our serde-lowercase variants. Anything
+# not in this map is dropped (the band keeps its previous shape and is
+# disabled).
+_SONAR_TYPE_MAP: dict[str, str] = {
+    "peakingEQ": "peaking",
+    "peaking": "peaking",
+    "lowPass": "lowpass",
+    "highPass": "highpass",
+    "lowShelf": "lowshelf",
+    "highShelf": "highshelf",
+    "bandPass": "bandpass",
+    "notch": "notch",
+    "allPass": "allpass",
+}
+
+
+def _convert_sonar_filter(raw: dict) -> dict | None:
+    """Map a single `parametricEQ.filterN` entry to our `EqBand` dict
+    shape. Returns None if the type isn't one we support."""
+    sonar_type = str(raw.get("type", "peaking"))
+    mapped = _SONAR_TYPE_MAP.get(sonar_type)
+    if mapped is None:
+        return None
+    return {
+        "freq": float(raw.get("frequency", 1000.0)),
+        "q": float(raw.get("qFactor", 1.0)),
+        "gain": float(raw.get("gain", 0.0)),
+        "type": mapped,
+        "enabled": bool(raw.get("enabled", True)),
+    }
+
+
+def convert_sonar_preset(payload: dict) -> list[dict] | None:
+    """Convert an ASM preset JSON into our 10-band EqBand-list shape.
+    Returns None if the payload doesn't contain a usable parametricEQ
+    block. Pads with flat-passthrough bands if the source has fewer
+    than 10, truncates if it has more (Sonar always exports 10 in
+    practice, but be defensive)."""
+    pe = payload.get("parametricEQ")
+    if not isinstance(pe, dict):
+        return None
+    bands: list[dict] = []
+    for i in range(1, NUM_BANDS + 1):
+        raw = pe.get(f"filter{i}")
+        if isinstance(raw, dict):
+            mapped = _convert_sonar_filter(raw)
+            if mapped is not None:
+                bands.append(mapped)
+                continue
+        # Fall through: unknown / missing / unsupported — pad flat.
+        bands.append(_band_for_default_index(i - 1))
+    return bands[:NUM_BANDS]
+
+
+def _band_for_default_index(idx: int) -> dict:
+    """Mirror `_default_eq_band` from gui/tabs/equalizer.py without
+    introducing a circular import. If both modules' templates ever
+    drift, the visible difference is small (one band's freq label) and
+    the user can re-load the preset to refresh."""
+    template = [
+        (32.0, 0.7, "lowshelf"),
+        (64.0, 1.0, "peaking"),
+        (125.0, 1.0, "peaking"),
+        (250.0, 1.0, "peaking"),
+        (500.0, 1.0, "peaking"),
+        (1000.0, 1.0, "peaking"),
+        (2000.0, 1.0, "peaking"),
+        (4000.0, 1.0, "peaking"),
+        (8000.0, 1.0, "peaking"),
+        (16000.0, 0.7, "highshelf"),
+    ]
+    f, q, t = template[max(0, min(idx, len(template) - 1))]
+    return {"freq": f, "q": q, "gain": 0.0, "type": t, "enabled": True}
+
+
 def find_preset(name: str, channel: str) -> dict | None:
     """Look up a preset by display name across built-ins + user list."""
     for preset in list_presets(channel):

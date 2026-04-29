@@ -21,11 +21,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from ..hrir_default import DefaultHrirFetcher, cached_default_path
 from ..widgets import card, labelled_toggle
 
 
@@ -58,6 +60,14 @@ class SurroundTab(QWidget):
         self.path_edit.setPlaceholderText("(no HRIR file selected)")
         self.path_edit.setMinimumWidth(220)
         path_row.addWidget(self.path_edit, 1)
+        self.default_btn = QPushButton("Use Default")
+        self.default_btn.setToolTip(
+            "Fetch a generic HeSuVi-format HRIR from upstream "
+            "(EAC_Default.wav, ~165 KB) and use it. You can replace it "
+            "with your own file via Browse at any time."
+        )
+        self.default_btn.clicked.connect(self._on_use_default)
+        path_row.addWidget(self.default_btn)
         self.browse_btn = QPushButton("Browse…")
         self.browse_btn.clicked.connect(self._on_browse)
         path_row.addWidget(self.browse_btn)
@@ -67,10 +77,12 @@ class SurroundTab(QWidget):
         path_row.addWidget(self.clear_btn)
 
         hrir_help = QLabel(
-            "HeSuVi-format 14-channel WAV expected. Get presets from "
-            "the HeSuVi GitHub release (Atmos, DTS Headphone, GoodHurt, "
-            "etc.) or generate a personalised HRTF with Impulcifer. "
-            "Other layouts may load but produce unexpected positioning."
+            "HeSuVi-format 14-channel WAV expected. The Use Default "
+            "button fetches a generic reference HRIR from upstream "
+            "(works fine for casual use); for tuned positioning try "
+            "the HeSuVi GitHub release (Atmos / DTS Headphone / "
+            "GoodHurt presets) or generate a personalised HRTF with "
+            "Impulcifer."
         )
         hrir_help.setWordWrap(True)
         hrir_help.setStyleSheet(
@@ -118,6 +130,32 @@ class SurroundTab(QWidget):
         self._refresh_status_label()
 
     # --------------------------------------------------------- input handlers
+
+    def _on_use_default(self) -> None:
+        """Fetch the default HRIR (or use the cached copy if it's
+        already on disk) and tell the daemon to use that path."""
+        cached = cached_default_path()
+        if cached.is_file() and cached.stat().st_size > 0:
+            # Already cached — short-circuit the network round-trip.
+            self._daemon.send_command("set-surround-hrir", path=str(cached))
+            return
+        self.default_btn.setEnabled(False)
+        self.default_btn.setText("Downloading…")
+        self._hrir_fetcher = DefaultHrirFetcher(self)
+        self._hrir_fetcher.finished_with_path.connect(self._on_default_fetched)
+        self._hrir_fetcher.start()
+
+    def _on_default_fetched(self, path: str, error: str) -> None:
+        self.default_btn.setEnabled(True)
+        self.default_btn.setText("Use Default")
+        if error or not path:
+            QMessageBox.warning(
+                self,
+                "Default HRIR fetch failed",
+                error or "Could not fetch the default HRIR from upstream.",
+            )
+            return
+        self._daemon.send_command("set-surround-hrir", path=path)
 
     def _on_browse(self) -> None:
         start_dir = os.path.expanduser("~/Downloads")

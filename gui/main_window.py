@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -56,7 +57,13 @@ class MixerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(DISPLAY_NAME)
-        self.setFixedSize(680, 640)
+        # Window grew to give EQ sliders room to breathe and to leave
+        # space for future controls (ASM preset import, default HRIR
+        # toggle, etc.). Tabs are wrapped in QScrollArea so that even on
+        # smaller screens the content can scroll instead of getting
+        # crushed — the EQ tab in particular has fixed-height slider
+        # columns that would otherwise pressure the layout.
+        self.setFixedSize(880, 720)
         self.setWindowIcon(app_icon())
         self.setStyleSheet(GLOBAL_QSS)
 
@@ -152,7 +159,17 @@ class MixerGUI(QMainWindow):
         ):
             item = QListWidgetItem(label)
             self.nav.addItem(item)
-            self.stack.addWidget(widget)
+            # Each tab page goes into a scroll area — Qt's QStackedWidget
+            # gives every page the same fixed slot, and tabs vary widely
+            # in content size (Equalizer is the tallest by far). Wrapping
+            # in QScrollArea means a tab that wants more height gets a
+            # scroll bar instead of pushing siblings off the bottom.
+            scroller = QScrollArea()
+            scroller.setWidget(widget)
+            scroller.setWidgetResizable(True)
+            scroller.setFrameShape(QScrollArea.NoFrame)
+            scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.stack.addWidget(scroller)
         self.nav.setCurrentRow(0)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
 

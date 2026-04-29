@@ -159,19 +159,29 @@ QFrame[divider="true"] {{
     margin: 4px 0;
 }}
 QSlider::groove:vertical {{
-    background: palette(mid);
-    width: 4px;
-    border-radius: 2px;
+    background: palette(midlight);
+    border: 1px solid palette(mid);
+    width: 6px;
+    border-radius: 3px;
 }}
 QSlider::handle:vertical {{
     background: {ACCENT};
-    height: 14px;
-    width: 14px;
-    margin: 0 -5px;
-    border-radius: 7px;
+    border: 2px solid palette(window);
+    height: 18px;
+    width: 18px;
+    margin: 0 -8px;
+    border-radius: 9px;
 }}
 QSlider::handle:vertical:hover {{
     background: {ACCENT_DIM};
+}}
+QSlider::sub-page:vertical {{
+    background: palette(midlight);
+    border-radius: 3px;
+}}
+QSlider::add-page:vertical {{
+    background: {ACCENT};
+    border-radius: 3px;
 }}
 """
 
