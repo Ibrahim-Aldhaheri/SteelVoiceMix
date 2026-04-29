@@ -30,20 +30,25 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 48000  # PipeWire default — clean sines up to 20 kHz.
 
-# Output levels are intentionally well below full-scale. Test signals
+# Output levels are intentionally far below full-scale. Test signals
 # get played at whatever the user's master volume happens to be — set
-# for music or voice — and wideband noise at unity gain into a headset
-# is brutally loud (equal energy across the whole spectrum). Targets:
-#   - Noise:  ~-25 dBFS RMS  (≈ 0.056 RMS, ≈ 0.18 peak)
-#   - Tones / sweeps: ~-15 dBFS peak  (≈ 0.18)
-# These match common EQ-tuning practice and protect the user's hearing
-# if they forget to drop the volume before pressing Play.
-NOISE_PEAK = 0.18
-TONE_PEAK = 0.18
-# Fade-in / fade-out length applied to every clip. 50 ms is long enough
-# to avoid the sharp transient that made the original noise generators
-# feel like a slap on first listen.
-_FADE_S = 0.05
+# for music or voice — and on a sensitive headset that can mean
+# painful SPL even at modest peak amplitudes. The user has reported
+# both rounds of "too loud" and the second round as painful, so these
+# targets are deliberately whisper-quiet:
+#   - Noise:  ~-26 dBFS peak  (≈ 0.05)
+#   - Tones / sweeps: ~-28 dBFS peak  (≈ 0.04 — 2 dB below noise to
+#     compensate for the well-known extra fatigue of pure tones at
+#     the same RMS).
+# A user who needs higher reference levels can raise system volume;
+# nobody can un-damage their ears, so we err on the safe side.
+NOISE_PEAK = 0.05
+TONE_PEAK = 0.04
+# Fade-in / fade-out length applied to every clip. 200 ms means even
+# the onset is a gentle ramp instead of a slap — by the time the
+# signal reaches its plateau the user has had a chance to react /
+# adjust volume / hit Stop.
+_FADE_S = 0.20
 
 # Channel key → user-facing PipeWire sink name. Mirrors the constants
 # in src/audio.rs; if those rename, this needs to follow.
