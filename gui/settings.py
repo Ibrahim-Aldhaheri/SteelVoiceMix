@@ -269,3 +269,27 @@ def rename_favourite(
     current[current.index(old)] = new
     fav[channel] = current
     save(settings)
+
+
+def reset_to_defaults_preserving_profiles(settings: dict[str, Any]) -> None:
+    """Wipe every key in `settings` back to its DEFAULTS value EXCEPT
+    `profiles` — the user's saved audio profiles are explicitly kept.
+    Mutates `settings` in place and writes the new state to disk.
+
+    Used by the Settings tab's 'Reset to defaults' button. Companion
+    to the daemon's `reset-state` command, which handles its own
+    persistent state separately."""
+    profiles = _profiles_dict(settings)
+    settings.clear()
+    for k, v in DEFAULTS.items():
+        # Deep-copy mutable defaults so the clear+restore cycle
+        # doesn't accidentally have settings sharing references with
+        # the module-level DEFAULTS dict.
+        if isinstance(v, dict):
+            settings[k] = {}
+        elif isinstance(v, list):
+            settings[k] = []
+        else:
+            settings[k] = v
+    settings["profiles"] = profiles
+    save(settings)

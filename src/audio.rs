@@ -319,6 +319,44 @@ impl SinkManager {
         }
     }
 
+    /// Reset every runtime preference to its factory default and tear
+    /// down anything that was running. Used by the GUI's "Reset to
+    /// defaults" button. Headset connection state is preserved — we
+    /// don't yank the HID device or destroy the user-facing null
+    /// sinks; we just remove the EQ chains, surround chain, and the
+    /// optional Media + HDMI sinks, then restore eq_state to flat.
+    /// The caller is responsible for persisting the new state and
+    /// broadcasting events.
+    pub fn reset_to_defaults(&mut self) {
+        // Tear down EQ chains so we can rewire loopbacks cleanly.
+        if self.eq_enabled {
+            self.disable_eq();
+        }
+        // Tear down surround so headphone-path loopbacks return to
+        // the headset (and so the chain process doesn't keep running
+        // with stale state when surround is re-enabled later).
+        if self.surround_chain.is_some() || self.surround_enabled {
+            // Force-disable irrespective of flag state — this calls
+            // rewire_all_headphone_channels for us.
+            let _ = self.set_surround_enabled(false);
+        }
+        // Drop the optional Media + HDMI sinks.
+        if self.media.is_some() {
+            self.disable_media();
+        }
+        if self.hdmi.is_some() {
+            self.disable_hdmi();
+        }
+        // Reset eq_state itself (the per-band data) to flat. We don't
+        // need to respawn anything — EQ is already off.
+        self.eq_state = EqState::default();
+        // Clear surround config — the GUI's reset will re-send the
+        // bundled HRIR path on next launch via the
+        // surround_default_applied marker reset.
+        self.surround_hrir = None;
+        info!("SinkManager state reset to defaults");
+    }
+
     /// Read-only view of the current per-channel EQ state. The daemon
     /// snapshot logic copies this out for status events.
     pub fn eq_state(&self) -> EqState {

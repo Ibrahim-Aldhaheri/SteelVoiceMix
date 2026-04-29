@@ -369,17 +369,40 @@ class ToggleSwitch(QCheckBox):
 # ------------------------------------------------------- labelled toggle
 
 
-def labelled_toggle(text: str, *, tooltip: str | None = None) -> tuple[QHBoxLayout, ToggleSwitch]:
+def labelled_toggle(
+    text: str,
+    *,
+    tooltip: str | None = None,
+    badge: str | None = None,
+) -> tuple[QHBoxLayout, ToggleSwitch]:
     """A horizontal row with a label on the left and a ToggleSwitch on
     the right. Returns (layout, toggle) so the caller can connect to
     the toggle's `toggled` signal and add the layout into a card or
-    parent layout."""
+    parent layout.
+
+    Optional `badge` adds a small coloured pill between the label and
+    the toggle — used to mark unstable / alpha features so users know
+    the toggle isn't quite production-ready. Currently uses the WARN
+    accent (orange) for visibility."""
     row = QHBoxLayout()
     row.setSpacing(10)
     label = QLabel(text)
     if tooltip:
         label.setToolTip(tooltip)
     row.addWidget(label, 1)
+    if badge:
+        badge_lbl = QLabel(badge)
+        badge_lbl.setStyleSheet(
+            f"background: {WARN};"
+            "color: white;"
+            "font-size: 9px;"
+            "font-weight: bold;"
+            "padding: 2px 6px;"
+            "border-radius: 4px;"
+        )
+        if tooltip:
+            badge_lbl.setToolTip(tooltip)
+        row.addWidget(badge_lbl, 0, alignment=Qt.AlignVCenter)
     toggle = ToggleSwitch()
     if tooltip:
         toggle.setToolTip(tooltip)

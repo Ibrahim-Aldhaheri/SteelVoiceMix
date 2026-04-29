@@ -25,6 +25,7 @@ from ..settings import (
     load_profile,
     normalize_orientation,
     normalize_position,
+    reset_to_defaults_preserving_profiles,
     save as save_settings,
     save_profile,
 )
@@ -34,14 +35,16 @@ log = logging.getLogger(__name__)
 
 
 class SettingsTab(QWidget):
-    def __init__(self, settings: dict, overlay, sinks_tab, parent=None):
+    def __init__(self, settings: dict, overlay, sinks_tab, daemon_client, parent=None):
         """`overlay` is the DialOverlay instance. `sinks_tab` is the
         SinksTab — needed to apply Media/HDMI toggles when a profile
-        loads."""
+        loads. `daemon_client` is needed by the Reset button to issue
+        a daemon-side `reset-state` alongside the GUI's own wipe."""
         super().__init__(parent)
         self._settings = settings
         self._overlay = overlay
         self._sinks_tab = sinks_tab
+        self._daemon = daemon_client
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -147,6 +150,32 @@ class SettingsTab(QWidget):
         layout.addWidget(
             card("Audio Profiles", profile_row, profile_btns, profile_help)
         )
+
+        # Reset card --------------------------------------------------
+        reset_row = QHBoxLayout()
+        self.reset_btn = QPushButton("Reset to defaults…")
+        self.reset_btn.setToolTip(
+            "Reset every preference (overlay, sinks, EQ, surround, "
+            "notification toggles) to its default value. Saved audio "
+            "profiles are preserved."
+        )
+        self.reset_btn.clicked.connect(self._on_reset_clicked)
+        reset_row.addWidget(self.reset_btn)
+        reset_row.addStretch(1)
+
+        reset_help = QLabel(
+            "Wipes overlay options, autostart, notification prefs, EQ "
+            "state, surround state, and the Media / HDMI sink toggles "
+            "back to their factory defaults. Saved audio profiles are "
+            "kept — delete them individually above if you want them "
+            "gone too."
+        )
+        reset_help.setWordWrap(True)
+        reset_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        layout.addWidget(card("Reset", reset_row, reset_help))
 
         layout.addStretch(1)
 
@@ -270,6 +299,78 @@ class SettingsTab(QWidget):
             want_media=bool(sinks.get("media", False)),
             want_hdmi=bool(sinks.get("hdmi", False)),
         )
+
+    # ------------------------------------------------------------------ reset
+
+    def _on_reset_clicked(self) -> None:
+        """Confirm + execute a full preferences reset. Daemon-side
+        runtime state is wiped via the `reset-state` command; GUI-side
+        settings.json is reset to DEFAULTS in-place but the user's
+        saved audio profiles are explicitly preserved."""
+        confirm = QMessageBox.warning(
+            self,
+            "Reset to defaults",
+            "This will reset every preference back to its default:\n\n"
+            "  • Overlay options + autostart\n"
+            "  • Notification toggles\n"
+            "  • EQ state (sliders + per-channel tunings)\n"
+            "  • Surround on/off + HRIR path\n"
+            "  • Media / HDMI sink toggles\n"
+            "  • Browser auto-routing\n\n"
+            "Saved audio profiles are KEPT.\n\nContinue?",
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        # Daemon first — broadcasts events that the GUI will pick up
+        # to refresh each tab. Then wipe settings.json (preserves
+        # profiles + resets the surround_default_applied marker so
+        # the bundled HRIR re-applies on next launch).
+        self._daemon.send_command("reset-state")
+        reset_to_defaults_preserving_profiles(self._settings)
+        # Re-render the local Settings tab controls from the freshly
+        # wiped values. Other tabs follow their own daemon-event
+        # paths.
+        self._reapply_settings_to_widgets()
+
+    def _reapply_settings_to_widgets(self) -> None:
+        """Push the current `self._settings` values back into the
+        Settings tab widgets without firing the toggle/save handlers
+        — used after a reset so the visible state matches what's now
+        on disk."""
+        for toggle, key, default in (
+            (self.overlay_toggle, "overlay", True),
+            (self.autostart_toggle, "autostart", True),
+            (self.minimize_toggle, "notify_minimize_hint", False),
+        ):
+            was_blocked = toggle.blockSignals(True)
+            try:
+                toggle.setChecked(self._settings.get(key, default))
+            finally:
+                toggle.blockSignals(was_blocked)
+        # Position + orientation combos.
+        current_pos = normalize_position(
+            self._settings.get("overlay_position", "top-right")
+        )
+        idx = self.position_combo.findText(POSITION_DISPLAY[current_pos])
+        if idx >= 0:
+            was_blocked = self.position_combo.blockSignals(True)
+            try:
+                self.position_combo.setCurrentIndex(idx)
+            finally:
+                self.position_combo.blockSignals(was_blocked)
+        idx = self.orient_combo.findText(
+            normalize_orientation(
+                self._settings.get("overlay_orientation", "horizontal")
+            ).capitalize()
+        )
+        if idx >= 0:
+            was_blocked = self.orient_combo.blockSignals(True)
+            try:
+                self.orient_combo.setCurrentIndex(idx)
+            finally:
+                self.orient_combo.blockSignals(was_blocked)
 
     def _delete_selected_profile(self) -> None:
         name = self.profile_combo.currentText()

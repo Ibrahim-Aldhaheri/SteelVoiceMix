@@ -203,6 +203,14 @@ pub enum ClientCommand {
     /// reasons. Sending `null` (or an empty string) clears the path.
     #[serde(rename = "set-surround-hrir")]
     SetSurroundHrir { path: Option<String> },
+    /// Reset every runtime preference to its default: media + HDMI
+    /// sinks off, browser auto-routing off, EQ off + flat across all
+    /// channels, surround off + HRIR cleared. Persisted state is
+    /// rewritten with the defaults. Used by the GUI's "Reset to
+    /// defaults" button. The GUI's own settings.json (profiles,
+    /// overlay options, etc.) is reset GUI-side.
+    #[serde(rename = "reset-state")]
+    ResetState,
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -545,6 +553,12 @@ mod tests {
             ClientCommand::SetAutoRouteBrowsers { enabled } => assert!(enabled),
             other => panic!("expected SetAutoRouteBrowsers, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn reset_state_command_parses() {
+        let cmd: ClientCommand = from_str(r#"{"cmd":"reset-state"}"#).unwrap();
+        assert!(matches!(cmd, ClientCommand::ResetState));
     }
 
     #[test]

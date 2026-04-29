@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -55,14 +55,18 @@ class SinksTab(QWidget):
         layout.addWidget(card("Virtual Sinks", media_row, hdmi_row, sinks_help))
 
         # Auto-routing card --------------------------------------------
+        # Marked ALPHA — author hasn't pushed on it and treats it as
+        # nice-to-have (per the user's flagged-as-experimental note).
         auto_row, self.auto_route_toggle = labelled_toggle(
             "Route browsers and media players to SteelMedia automatically",
             tooltip=(
-                "When enabled, the daemon moves new browser and media-player "
-                "audio streams (Firefox, Chromium, mpv, VLC…) to the "
-                "SteelMedia sink so they bypass the ChatMix dial. Manual "
-                "moves stick — the daemon only acts on first-seen streams."
+                "Alpha — lightly tested. When enabled, the daemon moves "
+                "new browser and media-player audio streams (Firefox, "
+                "Chromium, mpv, VLC…) to the SteelMedia sink so they "
+                "bypass the ChatMix dial. Manual moves stick — the "
+                "daemon only acts on first-seen streams."
             ),
+            badge="ALPHA",
         )
         self.auto_route_toggle.toggled.connect(self._toggle_auto_route)
 

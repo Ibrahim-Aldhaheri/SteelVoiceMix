@@ -20,7 +20,7 @@ use log::{error, info, warn};
 use audio::SinkManager;
 use filter_chain::{FilterChainHandle, FilterChainSpec};
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
-use protocol::{default_channel_bands, ClientCommand, DaemonEvent};
+use protocol::{default_channel_bands, ClientCommand, DaemonEvent, EqChannel, EqState};
 use routing::{spawn_router, RouterState};
 
 fn socket_path() -> PathBuf {
@@ -267,6 +267,69 @@ fn handle_client(
                         channel,
                         bands: channel_bands,
                     },
+                );
+            }
+            ClientCommand::ResetState => {
+                {
+                    let mut sm = sinks.lock().unwrap();
+                    sm.reset_to_defaults();
+                }
+                {
+                    let mut st = state.lock().unwrap();
+                    st.media_sink_enabled = false;
+                    st.hdmi_sink_enabled = false;
+                    st.auto_route_browsers = false;
+                    st.eq_enabled = false;
+                    st.eq_state = EqState::default();
+                    st.surround_enabled = false;
+                    st.surround_hrir_path = None;
+                }
+                router
+                    .enabled
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                persist_sink_state(&state);
+                info!("GUI requested: reset-state — every runtime pref reset to defaults");
+                // Fire one event per affected facet so the GUI can
+                // refresh each tab without a separate Status round
+                // trip.
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::MediaSinkChanged { enabled: false },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::HdmiSinkChanged { enabled: false },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::AutoRouteBrowsersChanged { enabled: false },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::EqEnabledChanged { enabled: false },
+                );
+                let flat = EqState::default();
+                for ch in [
+                    EqChannel::Game,
+                    EqChannel::Chat,
+                    EqChannel::Media,
+                    EqChannel::Hdmi,
+                ] {
+                    broadcast_event(
+                        &subscribers,
+                        DaemonEvent::EqBandsChanged {
+                            channel: ch,
+                            bands: flat.for_channel(ch),
+                        },
+                    );
+                }
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::SurroundEnabledChanged { enabled: false },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::SurroundHrirChanged { path: None },
                 );
             }
             ClientCommand::SetSurroundEnabled { enabled } => {

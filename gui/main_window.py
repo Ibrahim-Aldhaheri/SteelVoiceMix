@@ -138,7 +138,9 @@ class MixerGUI(QMainWindow):
         self.eq_tab = EqualizerTab(self.daemon_client, self.settings)
         self.surround_tab = SurroundTab(self.daemon_client)
         self.mic_tab = MicrophoneTab(self.daemon_client)
-        self.settings_tab = SettingsTab(self.settings, self.overlay, self.sinks_tab)
+        self.settings_tab = SettingsTab(
+            self.settings, self.overlay, self.sinks_tab, self.daemon_client
+        )
 
         # Sidebar nav: a vertical QListWidget on the left that drives a
         # QStackedWidget on the right. With six pages, top tabs ran out
@@ -394,8 +396,13 @@ class MixerGUI(QMainWindow):
     # ------------------------------------------------------------------- about
 
     def _show_about(self) -> None:
-        dialog = make_about_dialog(self)
-        dialog.exec()
+        # Cache the dialog instance — rebuilding it every click costs
+        # noticeable time on first paint (icon theme lookup + WM
+        # appearance handshake). Lazy-init keeps users who never open
+        # About from paying any cost at all.
+        if getattr(self, "_about_dialog", None) is None:
+            self._about_dialog = make_about_dialog(self)
+        self._about_dialog.exec()
 
     # -------------------------------------------------------- update checker
 
