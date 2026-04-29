@@ -222,6 +222,13 @@ class EqualizerTab(QWidget):
             completer.setCompletionMode(QCompleter.PopupCompletion)
         self.preset_combo.setMinimumWidth(180)
         self.preset_combo.currentTextChanged.connect(self._on_preset_text_changed)
+        # `activated` fires only when the user actually picks an item
+        # from the dropdown popup (or hits Enter on a typed match) —
+        # not on programmatic setCurrentIndex / setCurrentText. That's
+        # exactly what we want for "auto-apply on selection": the
+        # user's gesture loads the preset, but our own combo refreshes
+        # don't trigger spurious loads.
+        self.preset_combo.activated.connect(self._on_preset_activated)
         preset_picker_row.addWidget(self.preset_combo, 1)
         # Star toggle. Outline = not favourited, filled = favourited.
         # Limited to MAX_FAVOURITES_PER_CHANNEL on each channel; trying
@@ -234,9 +241,11 @@ class EqualizerTab(QWidget):
         self.preset_fav_btn.clicked.connect(self._on_preset_favourite_toggled)
         preset_picker_row.addWidget(self.preset_fav_btn)
 
+        # Action row — Load is gone (selecting from the combo auto-
+        # applies). The remaining buttons handle the actions that DO
+        # require explicit confirmation: saving the current state,
+        # renaming a user preset, deleting a user preset.
         preset_btn_row = QHBoxLayout()
-        self.preset_load_btn = QPushButton("Load")
-        self.preset_load_btn.clicked.connect(self._on_preset_load)
         self.preset_save_btn = QPushButton("Save…")
         self.preset_save_btn.clicked.connect(self._on_preset_save)
         self.preset_rename_btn = QPushButton("Rename…")
@@ -245,14 +254,33 @@ class EqualizerTab(QWidget):
         self.preset_delete_btn = QPushButton("Delete")
         self.preset_delete_btn.clicked.connect(self._on_preset_delete)
         self.preset_delete_btn.setEnabled(False)
-        preset_btn_row.addWidget(self.preset_load_btn)
         preset_btn_row.addWidget(self.preset_save_btn)
         preset_btn_row.addWidget(self.preset_rename_btn)
         preset_btn_row.addWidget(self.preset_delete_btn)
+        preset_btn_row.addStretch(1)
 
         layout.addWidget(card("Preset", preset_picker_row, preset_btn_row))
         # Populate the combo for the initial channel before any signals fire.
         self._refresh_preset_combo()
+
+        # Favourites quick-bar — up to MAX_FAVOURITES_PER_CHANNEL
+        # buttons, one per favourited preset. Click any to load
+        # immediately. Built fresh by `_refresh_favourites_card` on
+        # channel switch, favourite toggle, rename, delete.
+        self.favourites_card_layout = QVBoxLayout()
+        self.favourites_card_layout.setSpacing(6)
+        self.favourites_buttons_row = QHBoxLayout()
+        self.favourites_buttons_row.setSpacing(6)
+        self.favourites_empty_hint = QLabel(
+            "No favourites yet — tap ★ next to a preset to pin it here."
+        )
+        self.favourites_empty_hint.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+        self.favourites_card_layout.addLayout(self.favourites_buttons_row)
+        self.favourites_card_layout.addWidget(self.favourites_empty_hint)
+        layout.addWidget(card("Favourites", self.favourites_card_layout))
+        self._refresh_favourites_card()
 
         # 10 vertical sliders, one per band. The musical name + frequency
         # labels are populated dynamically from the current channel's
@@ -574,6 +602,12 @@ class EqualizerTab(QWidget):
         finally:
             self.preset_combo.blockSignals(was_blocked)
         self._update_action_buttons()
+        # The favourites quick-bar reads the same data, so any combo
+        # refresh implies a favourites refresh too. Guard against
+        # __init__ ordering — first call happens before the bar is
+        # built — by hasattr-checking.
+        if hasattr(self, "favourites_buttons_row"):
+            self._refresh_favourites_card()
 
     def _index_for_preset_name(self, name: str) -> int:
         """Find the combo row whose userData (the underlying preset
@@ -639,8 +673,61 @@ class EqualizerTab(QWidget):
                 return
         self._refresh_preset_combo()
 
-    def _on_preset_load(self) -> None:
-        name = self._selected_preset_name()
+    def _refresh_favourites_card(self) -> None:
+        """Rebuild the row of favourite quick-buttons for the current
+        channel. Each button is the underlying preset name (no '★ '
+        prefix — the entire bar is favourites). Click any to apply."""
+        # Drop any existing buttons. QHBoxLayout.removeItem() doesn't
+        # take ownership, so we have to deleteLater the widget too.
+        while self.favourites_buttons_row.count():
+            item = self.favourites_buttons_row.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        names = get_favourites(self._settings, self._current_channel)
+        # Drop any favourites that no longer correspond to an existing
+        # preset (built-in / bundled / user). Don't surface a warning
+        # — it just means the user deleted a preset that was
+        # favourited; we silently clean up.
+        all_names = {p["name"] for p in list_presets(self._current_channel)}
+        names = [n for n in names if n in all_names]
+
+        if not names:
+            self.favourites_empty_hint.show()
+            return
+        self.favourites_empty_hint.hide()
+
+        for name in names:
+            btn = QPushButton(name)
+            btn.setToolTip(f"Load '{name}' on the {self._current_channel} channel")
+            btn.setCursor(Qt.PointingHandCursor)
+            # Fixed width keeps the row tidy even with long preset
+            # names — `[ASM] Some Long Game Title.json` would otherwise
+            # blow out the layout. ElideRight in QSS would be nicer
+            # but QPushButton doesn't support it natively, so we cap.
+            btn.setMinimumWidth(110)
+            btn.setMaximumWidth(170)
+            btn.clicked.connect(lambda _checked, n=name: self._apply_preset(n))
+            self.favourites_buttons_row.addWidget(btn)
+        self.favourites_buttons_row.addStretch(1)
+
+    def _on_preset_activated(self, _idx: int) -> None:
+        """User picked an item from the preset dropdown — apply it
+        immediately. The Load button is gone; selection IS the action.
+        Doesn't fire when we programmatically refresh the combo (that
+        path uses currentTextChanged / setCurrentIndex), so internal
+        repopulates don't trigger spurious loads."""
+        self._apply_preset(self._selected_preset_name())
+
+    def _apply_preset(self, name: str) -> None:
+        """Shared code path for loading a preset by name. Called by
+        the dropdown's `activated` signal, by the Favourites quick-
+        bar buttons, and by anywhere else that wants to apply a
+        preset without going through the user-driven combo selection.
+        Updates the local band cache, re-renders the sliders, sends
+        the atomic set-eq-channel to the daemon, and marks the preset
+        active so subsequent slider edits know whether to fork."""
         if not name:
             return
         preset = find_preset(name, self._current_channel)
@@ -651,9 +738,6 @@ class EqualizerTab(QWidget):
                 f"No preset named '{name}' on the {self._current_channel} channel.",
             )
             return
-        # Apply locally first so the sliders update without waiting on
-        # the daemon round-trip — then send the atomic set-eq-channel so
-        # the chain respawns once with the full preset.
         self._bands_by_channel[self._current_channel] = [
             dict(b) for b in preset["bands"]
         ]
@@ -663,9 +747,17 @@ class EqualizerTab(QWidget):
             channel=self._current_channel,
             bands=preset["bands"],
         )
-        # Mark this preset active so a subsequent slider edit knows
-        # whether to fork (built-in) or update in place (user preset).
         self._active_preset_by_channel[self._current_channel] = name
+        # Make sure the combo reflects what's now active — useful
+        # when this was triggered by the favourites bar (combo had
+        # something else selected).
+        idx = self._index_for_preset_name(name)
+        if idx >= 0 and self.preset_combo.currentIndex() != idx:
+            was_blocked = self.preset_combo.blockSignals(True)
+            try:
+                self.preset_combo.setCurrentIndex(idx)
+            finally:
+                self.preset_combo.blockSignals(was_blocked)
         self._update_action_buttons()
 
     def _on_preset_save(self) -> None:
