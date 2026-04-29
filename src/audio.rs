@@ -22,6 +22,13 @@ pub const EQ_GAME_SINK: &str = "SteelGameEQ";
 pub const EQ_CHAT_SINK: &str = "SteelChatEQ";
 pub const EQ_MEDIA_SINK: &str = "SteelMediaEQ";
 pub const EQ_HDMI_SINK: &str = "SteelHDMIEQ";
+
+/// Name suffix the surround filter chain uses for its capture-side
+/// sink — apps see it as `effect_input.SteelSurround`. Kept here (not
+/// in surround_chain.rs) because audio.rs needs to construct the
+/// loopback target string when routing headphone-path channels into
+/// the surround chain.
+pub const SURROUND_SINK_NAME: &str = "SteelSurround";
 pub const OUTPUT_MATCH: &str = "SteelSeries_Arctis_Nova_Pro_Wireless";
 
 /// Every sink-name prefix we're responsible for. Keep this in sync with the
@@ -140,10 +147,16 @@ impl SinkManager {
         cleaned
     }
 
-    /// Toggle the surround chain. Returns the actual state after the
-    /// attempt — if `enable=true` is passed but no HRIR is configured
-    /// (or the file doesn't exist), the call is logged and false is
-    /// returned without changing state.
+    /// Toggle the surround chain. When enabling, the chain spawns and
+    /// every headphone-path loopback / EQ chain is re-routed to feed
+    /// SteelSurround instead of the headset. When disabling, loopbacks
+    /// re-route back to the headset before the surround chain shuts
+    /// down so there's no audio gap during the swap.
+    ///
+    /// Returns the actual state after the attempt — if `enable=true`
+    /// is passed but no HRIR is configured (or the file doesn't
+    /// exist), the call is logged and false is returned without
+    /// changing state.
     pub fn set_surround_enabled(&mut self, enable: bool) -> bool {
         if enable {
             let Some(path) = self.surround_hrir.clone() else {
@@ -163,12 +176,29 @@ impl SinkManager {
             }
             self.surround_enabled = true;
             self.spawn_surround_chain();
-            // spawn_surround_chain may fail silently if pipewire is
-            // unhappy; reflect that in the returned state.
-            self.surround_chain.is_some()
+            if self.surround_chain.is_some() {
+                // Now that headphone_path_target returns the surround
+                // capture sink, rewire every Game / Chat / Media
+                // downstream so audio flows through the HRIR convolver.
+                self.rewire_all_headphone_channels();
+                true
+            } else {
+                // Spawn failed — drop the flag so the next click
+                // triggers a fresh attempt instead of looking like
+                // surround is on with no chain.
+                self.surround_enabled = false;
+                false
+            }
         } else {
+            // Order matters: drop the chain handle FIRST so
+            // headphone_path_target() returns the headset, then rewire
+            // loopbacks. The taken handle gets shut down after the
+            // rewire so the chain stays alive while it had clients,
+            // even though those clients no longer feed it.
             self.surround_enabled = false;
-            if let Some(handle) = self.surround_chain.take() {
+            let chain = self.surround_chain.take();
+            self.rewire_all_headphone_channels();
+            if let Some(handle) = chain {
                 handle.shutdown();
             }
             false
@@ -201,6 +231,73 @@ impl SinkManager {
                     "Failed to spawn surround chain — see prior warnings"
                 );
             }
+        }
+    }
+
+    /// Where the headphone-path channels (Game / Chat / Media) should
+    /// route their downstream audio. When the surround chain is up,
+    /// loopbacks / EQ chains target the surround capture sink so every
+    /// channel gets HRIR'd before reaching the headset. Otherwise they
+    /// target the headset directly. HDMI is intentionally NOT routed
+    /// through surround — it goes to a host HDMI output (TV / AVR)
+    /// which already handles surround on its own.
+    fn headphone_path_target(&self) -> Option<String> {
+        if self.surround_chain.is_some() {
+            Some(format!("effect_input.{}", SURROUND_SINK_NAME))
+        } else {
+            self.output_sink.clone()
+        }
+    }
+
+    /// Tear down + recreate the loopback (or EQ chain) for a single
+    /// headphone-path channel. Called when the surround chain comes
+    /// up / down so the channel's downstream follows the new target.
+    /// HDMI passes through unchanged — its target is the host HDMI
+    /// output, not the headset.
+    fn rewire_one_headphone_channel(&mut self, channel: EqChannel) {
+        if matches!(channel, EqChannel::Hdmi) {
+            return;
+        }
+        // EQ-on path: the chain's downstream is read from eq_routing,
+        // which itself reads headphone_path_target — so a respawn is
+        // all we need to follow the new target.
+        if self.eq_enabled {
+            self.respawn_channel_chain(channel);
+            return;
+        }
+        // EQ-off path: just the bare loopback. Unload + reload with the
+        // new target.
+        let Some(target) = self.headphone_path_target() else {
+            return;
+        };
+        let (slot, name) = match channel {
+            EqChannel::Game => (self.game.as_mut(), GAME_SINK),
+            EqChannel::Chat => (self.chat.as_mut(), CHAT_SINK),
+            EqChannel::Media => (self.media.as_mut(), MEDIA_SINK),
+            EqChannel::Hdmi => unreachable!(),
+        };
+        let Some(s) = slot else {
+            return;
+        };
+        unload_module(s.loopback_id);
+        if let Some(id) = load_module(&[
+            "module-loopback",
+            &format!("source={name}.monitor"),
+            &format!("sink={target}"),
+            "latency_msec=1",
+        ]) {
+            s.loopback_id = id;
+        } else {
+            warn!(
+                "Failed to re-target loopback for {} → {}",
+                name, target
+            );
+        }
+    }
+
+    fn rewire_all_headphone_channels(&mut self) {
+        for ch in [EqChannel::Game, EqChannel::Chat, EqChannel::Media] {
+            self.rewire_one_headphone_channel(ch);
         }
     }
 
@@ -329,41 +426,46 @@ impl SinkManager {
     ) -> Option<(&mut SinkModules, &'static str, &'static str, &'static str, String)> {
         match channel {
             EqChannel::Game => {
-                let headset = self.output_sink.clone()?;
+                // headphone_path_target returns the surround capture
+                // sink when surround is active so the EQ chain feeds
+                // surround instead of the headset directly. Falls back
+                // to the headset when surround is off.
+                let target = self.headphone_path_target()?;
                 let slot = self.game.as_mut()?;
                 Some((
                     slot,
                     GAME_SINK,
                     EQ_GAME_SINK,
                     "SteelVoiceMix Game EQ",
-                    headset,
+                    target,
                 ))
             }
             EqChannel::Chat => {
-                let headset = self.output_sink.clone()?;
+                let target = self.headphone_path_target()?;
                 let slot = self.chat.as_mut()?;
                 Some((
                     slot,
                     CHAT_SINK,
                     EQ_CHAT_SINK,
                     "SteelVoiceMix Chat EQ",
-                    headset,
+                    target,
                 ))
             }
             EqChannel::Media => {
-                let headset = self.output_sink.clone()?;
+                let target = self.headphone_path_target()?;
                 let slot = self.media.as_mut()?;
                 Some((
                     slot,
                     MEDIA_SINK,
                     EQ_MEDIA_SINK,
                     "SteelVoiceMix Media EQ",
-                    headset,
+                    target,
                 ))
             }
             EqChannel::Hdmi => {
                 // HDMI loops to a host-side HDMI output, NOT the headset.
-                // Its EQ chain plays back into the same downstream target.
+                // Bypasses the surround chain (TV/AVR handles surround
+                // natively).
                 let target = self.hdmi_target.clone()?;
                 let slot = self.hdmi.as_mut()?;
                 Some((
@@ -390,8 +492,11 @@ impl SinkManager {
     pub fn enable_media(&mut self) -> bool {
         self.media_enabled = true;
         if self.media.is_none() {
-            if let Some(out) = self.output_sink.clone() {
-                self.media = create_sink_pair(&out, MEDIA_SINK, "SteelMedia");
+            // Loopback target follows surround state — feeds the
+            // surround capture sink when surround is up so Media
+            // gets HRIR'd alongside Game / Chat.
+            if let Some(target) = self.headphone_path_target() {
+                self.media = create_sink_pair(&target, MEDIA_SINK, "SteelMedia");
             }
         }
         // If EQ is on, the freshly-loaded Media null-sink should pick up
@@ -590,23 +695,42 @@ impl SinkManager {
     pub fn create_sinks(&mut self, output_sink: &str) {
         self.destroy_sinks();
         self.output_sink = Some(output_sink.to_string());
+
+        // If surround was on before disconnect (or set via persisted
+        // state), bring its chain up FIRST — that way the loopbacks
+        // we create just below can target SteelSurround's capture
+        // sink directly, no rewiring needed. If the chain fails to
+        // spawn (HRIR missing, etc.) headphone_path_target falls back
+        // to the headset and we get plain stereo routing.
+        if self.surround_enabled
+            && self.surround_chain.is_none()
+            && self.surround_hrir.is_some()
+        {
+            self.spawn_surround_chain();
+        }
+        let headphone_target = self
+            .headphone_path_target()
+            .unwrap_or_else(|| output_sink.to_string());
+
         // Descriptions cannot contain spaces — pactl's proplist parser
         // splits sink_properties tokens on whitespace with no quote or
         // escape handling, so "Steel Game" would truncate to "Steel".
         // Matching the sink name (no separator) also avoids cognitive
         // mismatch with `pactl list short sinks` output.
-        self.game = create_sink_pair(output_sink, GAME_SINK, "SteelGame");
-        self.chat = create_sink_pair(output_sink, CHAT_SINK, "SteelChat");
+        self.game = create_sink_pair(&headphone_target, GAME_SINK, "SteelGame");
+        self.chat = create_sink_pair(&headphone_target, CHAT_SINK, "SteelChat");
         // Media sink mirrors Game/Chat structurally but is deliberately
         // ignored by the ChatMix dial handler — its volume stays at whatever
         // KDE/pactl set. Use case: music and browser audio that shouldn't
         // dip when the user biases the dial toward chat.
         if self.media_enabled {
-            self.media = create_sink_pair(output_sink, MEDIA_SINK, "SteelMedia");
+            self.media = create_sink_pair(&headphone_target, MEDIA_SINK, "SteelMedia");
         }
         // HDMI loopback target is independent of the headset — it goes to the
-        // host-side HDMI sink (TV / AVR / monitor speakers). Detect at create
-        // time so toggling the headset doesn't lose the HDMI route.
+        // host-side HDMI sink (TV / AVR / monitor speakers). HDMI also
+        // bypasses the surround chain because the downstream device
+        // (TV / AVR) handles surround natively. Detect at create time
+        // so toggling the headset doesn't lose the HDMI route.
         if self.hdmi_enabled {
             if let Some(hdmi_target) = Self::find_hdmi_sink() {
                 self.hdmi_target = Some(hdmi_target.clone());
@@ -625,7 +749,11 @@ impl SinkManager {
             if self.hdmi.is_some() {
                 active.push(HDMI_SINK);
             }
-            info!("Created sinks: {}", active.join(", "));
+            info!(
+                "Created sinks: {} (headphone target: {})",
+                active.join(", "),
+                headphone_target,
+            );
 
             // If EQ was on before disconnect (or set via persisted state),
             // re-insert the filter chains now that the sinks exist again.
@@ -647,15 +775,6 @@ impl SinkManager {
                         );
                     }
                 }
-            }
-            // Same idea for surround — if it was enabled before the
-            // headset went away, re-spawn now that we have a target
-            // again.
-            if self.surround_enabled
-                && self.surround_chain.is_none()
-                && self.surround_hrir.is_some()
-            {
-                self.spawn_surround_chain();
             }
         } else {
             error!("Failed to create one or more sinks");
