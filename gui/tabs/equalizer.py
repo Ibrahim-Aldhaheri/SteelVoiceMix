@@ -903,10 +903,28 @@ class EqualizerTab(QWidget):
         AND refresh the per-band name + frequency labels. Preset loads
         change frequencies, so the labels can't be static."""
         bands = self._bands_by_channel.get(channel) or _default_channel_bands()
-        for idx in range(len(self.band_sliders)):
+        # Compute names up front: musical naming (Sub Bass / Bass / Mids
+        # / etc.) only makes sense when frequencies don't repeat the
+        # same musical band. Parametric ASM presets often place 3 or
+        # 4 filters inside a single band range — labelling them all
+        # 'Brilliance' or 'Bass' looks broken. When the names would
+        # collide, fall back to 'Band 1..10' so every slider has a
+        # unique identifier.
+        n = len(self.band_sliders)
+        freqs = [
+            float((bands[idx] if idx < len(bands) else _default_eq_band(idx)).get("freq", 1000.0))
+            for idx in range(n)
+        ]
+        musical = [_band_name_for(f) for f in freqs]
+        if len(set(musical)) == len(musical):
+            names = musical
+        else:
+            names = [f"Band {i + 1}" for i in range(n)]
+
+        for idx in range(n):
             band = bands[idx] if idx < len(bands) else _default_eq_band(idx)
             gain_db = float(band.get("gain", 0.0))
-            freq = float(band.get("freq", 1000.0))
+            freq = freqs[idx]
 
             slider = self.band_sliders[idx]
             value_lbl = self.band_value_labels[idx]
@@ -919,5 +937,5 @@ class EqualizerTab(QWidget):
             slider.blockSignals(was_blocked)
             sign = "+" if gain_db > 0 else ""
             value_lbl.setText(f"{sign}{gain_db:.1f}")
-            name_lbl.setText(_band_name_for(freq))
+            name_lbl.setText(names[idx])
             freq_lbl.setText(_format_freq(freq))
