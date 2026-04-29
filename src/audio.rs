@@ -121,27 +121,45 @@ impl SinkManager {
         }
     }
 
-    /// Update the HRIR file path. If surround is currently running, the
-    /// chain is restarted with the new file so the change takes effect
-    /// immediately. Returns the path as actually stored — `None` means
-    /// the path was cleared (and surround is disabled as a side
-    /// effect, since it can't run without a file).
+    /// Update the HRIR file path. Three cases to handle:
+    ///   1. Chain currently running: restart with the new file so the
+    ///      change takes effect immediately.
+    ///   2. Chain not running but `surround_enabled` is true (the
+    ///      common "default-on, GUI just delivered the bundled HRIR"
+    ///      case): spawn the chain now and rewire loopbacks.
+    ///   3. Path cleared (None): if a chain was running it shuts down
+    ///      and `surround_enabled` flips off so the GUI Status stays
+    ///      consistent.
+    ///
+    /// Returns the path as actually stored.
     pub fn set_surround_hrir(&mut self, path: Option<PathBuf>) -> Option<PathBuf> {
         // Strip empty strings to None so the GUI doesn't have to.
         let cleaned = path.filter(|p| !p.as_os_str().is_empty());
         self.surround_hrir = cleaned.clone();
-        if self.surround_chain.is_some() {
-            // Tear down + respawn so the new HRIR takes effect.
+
+        let was_running = self.surround_chain.is_some();
+        if was_running {
             if let Some(handle) = self.surround_chain.take() {
                 handle.shutdown();
             }
             if cleaned.is_some() {
                 self.spawn_surround_chain();
+                if self.surround_chain.is_some() {
+                    self.rewire_all_headphone_channels();
+                }
             } else {
-                // Path cleared while running → surround is no longer
-                // viable. Reflect that in `surround_enabled` too so
-                // the GUI's Status snapshot stays consistent.
+                // Path cleared while running → surround can no longer
+                // run. Flip the flag and re-route loopbacks back to
+                // the headset.
                 self.surround_enabled = false;
+                self.rewire_all_headphone_channels();
+            }
+        } else if cleaned.is_some() && self.surround_enabled {
+            // Chain wasn't running because we had no HRIR; now we do.
+            // Bring it up and wire the headphone-path channels in.
+            self.spawn_surround_chain();
+            if self.surround_chain.is_some() {
+                self.rewire_all_headphone_channels();
             }
         }
         cleaned

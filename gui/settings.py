@@ -59,6 +59,12 @@ DEFAULTS: dict[str, Any] = {
     # button popped a toast every single time. Default off so new
     # users aren't pestered; users who want the reminder can re-enable.
     "notify_minimize_hint": False,
+    # First-run marker for the surround default. Surround is on out
+    # of the box — on first GUI launch we send the bundled HRIR path
+    # to the daemon so its surround_enabled flag has something to
+    # bind to. Once this flips True we never auto-send again, so a
+    # user who later clears the path stays cleared.
+    "surround_default_applied": False,
 }
 
 # Star-tier capacity per channel. Five is enough to cover the main use

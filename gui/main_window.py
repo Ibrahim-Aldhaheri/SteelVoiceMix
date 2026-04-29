@@ -34,12 +34,14 @@ from PySide6.QtWidgets import (
 
 from .about import make_about_dialog
 from .daemon_client import DaemonClient, DaemonSignals
+from .hrir_default import bundled_default_path, has_default
 from .overlay import DialOverlay
 from .settings import (
     DISPLAY_NAME,
     load as load_settings,
     normalize_orientation,
     normalize_position,
+    save as save_settings,
 )
 from .tabs.equalizer import EqualizerTab
 from .tabs.home import HomeTab
@@ -249,6 +251,14 @@ class MixerGUI(QMainWindow):
         self.signals.surround_hrir_changed.connect(
             self.surround_tab.on_hrir_changed
         )
+        # First-run auto-apply: send the bundled HRIR to the daemon if
+        # the user hasn't picked one yet. Hook into the same hrir-
+        # changed signal so we only act after the daemon's initial
+        # Status reaches us; the marker in settings.json prevents the
+        # auto-apply from firing more than once across launches.
+        self.signals.surround_hrir_changed.connect(
+            self._maybe_apply_default_hrir
+        )
 
     # ----------------------------------------------------- header + chatmix
 
@@ -276,6 +286,32 @@ class MixerGUI(QMainWindow):
         # change at runtime.
         self.status_label.style().unpolish(self.status_label)
         self.status_label.style().polish(self.status_label)
+
+    def _maybe_apply_default_hrir(self, current_path: str) -> None:
+        """One-shot first-run hook: if the daemon reports no HRIR path
+        yet AND we have the bundled default available AND we've never
+        auto-applied before, send the bundled path so surround can
+        come up out of the box. The settings marker
+        (`surround_default_applied`) ensures this fires at most once;
+        if the user later clears the path, they stay cleared."""
+        if self.settings.get("surround_default_applied", False):
+            return
+        if current_path:
+            # Daemon already has a path (persisted from a previous run
+            # or set by another GUI instance). Mark as applied and
+            # never auto-act again.
+            self.settings["surround_default_applied"] = True
+            save_settings(self.settings)
+            return
+        if not has_default():
+            # Broken install — bundled WAV is missing. Don't keep
+            # retrying, but don't mark applied either: a reinstall
+            # might fix it.
+            return
+        path = str(bundled_default_path())
+        self.daemon_client.send_command("set-surround-hrir", path=path)
+        self.settings["surround_default_applied"] = True
+        save_settings(self.settings)
 
     def _on_battery_for_tray(self, level: int, status: str) -> None:
         if self.has_tray:

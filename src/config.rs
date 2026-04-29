@@ -12,10 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::protocol::EqState;
 
-/// What the daemon remembers across restarts. Default-derived: a fresh
-/// install loads as all-false so we don't surprise anyone with extra
-/// output devices they didn't ask for.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// What the daemon remembers across restarts. Most fields default to
+/// "off" so a fresh install doesn't surprise users with extra output
+/// devices. The exception is `surround_enabled`, which is on by
+/// default — see its field comment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonState {
     #[serde(default)]
     pub media_sink_enabled: bool,
@@ -37,15 +38,37 @@ pub struct DaemonState {
     #[serde(default, alias = "eq_gains")]
     pub eq_state: EqState,
     /// Whether the SteelSurround virtual 7.1 sink + HRIR convolver
-    /// chain is loaded. Off by default — opt-in, since it requires a
-    /// user-supplied HRIR file.
-    #[serde(default)]
+    /// chain is loaded. ON by default — anyone running this app has an
+    /// Arctis Nova Pro Wireless and will benefit from binaural surround
+    /// out of the box. The GUI auto-applies the bundled HRIR file
+    /// (gui/data/hrir/EAC_Default.wav) on first launch so this flag
+    /// has something to bind to. Users who don't want it can disable
+    /// it from the Surround tab.
+    #[serde(default = "default_surround_enabled")]
     pub surround_enabled: bool,
     /// Path to the user-supplied HRIR WAV (HeSuVi-style 14-channel).
     /// `None` until the user picks a file via the GUI; surround can't
     /// be enabled while this is `None`.
     #[serde(default)]
     pub surround_hrir_path: Option<PathBuf>,
+}
+
+fn default_surround_enabled() -> bool {
+    true
+}
+
+impl Default for DaemonState {
+    fn default() -> Self {
+        DaemonState {
+            media_sink_enabled: false,
+            hdmi_sink_enabled: false,
+            auto_route_browsers: false,
+            eq_enabled: false,
+            eq_state: EqState::default(),
+            surround_enabled: default_surround_enabled(),
+            surround_hrir_path: None,
+        }
+    }
 }
 
 fn state_path() -> Option<PathBuf> {
