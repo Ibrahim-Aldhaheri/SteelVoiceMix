@@ -18,22 +18,33 @@
 //!
 //! ## HRIR file expectations
 //!
-//! HeSuVi's standard 14-channel WAV layout (this is what we assume —
-//! third-party HRIRs may follow it but it's not universal):
+//! HeSuVi's actual 14-channel WAV layout — verified against the
+//! reference convolver config in
+//! `loteran/Arctis-Sound-Manager:scripts/pipewire/sink-virtual-surround-7.1-hesuvi.conf`.
+//! The layout is NOT a simple "L then R" pair-by-pair pattern past
+//! channel 6: the L/R pairs flip starting at FR. Treating it as a
+//! regular alternation (which an earlier rev of this file did) made
+//! FR-source audio leak into the left ear via FC's impulse, which
+//! sounded like a left-bias on stereo content.
 //!
 //! ```text
-//!  0: FL→L    1: FL→R     <-- front left source, both ears
-//!  2: SL→L    3: SL→R     <-- side left
-//!  4: BL→L    5: BL→R     <-- back/rear left
-//!  6: FR→L    7: FR→R
-//!  8: SR→L    9: SR→R
-//! 10: BR→L   11: BR→R
-//! 12: FC→L   13: FC→R
+//!  0: FL→L    1: FL→R
+//!  2: SL→L    3: SL→R
+//!  4: RL→L    5: RL→R
+//!  6: FC→L          (also reused for LFE→L)
+//!  7: FR→R
+//!  8: FR→L
+//!  9: SR→R
+//! 10: SR→L
+//! 11: RR→R
+//! 12: RR→L
+//! 13: FC→R          (also reused for LFE→R)
 //! ```
 //!
-//! Most HeSuVi presets (Atmos, DTS, GoodHurt, Sonic Studio, etc.) ship
-//! in this layout. If a user's HRIR uses a different shape the result
-//! will be wrong but won't crash — the daemon doesn't try to be clever.
+//! LFE bypassed HRIR entirely in the previous rev. We now run it
+//! through FC's L/R impulses (separate convolver nodes) — same trick
+//! ASM uses, since LFE has no positional info and treating it as
+//! front-center is the natural fallback.
 //!
 //! ## Why a separate module from `filter_chain.rs`
 //!
@@ -165,55 +176,62 @@ fn write_conf(path: &Path, contents: &str) -> std::io::Result<()> {
 }
 
 /// Render the full pipewire daemon config for the surround chain.
-/// Each directional channel goes through a `copy` node (split fan-out)
-/// then into two `convolver` nodes (one per ear), all summed by two
-/// final mixer nodes. LFE bypasses the HRIR — most movie LFE tracks
-/// are sub-bass that doesn't have a meaningful HRIR signature anyway.
+/// Topology: for each input channel (FL/FR/FC/LFE/RL/RR/SL/SR) a
+/// `copy` node fans the signal out to two `convolver` nodes — one
+/// per ear, each loading the matching slice from the HeSuVi WAV.
+/// All L-ear convolvers feed `mix_l`; all R-ear convolvers feed
+/// `mix_r`. Final stereo output flows out via the two mixers.
+///
+/// LFE is treated as a centre channel: its convolvers reuse the FC
+/// HRIR slices (channels 6 and 13). They're declared as separate
+/// nodes so the input fan-out stays one-to-one.
 fn render_conf(hrir: &Path) -> String {
     let hrir_str = hrir.display().to_string();
-    // Pairs are (channel-key, HeSuVi channel index for L ear, idx for R ear).
-    // Order matches the audio.position list below; LFE is omitted because
-    // it goes straight through the lfe_copy node into both mixers.
-    let directional = [
-        ("fl", 0u32, 1u32),
-        ("sl", 2, 3),
-        ("rl", 4, 5),
-        ("fr", 6, 7),
-        ("sr", 8, 9),
-        ("rr", 10, 11),
-        ("fc", 12, 13),
+
+    // Convolver nodes — (node-name, HRIR-channel-index). Layout is
+    // verbatim from ASM's reference config; deviating from this
+    // (e.g. assuming alternating L/R pairs all the way down)
+    // produces the audible left-bias bug.
+    let convolvers: &[(&str, u32)] = &[
+        ("fl_l", 0),
+        ("fl_r", 1),
+        ("sl_l", 2),
+        ("sl_r", 3),
+        ("rl_l", 4),
+        ("rl_r", 5),
+        ("fc_l", 6),
+        ("fr_r", 7),
+        ("fr_l", 8),
+        ("sr_r", 9),
+        ("sr_l", 10),
+        ("rr_r", 11),
+        ("rr_l", 12),
+        ("fc_r", 13),
+        // LFE reuses FC's L/R impulses — separate nodes so each
+        // input port has exactly one downstream convolver per ear.
+        ("lfe_l", 6),
+        ("lfe_r", 13),
     ];
 
-    // Build node list: for each directional channel, one copy + two
-    // convolvers. Plus one copy for LFE, plus two mixers for the
-    // stereo output.
     let mut nodes: Vec<String> = Vec::new();
-    for (key, ch_l, ch_r) in &directional {
+    // One `copy` per input channel — gives us a single point to fan
+    // out into the two ear-specific convolvers.
+    for key in ["fl", "fr", "fc", "lfe", "rl", "rr", "sl", "sr"] {
         nodes.push(format!(
             r#"                    {{ type = builtin name = {key}_copy label = copy }}"#,
         ));
+    }
+    for (name, channel) in convolvers {
         nodes.push(format!(
             r#"                    {{
                         type  = builtin
-                        name  = {key}_l
+                        name  = {name}
                         label = convolver
-                        config = {{ filename = "{hrir}" channel = {ch_l} }}
-                    }}"#,
-            hrir = hrir_str,
-        ));
-        nodes.push(format!(
-            r#"                    {{
-                        type  = builtin
-                        name  = {key}_r
-                        label = convolver
-                        config = {{ filename = "{hrir}" channel = {ch_r} }}
+                        config = {{ filename = "{hrir}" channel = {channel} }}
                     }}"#,
             hrir = hrir_str,
         ));
     }
-    nodes.push(
-        r#"                    { type = builtin name = lfe_copy label = copy }"#.to_string(),
-    );
     nodes.push(
         r#"                    { type = builtin name = mix_l label = mixer }"#.to_string(),
     );
@@ -221,33 +239,43 @@ fn render_conf(hrir: &Path) -> String {
         r#"                    { type = builtin name = mix_r label = mixer }"#.to_string(),
     );
 
-    // Build link list: each directional copy fans out to its L and R
-    // convolvers; each convolver feeds the matching ear's mixer; LFE
-    // copy feeds both mixers equally.
+    // Link list: input fan-out, then convolver → mixer.
+    // Pairs are (input-channel-key, convolver-prefix) — each input
+    // fans into a `<prefix>_l` and `<prefix>_r` convolver. LFE goes
+    // to its own LFE convolvers (which themselves reuse FC's HRIR
+    // channels), so the topology stays one-to-one.
+    let fan_out: &[(&str, &str)] = &[
+        ("fl", "fl"),
+        ("fr", "fr"),
+        ("fc", "fc"),
+        ("lfe", "lfe"),
+        ("rl", "rl"),
+        ("rr", "rr"),
+        ("sl", "sl"),
+        ("sr", "sr"),
+    ];
+
     let mut links: Vec<String> = Vec::new();
-    for (i, (key, _, _)) in directional.iter().enumerate() {
+    for (input_key, conv_prefix) in fan_out {
         links.push(format!(
-            r#"                    {{ output = "{key}_copy:Out"  input = "{key}_l:In" }}"#,
+            r#"                    {{ output = "{input_key}_copy:Out"  input = "{conv_prefix}_l:In" }}"#,
         ));
         links.push(format!(
-            r#"                    {{ output = "{key}_copy:Out"  input = "{key}_r:In" }}"#,
-        ));
-        // Mixer port indices are 1-based and dynamically allocated.
-        let port = i + 1;
-        links.push(format!(
-            r#"                    {{ output = "{key}_l:Out"  input = "mix_l:In {port}" }}"#,
-        ));
-        links.push(format!(
-            r#"                    {{ output = "{key}_r:Out"  input = "mix_r:In {port}" }}"#,
+            r#"                    {{ output = "{input_key}_copy:Out"  input = "{conv_prefix}_r:In" }}"#,
         ));
     }
-    let lfe_port = directional.len() + 1;
-    links.push(format!(
-        r#"                    {{ output = "lfe_copy:Out"  input = "mix_l:In {lfe_port}" }}"#,
-    ));
-    links.push(format!(
-        r#"                    {{ output = "lfe_copy:Out"  input = "mix_r:In {lfe_port}" }}"#,
-    ));
+    // Convolver output → matching ear's mixer. Port numbers are
+    // 1-based and just an ordering — they don't affect mixing
+    // semantics, but PipeWire wants distinct ones per source.
+    for (i, (_, conv_prefix)) in fan_out.iter().enumerate() {
+        let port = i + 1;
+        links.push(format!(
+            r#"                    {{ output = "{conv_prefix}_l:Out"  input = "mix_l:In {port}" }}"#,
+        ));
+        links.push(format!(
+            r#"                    {{ output = "{conv_prefix}_r:Out"  input = "mix_r:In {port}" }}"#,
+        ));
+    }
 
     // External-port mapping: PipeWire's audio.position list defines the
     // 7.1 channel order; the inputs array specifies which internal port

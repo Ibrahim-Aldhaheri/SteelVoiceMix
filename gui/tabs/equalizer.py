@@ -10,10 +10,9 @@ grid stays put, and new sections layer below it.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, QProcess, Qt, QTimer
+from PySide6.QtCore import QProcess, Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
-    QCompleter,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -23,6 +22,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from ..searchable_select import SearchableSelect
 
 from ..eq_presets import (
     delete_user_preset,
@@ -42,7 +43,7 @@ from ..settings import (
     remove_favourite,
     rename_favourite,
 )
-from ..widgets import card, labelled_toggle
+from ..widgets import NoWheelComboBox, card, labelled_toggle
 
 
 # Common parametric-EQ preset JSONs use 10 filter slots
@@ -84,24 +85,6 @@ def _format_freq(hz: float) -> str:
     if abs(khz - round(khz)) < 0.05:
         return f"{int(round(khz))} kHz"
     return f"{khz:.1f} kHz"
-
-
-class _SelectAllOnFocus(QObject):
-    """Event filter that calls `selectAll()` on the watched widget the
-    next time it receives keyboard focus. Used on the preset combo's
-    QLineEdit so the user can start typing a new search immediately
-    instead of having to manually delete the previously-selected
-    preset's name first.
-
-    The selectAll is deferred via QTimer.singleShot(0, …) because Qt
-    moves the cursor + clears any selection AFTER FocusIn fires —
-    calling selectAll synchronously inside the event filter gets
-    immediately undone."""
-
-    def eventFilter(self, obj, event) -> bool:
-        if event.type() == QEvent.FocusIn:
-            QTimer.singleShot(0, obj.selectAll)
-        return False
 
 
 def _band_name_for(freq: float) -> str:
@@ -214,7 +197,7 @@ class EqualizerTab(QWidget):
         # the Home-tab convention (🎮 / 💬).
         ch_row = QHBoxLayout()
         ch_row.addWidget(QLabel("Channel"))
-        self.channel_combo = QComboBox()
+        self.channel_combo = NoWheelComboBox()
         self.channel_combo.setMinimumWidth(140)
         self.channel_combo.currentTextChanged.connect(self._on_channel_changed)
         ch_row.addWidget(self.channel_combo, 1)
@@ -231,38 +214,21 @@ class EqualizerTab(QWidget):
         # user can type to filter (the QCompleter does substring match
         # against built-in + user preset names).
         preset_picker_row = QHBoxLayout()
-        self.preset_combo = QComboBox()
-        self.preset_combo.setEditable(True)
-        self.preset_combo.setInsertPolicy(QComboBox.NoInsert)
-        # Search ergonomics:
-        #   - MatchContains so any substring of the user's query
-        #     matches anywhere in a preset name (not just prefix).
-        #   - Wider popup so the long ASM-imported names like
-        #     '[ASM] Assassin's Creed Mirage' aren't truncated.
-        #   - Select-all on focus so the user can start typing a new
-        #     search without first deleting the currently-loaded
-        #     preset's name.
-        #   - Clear button in the line edit gives a one-click wipe.
-        completer = self.preset_combo.completer()
-        if completer is not None:
-            completer.setFilterMode(Qt.MatchContains)
-            completer.setCompletionMode(QCompleter.PopupCompletion)
-            completer.setCaseSensitivity(Qt.CaseInsensitive)
-            completer.popup().setMinimumWidth(360)
-        line_edit = self.preset_combo.lineEdit()
-        if line_edit is not None:
-            line_edit.setClearButtonEnabled(True)
-            line_edit.setPlaceholderText("Search presets…")
-            self._preset_focus_filter = _SelectAllOnFocus(self)
-            line_edit.installEventFilter(self._preset_focus_filter)
+        # Use the custom SearchableSelect — QComboBox-with-completer
+        # has a pile of issues we don't want here: existing selection
+        # blocks search until manually cleared, scroll-wheel cycles
+        # through entries (catastrophic with auto-apply), the popup
+        # is separate from the dropdown, and long ASM names get
+        # truncated. SearchableSelect bakes in: search field at the
+        # top of the popup, instant substring filter, keyboard nav,
+        # wheel events ignored.
+        self.preset_combo = SearchableSelect()
         self.preset_combo.setMinimumWidth(220)
-        self.preset_combo.currentTextChanged.connect(self._on_preset_text_changed)
+        self.preset_combo.currentIndexChanged.connect(self._on_preset_index_changed)
         # `activated` fires only when the user actually picks an item
-        # from the dropdown popup (or hits Enter on a typed match) —
-        # not on programmatic setCurrentIndex / setCurrentText. That's
-        # exactly what we want for "auto-apply on selection": the
-        # user's gesture loads the preset, but our own combo refreshes
-        # don't trigger spurious loads.
+        # from the popup — programmatic setCurrentIndex doesn't
+        # trigger it, so internal repopulates don't kick off
+        # spurious loads.
         self.preset_combo.activated.connect(self._on_preset_activated)
         preset_picker_row.addWidget(self.preset_combo, 1)
         # Star toggle. Outline = not favourited, filled = favourited.
@@ -393,7 +359,7 @@ class EqualizerTab(QWidget):
 
         # Test-audio card ----------------------------------------------
         test_row = QHBoxLayout()
-        self.test_audio_combo = QComboBox()
+        self.test_audio_combo = NoWheelComboBox()
         for label, _factory in TEST_AUDIO_CATALOGUE:
             self.test_audio_combo.addItem(label)
         self.test_audio_combo.setMinimumWidth(200)
@@ -666,9 +632,10 @@ class EqualizerTab(QWidget):
             return text[2:].strip()
         return text
 
-    def _on_preset_text_changed(self, _text: str) -> None:
-        # Rename + Delete are only meaningful for user-saved presets —
-        # toggle them whenever the dropdown's selected name changes.
+    def _on_preset_index_changed(self, _idx: int) -> None:
+        # Rename + Delete + favourite-star are only meaningful for the
+        # currently-selected preset's identity — refresh them when the
+        # selection changes (programmatic OR user-driven).
         self._update_action_buttons()
 
     def _update_action_buttons(self) -> None:

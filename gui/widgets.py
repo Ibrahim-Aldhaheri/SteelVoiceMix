@@ -20,6 +20,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -367,6 +368,21 @@ class ToggleSwitch(QCheckBox):
 
 
 # ------------------------------------------------------- labelled toggle
+
+
+class NoWheelComboBox(QComboBox):
+    """QComboBox subclass that ignores mouse-wheel events.
+
+    Stock QComboBox cycles through entries on scroll, even when the
+    popup is closed. Combined with our auto-apply-on-change wiring
+    (channel switch reloads the EQ tab; preset selection re-routes
+    audio), an accidental scroll while the cursor is over the combo
+    silently changes app behaviour without the user touching it.
+    Using this subclass instead is a one-character swap that
+    eliminates the surprise."""
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
 
 
 def labelled_toggle(
