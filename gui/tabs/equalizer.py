@@ -339,7 +339,17 @@ class EqualizerTab(QWidget):
         self.test_stop_btn.setEnabled(False)
         test_row.addWidget(self.test_play_btn)
         test_row.addWidget(self.test_stop_btn)
-        layout.addWidget(card("Test Audio", test_row))
+        test_help = QLabel(
+            "Reference-level signals for ear-checking the EQ. Pink noise is "
+            "the recommended starting point. ⚠ Lower system volume before "
+            "the first Play — wideband noise on a headset is louder than "
+            "music at the same nominal level."
+        )
+        test_help.setWordWrap(True)
+        test_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+        layout.addWidget(card("Test Audio", test_row, test_help))
 
         layout.addStretch(1)
 

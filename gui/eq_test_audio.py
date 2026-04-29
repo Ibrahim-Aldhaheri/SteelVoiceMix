@@ -30,6 +30,21 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 48000  # PipeWire default — clean sines up to 20 kHz.
 
+# Output levels are intentionally well below full-scale. Test signals
+# get played at whatever the user's master volume happens to be — set
+# for music or voice — and wideband noise at unity gain into a headset
+# is brutally loud (equal energy across the whole spectrum). Targets:
+#   - Noise:  ~-25 dBFS RMS  (≈ 0.056 RMS, ≈ 0.18 peak)
+#   - Tones / sweeps: ~-15 dBFS peak  (≈ 0.18)
+# These match common EQ-tuning practice and protect the user's hearing
+# if they forget to drop the volume before pressing Play.
+NOISE_PEAK = 0.18
+TONE_PEAK = 0.18
+# Fade-in / fade-out length applied to every clip. 50 ms is long enough
+# to avoid the sharp transient that made the original noise generators
+# feel like a slap on first listen.
+_FADE_S = 0.05
+
 # Channel key → user-facing PipeWire sink name. Mirrors the constants
 # in src/audio.rs; if those rename, this needs to follow.
 CHANNEL_TO_SINK: dict[str, str] = {
@@ -70,32 +85,50 @@ def _write_wav(samples: list[float], filename: str) -> Path:
 # ------------------------------------------------------------ generators
 
 
+def _apply_envelope(samples: list[float], target_peak: float) -> list[float]:
+    """Normalise to the requested peak amplitude and apply a 50 ms
+    attack + release fade. Used by the noise generators since they're
+    inherently unbounded — without this the first sample can be at
+    full scale, which is what made the original clips painful."""
+    if not samples:
+        return samples
+    cur_peak = max(abs(s) for s in samples) or 1.0
+    scale = target_peak / cur_peak
+    n = len(samples)
+    fade_n = int(_FADE_S * SAMPLE_RATE)
+    out = [0.0] * n
+    for i, s in enumerate(samples):
+        env = 1.0
+        if i < fade_n:
+            env = i / fade_n
+        elif i > n - fade_n:
+            env = (n - i) / fade_n
+        out[i] = s * scale * env
+    return out
+
+
 def pink_noise(duration_s: float = 5.0) -> Path:
     """Voss-McCartney pink noise — equal energy per octave. The
     standard reference signal for EQ tuning: when you boost a band, you
     literally hear that frequency range get louder relative to the rest
-    of the spectrum."""
+    of the spectrum. Output is normalised to NOISE_PEAK with a soft
+    fade envelope so it doesn't slap on press-Play."""
     n_samples = int(duration_s * SAMPLE_RATE)
     rows = 16
     state = [random.uniform(-1.0, 1.0) for _ in range(rows)]
     running = sum(state)
-    out = []
+    raw = []
     counter = 0
-    # Voss-McCartney trick: on each step pick the row whose update bit
-    # just flipped (low bit of `counter` tells us which one). Sum all
-    # rows + a white-noise component, then normalise.
     norm = 1.0 / (rows + 1)
     for _ in range(n_samples):
         counter += 1
-        # Index of lowest set bit; runs from 0 up, with frequency
-        # halving for each higher index — that's what gives us pink.
         bit = (counter & -counter).bit_length() - 1
         if bit < rows:
             new_val = random.uniform(-1.0, 1.0)
             running += new_val - state[bit]
             state[bit] = new_val
-        out.append((running + random.uniform(-1.0, 1.0)) * norm)
-    return _write_wav(out, "pink-noise.wav")
+        raw.append((running + random.uniform(-1.0, 1.0)) * norm)
+    return _write_wav(_apply_envelope(raw, NOISE_PEAK), "pink-noise.wav")
 
 
 def white_noise(duration_s: float = 5.0) -> Path:
@@ -103,8 +136,8 @@ def white_noise(duration_s: float = 5.0) -> Path:
     useful than pink for octave-by-octave EQ judgement (high
     frequencies dominate perceptually) but handy as a contrast."""
     n_samples = int(duration_s * SAMPLE_RATE)
-    out = [random.uniform(-0.3, 0.3) for _ in range(n_samples)]
-    return _write_wav(out, "white-noise.wav")
+    raw = [random.uniform(-1.0, 1.0) for _ in range(n_samples)]
+    return _write_wav(_apply_envelope(raw, NOISE_PEAK), "white-noise.wav")
 
 
 def sine_sweep(duration_s: float, f_start: float, f_end: float) -> Path:
@@ -121,14 +154,13 @@ def sine_sweep(duration_s: float, f_start: float, f_end: float) -> Path:
     ratio = f_end / f_start
     k = duration_s / math.log(ratio)
     out = []
-    # Soft fade in/out (10 ms each side) so the sweep doesn't click on
-    # start/stop. At log frequency, the start is a barely-audible
-    # ~20 Hz rumble — fade-in is mostly belt-and-suspenders.
-    fade_n = int(0.010 * SAMPLE_RATE)
+    # 50 ms fades on both ends so the sweep doesn't click on start/stop
+    # and so the perceived loudness ramps gently.
+    fade_n = int(_FADE_S * SAMPLE_RATE)
     for i in range(n_samples):
         t = i / SAMPLE_RATE
         phase = 2.0 * math.pi * f_start * k * (math.exp(t / k) - 1.0)
-        s = 0.5 * math.sin(phase)
+        s = TONE_PEAK * math.sin(phase)
         if i < fade_n:
             s *= i / fade_n
         elif i > n_samples - fade_n:
@@ -147,12 +179,12 @@ def tone(freq: float, duration_s: float = 3.0) -> Path:
     if freq <= 0:
         raise ValueError("tone frequency must be positive")
     n_samples = int(duration_s * SAMPLE_RATE)
-    fade_n = int(0.050 * SAMPLE_RATE)
+    fade_n = int(_FADE_S * SAMPLE_RATE)
     out = []
     omega = 2.0 * math.pi * freq
     for i in range(n_samples):
         t = i / SAMPLE_RATE
-        s = 0.5 * math.sin(omega * t)
+        s = TONE_PEAK * math.sin(omega * t)
         if i < fade_n:
             s *= i / fade_n
         elif i > n_samples - fade_n:
