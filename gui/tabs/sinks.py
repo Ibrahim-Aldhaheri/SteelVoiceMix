@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..widgets import card, labelled_toggle
+from ..widgets import alpha_badge, card, labelled_toggle
 
 
 class SinksTab(QWidget):
@@ -34,12 +34,22 @@ class SinksTab(QWidget):
         media_row.addWidget(media_lbl)
         media_row.addWidget(self.media_btn, 1)
 
+        # HDMI is marked ALPHA — author hasn't actually run it through
+        # a real TV/AVR yet. Functionality wires up; the badge tells
+        # users to expect rough edges until it's hardware-verified.
         hdmi_row = QHBoxLayout()
         hdmi_lbl = QLabel("📺  HDMI")
         hdmi_lbl.setFixedWidth(80)
+        hdmi_alpha = alpha_badge(
+            tooltip=(
+                "Alpha — not yet hardware-verified against a real "
+                "HDMI sink (TV / AVR)."
+            )
+        )
         self.hdmi_btn = QPushButton("Add HDMI")
         self.hdmi_btn.clicked.connect(self._toggle_hdmi)
         hdmi_row.addWidget(hdmi_lbl)
+        hdmi_row.addWidget(hdmi_alpha, 0)
         hdmi_row.addWidget(self.hdmi_btn, 1)
 
         sinks_help = QLabel(

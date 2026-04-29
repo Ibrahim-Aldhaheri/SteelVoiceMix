@@ -370,6 +370,25 @@ class ToggleSwitch(QCheckBox):
 # ------------------------------------------------------- labelled toggle
 
 
+def alpha_badge(text: str = "ALPHA", *, tooltip: str | None = None) -> QLabel:
+    """Small orange pill used to mark unstable / experimental features.
+    Same visual treatment as the badge in `labelled_toggle`, exposed
+    as a free helper so it can sit alongside non-toggle controls (e.g.
+    next to a button-style row in the Sinks tab)."""
+    label = QLabel(text)
+    label.setStyleSheet(
+        f"background: {WARN};"
+        "color: white;"
+        "font-size: 9px;"
+        "font-weight: bold;"
+        "padding: 2px 6px;"
+        "border-radius: 4px;"
+    )
+    if tooltip:
+        label.setToolTip(tooltip)
+    return label
+
+
 class NoWheelComboBox(QComboBox):
     """QComboBox subclass that ignores mouse-wheel events.
 
