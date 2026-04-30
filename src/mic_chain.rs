@@ -126,6 +126,20 @@ impl MicChainHandle {
         let _ = fs::remove_file(&self.conf_path);
         info!("Mic chain (pid {pid}) shut down");
     }
+
+    /// True if the spawned `pipewire -c <conf>` child has exited.
+    /// Returns true on transient errors too — those almost always
+    /// mean the child is gone and the watchdog should respawn anyway.
+    /// The hardware ALSA source disappearing during system suspend
+    /// kills the child without us noticing; the watchdog uses this
+    /// to detect that and trigger a fresh spawn.
+    pub fn is_dead(&mut self) -> bool {
+        match self.child.try_wait() {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
+            Err(_) => true,
+        }
+    }
 }
 
 impl Drop for MicChainHandle {

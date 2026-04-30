@@ -250,6 +250,45 @@ impl SinkManager {
         }
     }
 
+    /// Watchdog check — call periodically while a session is live.
+    /// Detects two failure modes that bite after system suspend:
+    ///   1. The mic-chain pipewire child died (its ALSA source went
+    ///      away during sleep) — spawn a fresh chain.
+    ///   2. We never had a chain because the mic source wasn't
+    ///      visible at create_sinks time — re-discover and spawn if
+    ///      the user has features enabled.
+    /// No-op when no features are enabled.
+    pub fn check_mic_health(&mut self) {
+        let any_features = self.mic_state.noise_gate.enabled
+            || self.mic_state.noise_reduction.enabled
+            || self.mic_state.ai_noise_cancellation.enabled;
+        if !any_features {
+            return;
+        }
+        // Case 1: chain handle still held but child has exited.
+        if let Some(handle) = self.mic_chain.as_mut() {
+            if handle.is_dead() {
+                warn!("Mic chain child exited unexpectedly — respawning");
+                if let Some(dead) = self.mic_chain.take() {
+                    dead.shutdown();
+                }
+            } else {
+                return;
+            }
+        }
+        // Case 2 (or fall-through from case 1): no live chain, but
+        // user wants one. Refresh the source name in case the ALSA
+        // device re-enumerated under a different name post-wake.
+        if let Some(source) = Self::find_mic_source() {
+            if self.mic_source.as_deref() != Some(source.as_str()) {
+                info!("Mic source changed: {source}");
+                self.mic_source = Some(source);
+            }
+            let saved = self.mic_state;
+            self.set_mic_state(saved);
+        }
+    }
+
     /// Auto-detect the Arctis Nova Pro Wireless capture (microphone)
     /// source via pactl. Symmetric to `find_output_sink` — looks for
     /// the same OUTPUT_MATCH substring but on the input list. Returns

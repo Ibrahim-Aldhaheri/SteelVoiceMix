@@ -29,6 +29,13 @@ pub fn broadcast_event(
 const RECONNECT_BASE: Duration = Duration::from_secs(3);
 const RECONNECT_MAX: Duration = Duration::from_secs(30);
 const BATTERY_POLL_INTERVAL: Duration = Duration::from_secs(60);
+// Watchdog cadence for the mic chain. After system suspend the
+// spawned `pipewire -c <conf>` child can die when its capture-side
+// ALSA source disappears, leaving the mic effectively dead until
+// the user toggles a feature. 5s is short enough that a typical
+// resume-from-sleep brings the mic back before the user reaches for
+// their app, but long enough to not show up in profiling.
+const MIC_HEALTH_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Why the event loop returned. Reconnect on `Disconnected`, exit on `Shutdown`.
 enum SessionEnd {
@@ -345,6 +352,7 @@ impl Mixer {
         display: &mut Option<ChatMixGauge>,
     ) -> SessionEnd {
         let mut last_battery_poll = Instant::now();
+        let mut last_mic_health = Instant::now();
         // Track the last-applied sidetone level so we can detect
         // GUI-driven changes from MixerState and push them to the
         // device. Initialised from current state (already applied at
@@ -404,6 +412,10 @@ impl Mixer {
                     if last_battery_poll.elapsed() >= BATTERY_POLL_INTERVAL {
                         self.poll_and_broadcast_battery(dev);
                         last_battery_poll = Instant::now();
+                    }
+                    if last_mic_health.elapsed() >= MIC_HEALTH_INTERVAL {
+                        self.sinks.lock().unwrap().check_mic_health();
+                        last_mic_health = Instant::now();
                     }
                 }
                 Err(_) => {
