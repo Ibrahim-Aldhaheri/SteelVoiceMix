@@ -22,12 +22,22 @@ PACKAGE="steelvoicemix"
 
 # Build script COPR runs to produce the SRPM. Clones dev branch,
 # uses the dev spec's git_dir_version macro for auto-versioning.
+#
+# Note the unshallow + tags fetch: rpkg's `git_dir_version` macro
+# expands via `git describe --tags`, which needs the latest stable
+# tag (e.g. `v0.3.1`) to be reachable from the dev HEAD. A shallow
+# clone (50 commits) often misses that tag, in which case rpkg
+# falls back to `0.0` as the version — and `0.0.git.<sha>` sorts
+# BELOW the stable 0.3.1 in RPM vercmp, breaking the alpha-replaces-
+# stable upgrade flow. The unshallow + tags fetch costs ~2 MB extra
+# but guarantees correct versioning.
 read -r -d '' BUILD_SCRIPT <<'EOF' || true
 #!/bin/bash
 set -eu
 dnf -y install rpkg-util git
 git clone --depth=50 https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix.git
 cd SteelVoiceMix
+git fetch --unshallow --tags 2>/dev/null || git fetch --tags
 git checkout dev
 rpkg srpm --spec steelvoicemix-dev.spec --outdir "$outdir"
 EOF
