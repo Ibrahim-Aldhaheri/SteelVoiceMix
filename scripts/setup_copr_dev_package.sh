@@ -53,12 +53,33 @@ script_path=$(mktemp --suffix=.sh)
 trap 'rm -f "$script_path"' EXIT
 printf '%s\n' "$BUILD_SCRIPT" > "$script_path"
 
-action=add
-if copr-cli list-packages "$PROJECT" 2>/dev/null \
-   | grep -q "^- $PACKAGE\$\|name: $PACKAGE\b"; then
-    echo "Package $PACKAGE already exists in $PROJECT — refreshing script."
-    action=edit
+# Determine current package state. We need to know not just whether
+# the package exists, but ALSO its source type — copr-cli won't let
+# us convert an SCM-source package into a Custom-source one in
+# place; if the type is wrong, we have to delete + recreate.
+existing_type=""
+if copr-cli get-package "$PROJECT" --name "$PACKAGE" --with-latest-build \
+       >/tmp/copr-pkg.json 2>/dev/null; then
+    existing_type=$(python3 -c "import json,sys; print(json.load(open('/tmp/copr-pkg.json')).get('source_type',''))" 2>/dev/null || true)
 fi
+rm -f /tmp/copr-pkg.json
+
+case "$existing_type" in
+    "")
+        action=add
+        echo "Package $PACKAGE not found — creating as Custom-script source."
+        ;;
+    custom)
+        action=edit
+        echo "Package $PACKAGE already exists as Custom — refreshing script."
+        ;;
+    *)
+        echo "Package $PACKAGE exists with source type '$existing_type', not 'custom'."
+        echo "Recreating it as Custom — required for our build script to run."
+        copr-cli delete-package "$PROJECT" --name "$PACKAGE"
+        action=add
+        ;;
+esac
 
 copr-cli "${action}-package-custom" "$PROJECT" \
     --name "$PACKAGE" \
