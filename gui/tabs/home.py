@@ -145,13 +145,7 @@ class HomeTab(QWidget):
             pill_row.addWidget(pill)
         pill_row.addStretch(1)
 
-        hint = QLabel(
-            "Tap any feature's tab to toggle it. Green = active."
-        )
-        hint.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
-        )
-        return card("Active Features", pill_row, hint)
+        return card("Active Features", pill_row)
 
     # ---------------------------------------------------- daemon-event hooks
 
