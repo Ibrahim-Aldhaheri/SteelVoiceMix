@@ -141,20 +141,23 @@ class MixerGUI(QMainWindow):
         # handlers. The window only routes daemon events to them.
         self.home_tab = HomeTab(self.daemon_client)
         self.sinks_tab = SinksTab(self.daemon_client)
-        self.eq_tab = EqualizerTab(self.daemon_client, self.settings)
         self.surround_tab = SurroundTab(self.daemon_client)
         self.mic_tab = MicrophoneTab(self.daemon_client, self.settings)
-        # Build the game-EQ manager early so SettingsTab can read its
-        # latest_seen() for the manual-binding dropdown.
+        # EqualizerTab hosts the Auto Game-EQ card at the bottom and
+        # needs the GameProfileManager to drive it. Manager needs
+        # the EQ tab's per-channel bands cache for snapshots, so we
+        # resolve the chicken-and-egg by building the EQ tab without
+        # the manager first, then patching it in once both exist.
+        self.eq_tab = EqualizerTab(self.daemon_client, self.settings)
         self.game_eq_manager = GameProfileManager(
             self.daemon_client, self.settings, self.eq_tab._bands_by_channel
         )
+        self.eq_tab._game_eq_manager = self.game_eq_manager
+        self.eq_tab._game_eq_manager.detected_changed.connect(
+            self.eq_tab._on_detected_changed
+        )
         self.settings_tab = SettingsTab(
-            self.settings,
-            self.overlay,
-            self.sinks_tab,
-            self.daemon_client,
-            game_eq_manager=self.game_eq_manager,
+            self.settings, self.overlay, self.sinks_tab, self.daemon_client,
         )
 
         # Sidebar nav: a vertical QListWidget on the left that drives a

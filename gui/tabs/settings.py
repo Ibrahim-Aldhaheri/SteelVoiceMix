@@ -9,13 +9,10 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QHBoxLayout,
-    QHeaderView,
     QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -47,7 +44,6 @@ from ..settings import (
     save as save_settings,
     save_profile,
 )
-from ..eq_presets import list_presets
 from ..theme import THEME_MODES, apply_theme, normalize_mode
 from ..widgets import POSITION_DISPLAY, card, labelled_toggle
 
@@ -55,29 +51,16 @@ log = logging.getLogger(__name__)
 
 
 class SettingsTab(QWidget):
-    def __init__(
-        self,
-        settings: dict,
-        overlay,
-        sinks_tab,
-        daemon_client,
-        game_eq_manager=None,
-        parent=None,
-    ):
+    def __init__(self, settings: dict, overlay, sinks_tab, daemon_client, parent=None):
         """`overlay` is the DialOverlay instance. `sinks_tab` is the
         SinksTab — needed to apply Media/HDMI toggles when a profile
         loads. `daemon_client` is needed by the Reset button to issue
-        a daemon-side `reset-state` alongside the GUI's own wipe.
-        `game_eq_manager` is the GameProfileManager — used by the
-        Auto Game-EQ card to populate the binding dropdown with the
-        currently-detected app names and to show the live 'detected'
-        status."""
+        a daemon-side `reset-state` alongside the GUI's own wipe."""
         super().__init__(parent)
         self._settings = settings
         self._overlay = overlay
         self._sinks_tab = sinks_tab
         self._daemon = daemon_client
-        self._game_eq_manager = game_eq_manager
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -232,82 +215,6 @@ class SettingsTab(QWidget):
             card("Audio Profiles", profile_row, profile_btns, profile_help)
         )
 
-        # Auto game-EQ card --------------------------------------------
-        # Toggle (with ALPHA badge — the watcher polls pactl every 2 s
-        # and game-detection relies on PipeWire's application.name
-        # which apps report inconsistently) + manual bindings table.
-        auto_game_row, self.auto_game_toggle = labelled_toggle(
-            "Auto-switch EQ when a known game launches",
-            badge="ALPHA",
-        )
-        self.auto_game_toggle.setChecked(
-            bool(self._settings.get("auto_game_eq_enabled", False))
-        )
-        self.auto_game_toggle.toggled.connect(self._toggle_auto_game)
-
-        # Manual bindings table — 2 columns: game name (free-text) and
-        # preset name (combo with every Game-channel preset visible
-        # in the EQ tab). Bindings take precedence over the bundled
-        # ASM fuzzy match.
-        self.bindings_table = QTableWidget(0, 2)
-        self.bindings_table.setHorizontalHeaderLabels(["Game name", "EQ preset"])
-        self.bindings_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.Stretch
-        )
-        self.bindings_table.verticalHeader().setVisible(False)
-        self.bindings_table.setMinimumHeight(140)
-        self._refresh_bindings_table()
-
-        bindings_btns = QHBoxLayout()
-        add_btn = QPushButton("Add binding…")
-        add_btn.clicked.connect(self._add_binding)
-        del_btn = QPushButton("Remove selected")
-        del_btn.clicked.connect(self._remove_binding)
-        bindings_btns.addWidget(add_btn)
-        bindings_btns.addWidget(del_btn)
-        bindings_btns.addStretch(1)
-
-        # Live detection status — what was last seen on PipeWire and
-        # whether it'd actually take effect (clients NOT on
-        # SteelGame won't hear the EQ change). Updated by the
-        # GameProfileManager's detected_changed signal.
-        self.detected_label = QLabel("Currently detected: none")
-        self.detected_label.setWordWrap(True)
-        self.detected_label.setStyleSheet(
-            "font-size: 10px; padding: 4px 0;"
-        )
-        if self._game_eq_manager is not None:
-            self._game_eq_manager.detected_changed.connect(
-                self._on_detected_changed
-            )
-
-        auto_game_help = QLabel(
-            "When on, the app watches PipeWire for active audio "
-            "clients and, if one matches a bundled ASM preset, "
-            "applies it to the Game channel. The manual table below "
-            "overrides the auto-match. Closing the game restores "
-            "whatever EQ you had before it launched. Note: the EQ "
-            "only takes effect when the game's audio is routed to "
-            "SteelGame — if the status above says 'not on SteelGame', "
-            "move the stream via your system audio settings or "
-            "pavucontrol."
-        )
-        auto_game_help.setWordWrap(True)
-        auto_game_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
-        )
-
-        layout.addWidget(
-            card(
-                "Auto Game-EQ",
-                auto_game_row,
-                self.detected_label,
-                self.bindings_table,
-                bindings_btns,
-                auto_game_help,
-            )
-        )
-
         # Alpha channel card -------------------------------------------
         # The GUI can't actually run sudo, so this card just shows the
         # commands and a "Copy to clipboard" button. Users paste into
@@ -429,126 +336,6 @@ class SettingsTab(QWidget):
         self._settings["notify_minimize_hint"] = checked
         save_settings(self._settings)
 
-    def _toggle_auto_game(self, checked: bool) -> None:
-        self._settings["auto_game_eq_enabled"] = checked
-        save_settings(self._settings)
-
-    def _on_detected_changed(
-        self, name: str, preset, on_steel_game: bool
-    ) -> None:
-        """Update the live 'Currently detected' status line. Three
-        states: none, detected-and-routable, detected-but-not-on-
-        SteelGame. The third one is the noisy case the user hit
-        with Horizon — the game is seen but the EQ wouldn't take
-        effect because the stream isn't on the right sink."""
-        if not name:
-            self.detected_label.setText("Currently detected: none")
-            self.detected_label.setStyleSheet(
-                "font-size: 10px; padding: 4px 0; "
-                "color: palette(placeholder-text);"
-            )
-            return
-        preset_part = f" → {preset}" if preset else " (no preset match)"
-        if on_steel_game:
-            self.detected_label.setText(
-                f"Currently detected: {name}{preset_part}"
-            )
-            self.detected_label.setStyleSheet(
-                "font-size: 10px; padding: 4px 0; color: #4CAF50;"
-            )
-        else:
-            self.detected_label.setText(
-                f"Currently detected: {name}{preset_part} "
-                "— not on SteelGame, EQ won't apply"
-            )
-            self.detected_label.setStyleSheet(
-                "font-size: 10px; padding: 4px 0; color: #FF9800;"
-            )
-
-    def _refresh_bindings_table(self) -> None:
-        """Repopulate the bindings table from `settings['game_eq_bindings']`."""
-        bindings: dict = self._settings.get("game_eq_bindings") or {}
-        self.bindings_table.setRowCount(0)
-        for game, preset in sorted(bindings.items()):
-            row = self.bindings_table.rowCount()
-            self.bindings_table.insertRow(row)
-            self.bindings_table.setItem(row, 0, QTableWidgetItem(game))
-            self.bindings_table.setItem(row, 1, QTableWidgetItem(preset))
-
-    def _add_binding(self) -> None:
-        """Two-step prompt:
-          1. Pick the game from a dropdown of currently-active audio
-             clients (via the watcher's last-seen snapshot). If
-             nothing is currently active, fall back to free text so
-             the user can still pre-bind a game that isn't running.
-          2. Pick the preset from the dropdown of every Game-channel
-             preset visible in the EQ tab.
-
-        We reach into the running GameProfileManager for #1 because
-        it already has a fresh snapshot — re-running pactl here
-        would race with the watcher and confuse the UX."""
-        active: list[str] = []
-        if self._game_eq_manager is not None:
-            active = sorted(self._game_eq_manager.latest_seen().keys())
-        if active:
-            name, ok = QInputDialog.getItem(
-                self,
-                "Bind game to preset",
-                "Active audio clients — pick the one to bind:",
-                active,
-                0,
-                False,  # not editable — user picks what PipeWire reports
-            )
-        else:
-            name, ok = QInputDialog.getText(
-                self,
-                "Bind game to preset",
-                "No active audio clients detected — enter the game "
-                "name manually (must match application.name):",
-            )
-        if not ok or not name or not name.strip():
-            return
-        name = name.strip()
-        preset_names = [p["name"] for p in list_presets("game")]
-        if not preset_names:
-            QMessageBox.warning(
-                self,
-                "No presets available",
-                "There are no Game-channel presets to bind. Save one "
-                "from the Equalizer tab first.",
-            )
-            return
-        preset, ok = QInputDialog.getItem(
-            self,
-            f"Preset for '{name}'",
-            "EQ preset:",
-            preset_names,
-            0,
-            False,
-        )
-        if not ok or not preset:
-            return
-        bindings = dict(self._settings.get("game_eq_bindings") or {})
-        bindings[name] = preset
-        self._settings["game_eq_bindings"] = bindings
-        save_settings(self._settings)
-        self._refresh_bindings_table()
-
-    def _remove_binding(self) -> None:
-        rows = sorted(
-            {idx.row() for idx in self.bindings_table.selectedIndexes()},
-            reverse=True,
-        )
-        if not rows:
-            return
-        bindings = dict(self._settings.get("game_eq_bindings") or {})
-        for r in rows:
-            item = self.bindings_table.item(r, 0)
-            if item:
-                bindings.pop(item.text(), None)
-        self._settings["game_eq_bindings"] = bindings
-        save_settings(self._settings)
-        self._refresh_bindings_table()
 
     def _change_theme(self, index: int) -> None:
         mode = ("auto", "light", "dark")[index] if 0 <= index <= 2 else "auto"
@@ -744,16 +531,6 @@ class SettingsTab(QWidget):
                 self.orient_combo.setCurrentIndex(idx)
             finally:
                 self.orient_combo.blockSignals(was_blocked)
-        # Auto game-EQ toggle + bindings table (reset cleared
-        # bindings via reset_to_defaults_preserving_profiles too).
-        was_blocked = self.auto_game_toggle.blockSignals(True)
-        try:
-            self.auto_game_toggle.setChecked(
-                bool(self._settings.get("auto_game_eq_enabled", False))
-            )
-        finally:
-            self.auto_game_toggle.blockSignals(was_blocked)
-        self._refresh_bindings_table()
         # Theme combo + immediate re-apply so the live window flips
         # back to the default palette as part of the reset.
         mode = normalize_mode(self._settings.get("theme_mode", "auto"))

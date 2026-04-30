@@ -333,15 +333,30 @@ class GameProfileManager(QObject):
 
     def _resolve_preset(self, games) -> str | None:
         """Return the preset name to apply for any of `games`, or
-        None if nothing maps. Manual bindings win over fuzzy ASM
-        matches; among the games in the set, the first one that
-        resolves is chosen (ordering is irrelevant since usually
-        only one game is on SteelGame at a time)."""
-        bindings: dict = self._settings.get("game_eq_bindings") or {}
-        for name in sorted(games):  # deterministic
-            override = bindings.get(name)
-            if override:
-                return override
+        None if nothing maps. Manual bindings (ordered list, first
+        match wins) take precedence over ASM fuzzy matches.
+
+        Resolution order:
+          1. Walk the ordered binding list. For each entry whose
+             `game` matches an active game name, return its preset.
+          2. Fall back to fuzzy-matching every active game against
+             the bundled ASM library; return the first hit."""
+        bindings = self._settings.get("game_eq_bindings") or []
+        active = set(games)
+        if isinstance(bindings, list):
+            for entry in bindings:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("game") in active:
+                    return entry.get("preset") or None
+        else:
+            # Legacy dict shape — load() migrates on next save, but
+            # be defensive for in-memory dicts that pre-date this.
+            for name in sorted(active):
+                override = bindings.get(name)
+                if override:
+                    return override
+        for name in sorted(active):
             asm = match_asm_preset(name)
             if asm:
                 return asm

@@ -82,12 +82,13 @@ DEFAULTS: dict[str, Any] = {
     #   4. Restores the snapshot when the game's sink-input disappears.
     # Off by default — opt-in feature, audible only when on.
     "auto_game_eq_enabled": False,
-    # Manual game-name → preset-name overrides. Takes precedence over
-    # the ASM fuzzy match. One preset can be bound to many games by
-    # adding multiple entries pointing at the same preset name. The
-    # preset name must already exist (built-in / ASM bundled / user
-    # save) on the Game channel.
-    "game_eq_bindings": {},
+    # Ordered list of manual game→preset overrides. First matching
+    # entry wins, so the user controls priority by drag-reordering
+    # rows in the EQ tab's binding table. Each entry is
+    # {"game": <application.name>, "preset": <preset name>}.
+    # Migrated automatically from the legacy dict shape on first
+    # load by `gui/settings.py:load()`.
+    "game_eq_bindings": [],
 }
 
 # Star-tier capacity per channel. Five is enough to cover the main use
@@ -145,6 +146,16 @@ def load() -> dict[str, Any]:
             except OSError:
                 pass
     settings["schema"] = SCHEMA_VERSION
+    # Migrate legacy game_eq_bindings dict → ordered list shape.
+    # Older versions persisted as `{game: preset}` (one preset per
+    # game). New shape is a list of `{game, preset}` so the user
+    # can reorder priority. Convert any dict found on disk to the
+    # list form once; subsequent saves use the list shape.
+    legacy = settings.get("game_eq_bindings")
+    if isinstance(legacy, dict):
+        settings["game_eq_bindings"] = [
+            {"game": k, "preset": v} for k, v in sorted(legacy.items())
+        ]
     return settings
 
 

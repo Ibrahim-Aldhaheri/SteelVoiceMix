@@ -12,13 +12,17 @@ from __future__ import annotations
 
 from PySide6.QtCore import QProcess, Qt, QTimer
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
     QSlider,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -42,6 +46,7 @@ from ..settings import (
     is_favourite,
     remove_favourite,
     rename_favourite,
+    save as save_settings,
 )
 from ..widgets import NoWheelComboBox, card, labelled_toggle
 
@@ -113,12 +118,23 @@ def _band_name_for(freq: float) -> str:
 
 
 class EqualizerTab(QWidget):
-    def __init__(self, daemon_client, settings: dict, parent=None):
+    def __init__(
+        self,
+        daemon_client,
+        settings: dict,
+        game_eq_manager=None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._daemon = daemon_client
         # Settings dict is shared with the rest of the GUI so favourite
         # changes persist alongside overlay/profile prefs.
         self._settings = settings
+        # GameProfileManager — used by the Auto Game-EQ card at the
+        # bottom of the page. We hold it so the binding-add dropdown
+        # can read latest_seen() and the "currently detected" line
+        # can subscribe to detected_changed.
+        self._game_eq_manager = game_eq_manager
         self._eq_enabled = False
 
         # Per-channel band data. Each channel carries its own
@@ -394,7 +410,247 @@ class EqualizerTab(QWidget):
         )
         layout.addWidget(card("Test Audio", test_warn, test_row, test_help))
 
+        # Auto Game-EQ card — lives on the EQ page (rather than
+        # buried in Settings) so users find it where they manage
+        # their EQ.
+        layout.addWidget(self._build_auto_game_card())
+
         layout.addStretch(1)
+
+    # --------------------------------------------------- auto game-EQ card
+
+    def _build_auto_game_card(self) -> QWidget:
+        """Toggle (with ALPHA badge), live 'Currently detected' status
+        line, manual bindings table, and Add/Remove buttons. Talks
+        directly to the GameProfileManager for runtime state and to
+        settings.json for persistence."""
+        auto_row, self.auto_game_toggle = labelled_toggle(
+            "Auto-switch EQ when a known game launches",
+            badge="ALPHA",
+        )
+        self.auto_game_toggle.setChecked(
+            bool(self._settings.get("auto_game_eq_enabled", False))
+        )
+        self.auto_game_toggle.toggled.connect(self._toggle_auto_game)
+
+        self.detected_label = QLabel("Currently detected: none")
+        self.detected_label.setWordWrap(True)
+        self.detected_label.setStyleSheet(
+            "font-size: 10px; padding: 4px 0; "
+            "color: palette(placeholder-text);"
+        )
+        if self._game_eq_manager is not None:
+            self._game_eq_manager.detected_changed.connect(
+                self._on_detected_changed
+            )
+
+        self.bindings_table = QTableWidget(0, 3)
+        self.bindings_table.setHorizontalHeaderLabels(
+            ["#", "Game name", "EQ preset"]
+        )
+        header = self.bindings_table.horizontalHeader()
+        # Priority column stays narrow; the other two share the rest.
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        self.bindings_table.verticalHeader().setVisible(False)
+        self.bindings_table.setMinimumHeight(140)
+        # Drag-drop reorder: row-level selection, internal-move so
+        # users can drag a binding up to raise its priority. The
+        # rowsMoved signal on the model fires after each successful
+        # drop; we persist the new order at that point.
+        self.bindings_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.bindings_table.setDragEnabled(True)
+        self.bindings_table.setAcceptDrops(True)
+        self.bindings_table.setDropIndicatorShown(True)
+        self.bindings_table.setDragDropMode(QAbstractItemView.InternalMove)
+        self.bindings_table.setDragDropOverwriteMode(False)
+        self.bindings_table.model().rowsMoved.connect(self._on_rows_moved)
+        self._refresh_bindings_table()
+
+        bindings_btns = QHBoxLayout()
+        add_btn = QPushButton("Add binding…")
+        add_btn.clicked.connect(self._add_binding)
+        del_btn = QPushButton("Remove selected")
+        del_btn.clicked.connect(self._remove_binding)
+        bindings_btns.addWidget(add_btn)
+        bindings_btns.addWidget(del_btn)
+        bindings_btns.addStretch(1)
+
+        help_lbl = QLabel(
+            "When on, the app watches PipeWire for active audio "
+            "clients and applies a matching ASM preset to the Game "
+            "channel. The table below overrides the auto-match — bind "
+            "the same preset to several games to share one tuning. "
+            "Closing the game restores whatever EQ you had before. "
+            "Note: the EQ only takes effect when the game's audio is "
+            "routed to SteelGame; if the status above says 'not on "
+            "SteelGame', move the stream via your system audio "
+            "settings or pavucontrol."
+        )
+        help_lbl.setWordWrap(True)
+        help_lbl.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        return card(
+            "Auto Game-EQ",
+            auto_row,
+            self.detected_label,
+            self.bindings_table,
+            bindings_btns,
+            help_lbl,
+        )
+
+    def _toggle_auto_game(self, checked: bool) -> None:
+        self._settings["auto_game_eq_enabled"] = checked
+        save_settings(self._settings)
+
+    def _on_detected_changed(
+        self, name: str, preset, on_steel_game: bool
+    ) -> None:
+        if not name:
+            self.detected_label.setText("Currently detected: none")
+            self.detected_label.setStyleSheet(
+                "font-size: 10px; padding: 4px 0; "
+                "color: palette(placeholder-text);"
+            )
+            return
+        preset_part = f" → {preset}" if preset else " (no preset match)"
+        if on_steel_game:
+            self.detected_label.setText(
+                f"Currently detected: {name}{preset_part}"
+            )
+            self.detected_label.setStyleSheet(
+                "font-size: 10px; padding: 4px 0; color: #4CAF50;"
+            )
+        else:
+            self.detected_label.setText(
+                f"Currently detected: {name}{preset_part} "
+                "— not on SteelGame, EQ won't apply"
+            )
+            self.detected_label.setStyleSheet(
+                "font-size: 10px; padding: 4px 0; color: #FF9800;"
+            )
+
+    def _bindings_list(self) -> list[dict]:
+        """Read the bindings list from settings, normalising the
+        legacy dict shape if a stale settings.json predates the
+        migration. Returns a NEW list — caller may mutate freely."""
+        raw = self._settings.get("game_eq_bindings") or []
+        if isinstance(raw, dict):
+            return [{"game": k, "preset": v} for k, v in sorted(raw.items())]
+        out: list[dict] = []
+        for entry in raw:
+            if isinstance(entry, dict) and entry.get("game") and entry.get("preset"):
+                out.append({"game": entry["game"], "preset": entry["preset"]})
+        return out
+
+    def _refresh_bindings_table(self) -> None:
+        """Repopulate the table from the ordered bindings list. The
+        priority column shows 1-based index so users see at a glance
+        which binding wins on conflict."""
+        bindings = self._bindings_list()
+        self.bindings_table.setRowCount(0)
+        for entry in bindings:
+            row = self.bindings_table.rowCount()
+            self.bindings_table.insertRow(row)
+            prio_item = QTableWidgetItem(str(row + 1))
+            prio_item.setTextAlignment(Qt.AlignCenter)
+            prio_item.setFlags(prio_item.flags() & ~Qt.ItemIsEditable)
+            self.bindings_table.setItem(row, 0, prio_item)
+            game_item = QTableWidgetItem(entry["game"])
+            game_item.setFlags(game_item.flags() & ~Qt.ItemIsEditable)
+            preset_item = QTableWidgetItem(entry["preset"])
+            preset_item.setFlags(preset_item.flags() & ~Qt.ItemIsEditable)
+            self.bindings_table.setItem(row, 1, game_item)
+            self.bindings_table.setItem(row, 2, preset_item)
+
+    def _on_rows_moved(self, _parent, _start, _end, _dest, _row) -> None:
+        """User drag-drop reordered the rows. Read the new order back
+        from the table widget and persist as the canonical list. We
+        ignore the indices Qt hands us because re-reading the table
+        is simpler and authoritative."""
+        new_order: list[dict] = []
+        for r in range(self.bindings_table.rowCount()):
+            game_item = self.bindings_table.item(r, 1)
+            preset_item = self.bindings_table.item(r, 2)
+            if game_item and preset_item:
+                new_order.append({
+                    "game": game_item.text(),
+                    "preset": preset_item.text(),
+                })
+        self._settings["game_eq_bindings"] = new_order
+        save_settings(self._settings)
+        # Re-render to refresh the priority column numbers.
+        self._refresh_bindings_table()
+
+    def _add_binding(self) -> None:
+        active: list[str] = []
+        if self._game_eq_manager is not None:
+            active = sorted(self._game_eq_manager.latest_seen().keys())
+        if active:
+            name, ok = QInputDialog.getItem(
+                self,
+                "Bind game to preset",
+                "Active audio clients — pick the one to bind:",
+                active,
+                0,
+                False,
+            )
+        else:
+            name, ok = QInputDialog.getText(
+                self,
+                "Bind game to preset",
+                "No active audio clients detected — enter the game "
+                "name manually (must match application.name):",
+            )
+        if not ok or not name or not name.strip():
+            return
+        name = name.strip()
+        preset_names = [p["name"] for p in list_presets("game")]
+        if not preset_names:
+            QMessageBox.warning(
+                self,
+                "No presets available",
+                "There are no Game-channel presets to bind. Save one "
+                "from this tab first.",
+            )
+            return
+        preset, ok = QInputDialog.getItem(
+            self,
+            f"Preset for '{name}'",
+            "EQ preset:",
+            preset_names,
+            0,
+            False,
+        )
+        if not ok or not preset:
+            return
+        # Append to the ordered list — new entries land at the bottom
+        # (lowest priority); the user drags up if they want it to win.
+        # Duplicates are allowed: same game + different preset is the
+        # whole point of "first match wins" priority ordering.
+        bindings = self._bindings_list()
+        bindings.append({"game": name, "preset": preset})
+        self._settings["game_eq_bindings"] = bindings
+        save_settings(self._settings)
+        self._refresh_bindings_table()
+
+    def _remove_binding(self) -> None:
+        rows = sorted(
+            {idx.row() for idx in self.bindings_table.selectedIndexes()},
+            reverse=True,
+        )
+        if not rows:
+            return
+        bindings = self._bindings_list()
+        for r in rows:
+            if 0 <= r < len(bindings):
+                bindings.pop(r)
+        self._settings["game_eq_bindings"] = bindings
+        save_settings(self._settings)
+        self._refresh_bindings_table()
 
     # ---------------------------------------------------- daemon-event hooks
 
