@@ -71,6 +71,9 @@ DEFAULTS: dict[str, Any] = {
     # gates the user-facing dialog so it only appears the very
     # first time, not every toggle.
     "mic_default_promoted_shown": False,
+    # Appearance: 'auto' follows the system colour scheme; 'light'
+    # / 'dark' override with our packaged palettes. See gui/theme.py.
+    "theme_mode": "auto",
 }
 
 # Star-tier capacity per channel. Five is enough to cover the main use

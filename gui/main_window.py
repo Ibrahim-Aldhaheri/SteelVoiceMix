@@ -43,6 +43,7 @@ from .settings import (
     normalize_position,
     save as save_settings,
 )
+from .theme import apply_theme, normalize_mode
 from .tabs.equalizer import EqualizerTab
 from .tabs.home import HomeTab
 from .tabs.microphone import MicrophoneTab
@@ -59,17 +60,21 @@ class MixerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(DISPLAY_NAME)
-        # Window grew to give EQ sliders room to breathe and to leave
-        # space for future controls (ASM preset import, default HRIR
-        # toggle, etc.). Tabs are wrapped in QScrollArea so that even on
-        # smaller screens the content can scroll instead of getting
-        # crushed — the EQ tab in particular has fixed-height slider
-        # columns that would otherwise pressure the layout.
-        self.setFixedSize(880, 720)
+        # Responsive window: minimum size keeps the layout readable
+        # but the user can drag larger. Tabs are wrapped in
+        # QScrollArea so the EQ tab's fixed-height slider columns
+        # don't get crushed if the window goes smaller than the
+        # content.
+        self.setMinimumSize(820, 660)
+        self.resize(900, 740)
         self.setWindowIcon(app_icon())
         self.setStyleSheet(GLOBAL_QSS)
 
         self.settings = load_settings()
+        # Apply the persisted theme BEFORE the window builds so first
+        # paint already reflects the user's choice. Auto follows the
+        # OS via QStyleHints.colorScheme() (Qt 6.5+).
+        apply_theme(normalize_mode(self.settings.get("theme_mode", "auto")))
         self.overlay = DialOverlay()
         self.overlay.set_orientation(
             normalize_orientation(

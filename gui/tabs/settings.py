@@ -44,6 +44,7 @@ from ..settings import (
     save as save_settings,
     save_profile,
 )
+from ..theme import THEME_MODES, apply_theme, normalize_mode
 from ..widgets import POSITION_DISPLAY, card, labelled_toggle
 
 log = logging.getLogger(__name__)
@@ -106,6 +107,35 @@ class SettingsTab(QWidget):
         orient_row.addWidget(self.orient_combo, 1)
 
         layout.addWidget(card("Overlay", overlay_row, position_row, orient_row))
+
+        # Appearance card ---------------------------------------------
+        # Auto = follow the system colour scheme (Qt 6.5+ honours the
+        # XDG portal hint). Light/Dark force our packaged palettes.
+        # Implementation lives in gui/theme.py — swapping QPalette
+        # propagates everywhere the QSS uses palette(...) refs.
+        theme_row = QHBoxLayout()
+        theme_lbl = QLabel("Theme")
+        theme_lbl.setFixedWidth(80)
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["Auto (system)", "Light", "Dark"])
+        current_theme = normalize_mode(self._settings.get("theme_mode", "auto"))
+        self.theme_combo.setCurrentIndex(
+            {"auto": 0, "light": 1, "dark": 2}.get(current_theme, 0)
+        )
+        self.theme_combo.currentIndexChanged.connect(self._change_theme)
+        theme_row.addWidget(theme_lbl)
+        theme_row.addWidget(self.theme_combo, 1)
+
+        theme_help = QLabel(
+            "Auto follows your desktop's light / dark setting. Pick "
+            "Light or Dark to override."
+        )
+        theme_help.setWordWrap(True)
+        theme_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        layout.addWidget(card("Appearance", theme_row, theme_help))
 
         # Startup card -------------------------------------------------
         autostart_row, self.autostart_toggle = labelled_toggle(
@@ -287,6 +317,14 @@ class SettingsTab(QWidget):
     def _toggle_minimize_hint(self, checked: bool) -> None:
         self._settings["notify_minimize_hint"] = checked
         save_settings(self._settings)
+
+    def _change_theme(self, index: int) -> None:
+        mode = ("auto", "light", "dark")[index] if 0 <= index <= 2 else "auto"
+        if mode not in THEME_MODES:
+            mode = "auto"
+        self._settings["theme_mode"] = mode
+        save_settings(self._settings)
+        apply_theme(mode)
 
     def _copy_to_clipboard(self, text: str, label: str) -> None:
         cb = QApplication.clipboard()
@@ -474,6 +512,17 @@ class SettingsTab(QWidget):
                 self.orient_combo.setCurrentIndex(idx)
             finally:
                 self.orient_combo.blockSignals(was_blocked)
+        # Theme combo + immediate re-apply so the live window flips
+        # back to the default palette as part of the reset.
+        mode = normalize_mode(self._settings.get("theme_mode", "auto"))
+        was_blocked = self.theme_combo.blockSignals(True)
+        try:
+            self.theme_combo.setCurrentIndex(
+                {"auto": 0, "light": 1, "dark": 2}.get(mode, 0)
+            )
+        finally:
+            self.theme_combo.blockSignals(was_blocked)
+        apply_theme(mode)
 
     def _delete_selected_profile(self) -> None:
         name = self.profile_combo.currentText()
