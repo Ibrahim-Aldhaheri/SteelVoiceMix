@@ -11,7 +11,8 @@ use log::{error, info, warn};
 use std::path::PathBuf;
 
 use crate::filter_chain::{FilterChainHandle, FilterChainSpec};
-use crate::protocol::{EqBand, EqChannel, EqState, NUM_BANDS};
+use crate::mic_chain::{MicChainHandle, MicChainSpec};
+use crate::protocol::{EqBand, EqChannel, EqState, MicState, NUM_BANDS};
 use crate::surround_chain::{SurroundChainHandle, SurroundChainSpec};
 
 pub const GAME_SINK: &str = "SteelGame";
@@ -86,6 +87,16 @@ pub struct SinkManager {
     /// Defaults are flat passthrough at standard graphic-EQ frequencies;
     /// preset loads can replace any band's full parameters.
     eq_state: EqState,
+    /// Microphone capture-side processing state (gate / NR / AI NC).
+    /// Persisted across restarts; the daemon spawns a single
+    /// `mic_chain` covering whichever combination is enabled.
+    mic_state: MicState,
+    /// Live mic chain handle when the chain is running. Dropping it
+    /// kills the spawned pipewire child and removes the conf file.
+    mic_chain: Option<MicChainHandle>,
+    /// Cached hardware microphone source name. Found at headset-
+    /// connect time and reused on every mic-state respawn.
+    mic_source: Option<String>,
     // Cached during create_sinks so runtime add/remove of the media sink
     // doesn't need to re-query PipeWire for the headset's sink name.
     output_sink: Option<String>,
@@ -94,6 +105,7 @@ pub struct SinkManager {
 }
 
 impl SinkManager {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         media_enabled: bool,
         hdmi_enabled: bool,
@@ -101,6 +113,7 @@ impl SinkManager {
         eq_state: EqState,
         surround_enabled: bool,
         surround_hrir: Option<PathBuf>,
+        mic_state: MicState,
     ) -> Self {
         // Sweep up anything a previous crash or manual test left behind.
         cleanup_stale_modules();
@@ -116,9 +129,78 @@ impl SinkManager {
             surround_enabled,
             surround_hrir,
             surround_chain: None,
+            mic_state,
+            mic_chain: None,
+            mic_source: None,
             output_sink: None,
             hdmi_target: None,
         }
+    }
+
+    /// Apply a fresh MicState. If the new state has any feature
+    /// enabled and we know the mic source, the chain (re)spawns;
+    /// otherwise the chain is torn down. Caller is responsible for
+    /// emitting the broadcast event.
+    pub fn set_mic_state(&mut self, new_state: MicState) {
+        self.mic_state = new_state;
+        // Tear down the current chain unconditionally — strength
+        // changes need a respawn since LADSPA control values are
+        // baked into the conf file at spawn time.
+        if let Some(handle) = self.mic_chain.take() {
+            handle.shutdown();
+        }
+        let Some(source) = self.mic_source.clone() else {
+            // Headset not connected yet. State is stored; the next
+            // create_sinks call will pick it up.
+            return;
+        };
+        let spec = MicChainSpec {
+            mic_source: &source,
+            state: self.mic_state,
+        };
+        if !spec.has_active_features() {
+            return;
+        }
+        match MicChainHandle::spawn(&spec) {
+            Some(handle) => {
+                self.mic_chain = Some(handle);
+                info!(
+                    "Mic chain online (gate={}, nr={}, ai_nc={})",
+                    self.mic_state.noise_gate.enabled,
+                    self.mic_state.noise_reduction.enabled,
+                    self.mic_state.ai_noise_cancellation.enabled,
+                );
+            }
+            None => warn!(
+                "Failed to spawn mic chain — see prior warnings (LADSPA plugin missing?)"
+            ),
+        }
+    }
+
+    /// Auto-detect the Arctis Nova Pro Wireless capture (microphone)
+    /// source via pactl. Symmetric to `find_output_sink` — looks for
+    /// the same OUTPUT_MATCH substring but on the input list. Returns
+    /// the source name string, or None if no matching capture device
+    /// is connected.
+    pub fn find_mic_source() -> Option<String> {
+        let output = Command::new("pactl")
+            .args(["list", "sources", "short"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.contains(OUTPUT_MATCH)
+                && line.contains("input")
+                && !line.contains("monitor")
+            {
+                if let Some(name) = line.split('\t').nth(1) {
+                    return Some(name.to_string());
+                }
+            }
+        }
+        None
     }
 
     /// Update the HRIR file path. Three cases to handle:
@@ -354,6 +436,10 @@ impl SinkManager {
         // bundled HRIR path on next launch via the
         // surround_default_applied marker reset.
         self.surround_hrir = None;
+        // Clear mic processing too — set_mic_state with a default
+        // (all-disabled) MicState shuts the chain down if it was
+        // running and resets the persisted state.
+        self.set_mic_state(MicState::default());
         info!("SinkManager state reset to defaults");
     }
 
@@ -835,6 +921,25 @@ impl SinkManager {
         } else {
             error!("Failed to create one or more sinks");
         }
+
+        // Discover the hardware mic source — it has the same
+        // OUTPUT_MATCH substring as the headset output but on the
+        // pactl sources list. Then re-spawn the mic chain if the
+        // user has any feature enabled. Done last so the chain
+        // doesn't try to spawn before the headset is fully detected.
+        if let Some(source) = Self::find_mic_source() {
+            info!("Detected microphone source: {source}");
+            self.mic_source = Some(source);
+            // Re-apply the persisted mic_state — set_mic_state shuts
+            // down any existing chain, so it's safe to call even if
+            // the chain came up earlier somehow.
+            if self.mic_chain.is_none() {
+                let saved = self.mic_state;
+                self.set_mic_state(saved);
+            }
+        } else {
+            warn!("Microphone source not found — mic processing disabled until reconnect");
+        }
     }
 
     /// Unload the null-sink + loopback modules we created. Also tears down
@@ -852,6 +957,10 @@ impl SinkManager {
         }
         // Surround chain owns its own pipewire child + null-sink; drop
         // the handle and let its Drop impl clean up.
+        if let Some(handle) = self.mic_chain.take() {
+            handle.shutdown();
+        }
+        self.mic_source = None;
         if let Some(handle) = self.surround_chain.take() {
             handle.shutdown();
         }

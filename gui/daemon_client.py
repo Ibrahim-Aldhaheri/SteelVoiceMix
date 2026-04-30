@@ -48,6 +48,31 @@ def _normalize_bands(raw: list) -> list[dict]:
     return out
 
 
+_MIC_FEATURE_KEYS = (
+    "noise_gate",
+    "noise_reduction",
+    "ai_noise_cancellation",
+)
+
+
+def _normalize_mic_state(raw: dict) -> dict:
+    """Coerce the daemon's MicState JSON into a uniform GUI-side
+    shape: every feature key always present with bool `enabled` and
+    int `strength` (0..100). Anything missing falls back to off / 0
+    so the receiver never has to defend against partial dicts."""
+    out: dict[str, dict] = {}
+    for key in _MIC_FEATURE_KEYS:
+        feat = raw.get(key) if isinstance(raw, dict) else None
+        if isinstance(feat, dict):
+            out[key] = {
+                "enabled": bool(feat.get("enabled", False)),
+                "strength": int(feat.get("strength", 0)),
+            }
+        else:
+            out[key] = {"enabled": False, "strength": 0}
+    return out
+
+
 class DaemonSignals(QObject):
     connected = Signal()
     disconnected = Signal()
@@ -73,6 +98,13 @@ class DaemonSignals(QObject):
     # cleared); the GUI normalises empty strings to "no path".
     surround_enabled_changed = Signal(bool)
     surround_hrir_changed = Signal(str)
+    # Microphone capture-side processing. Emits the full MicState
+    # snapshot every time so the GUI doesn't have to remember which
+    # feature changed — it just re-applies the snapshot to its three
+    # toggles + sliders. Shape:
+    #   {"noise_gate": {"enabled": bool, "strength": int},
+    #    "noise_reduction": {...}, "ai_noise_cancellation": {...}}
+    mic_state_changed = Signal(dict)
 
 
 class DaemonClient:
@@ -155,6 +187,10 @@ class DaemonClient:
         elif ev == "surround-hrir-changed":
             path = event.get("path") or ""
             self.signals.surround_hrir_changed.emit(str(path))
+        elif ev == "mic-state-changed":
+            mic = event.get("state")
+            if isinstance(mic, dict):
+                self.signals.mic_state_changed.emit(_normalize_mic_state(mic))
         elif ev == "eq-bands-changed":
             channel = event.get("channel", "")
             bands = event.get("bands")
@@ -182,6 +218,9 @@ class DaemonClient:
             )
             hrir = event.get("surround_hrir_path") or ""
             self.signals.surround_hrir_changed.emit(str(hrir))
+            mic = event.get("mic_state")
+            if isinstance(mic, dict):
+                self.signals.mic_state_changed.emit(_normalize_mic_state(mic))
             eq_state = event.get("eq_state") or event.get("eq_gains")
             if isinstance(eq_state, dict):
                 state: dict[str, list[dict]] = {}

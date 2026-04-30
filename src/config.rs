@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::EqState;
+use crate::protocol::{EqState, MicState};
 
 /// What the daemon remembers across restarts. Most fields default to
 /// "off" so a fresh install doesn't surprise users with extra output
@@ -51,6 +51,11 @@ pub struct DaemonState {
     /// be enabled while this is `None`.
     #[serde(default)]
     pub surround_hrir_path: Option<PathBuf>,
+    /// Microphone capture-side processing state (noise gate, NR, AI
+    /// NC). Each feature persists independently; daemon spawns one
+    /// LADSPA filter chain covering whichever combination is on.
+    #[serde(default)]
+    pub mic_state: MicState,
 }
 
 fn default_surround_enabled() -> bool {
@@ -67,6 +72,7 @@ impl Default for DaemonState {
             eq_state: EqState::default(),
             surround_enabled: default_surround_enabled(),
             surround_hrir_path: None,
+            mic_state: MicState::default(),
         }
     }
 }

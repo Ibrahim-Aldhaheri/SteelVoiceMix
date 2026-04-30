@@ -262,6 +262,8 @@ class MixerGUI(QMainWindow):
             self._maybe_apply_default_hrir
         )
 
+        self.signals.mic_state_changed.connect(self.mic_tab.on_mic_state_changed)
+
     # ----------------------------------------------------- header + chatmix
 
     def _on_connected(self) -> None:

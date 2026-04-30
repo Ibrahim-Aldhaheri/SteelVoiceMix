@@ -92,6 +92,34 @@ pub fn default_channel_bands() -> [EqBand; NUM_BANDS] {
     ]
 }
 
+/// One microphone-side processing feature's runtime state. Strength
+/// is 0..=100 — interpretation is per-feature (threshold for the
+/// gate, VAD aggressiveness for the denoisers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct MicFeature {
+    pub enabled: bool,
+    pub strength: u8,
+}
+
+/// Microphone capture-path processing — three independent features,
+/// any combination can be on. Daemon spawns one PipeWire filter-chain
+/// instance covering the currently-enabled features in fixed order:
+/// gate → noise reduction → AI denoise → virtual SteelMic source.
+/// `noise_reduction` and `ai_noise_cancellation` both run the
+/// noise-suppression-for-voice RNNoise LADSPA plugin; the difference
+/// is the VAD-threshold mapping (NR is mild, AI NC aggressive). If
+/// both are enabled, AI NC's stage takes precedence to avoid running
+/// RNNoise twice in sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct MicState {
+    #[serde(default)]
+    pub noise_gate: MicFeature,
+    #[serde(default)]
+    pub noise_reduction: MicFeature,
+    #[serde(default)]
+    pub ai_noise_cancellation: MicFeature,
+}
+
 /// Per-channel band arrays bundled into one persistent struct. Media
 /// and Hdmi default to flat just like Game/Chat — even if the user
 /// never enables those sinks, the state survives so toggling EQ on
@@ -211,6 +239,21 @@ pub enum ClientCommand {
     /// overlay options, etc.) is reset GUI-side.
     #[serde(rename = "reset-state")]
     ResetState,
+    /// Toggle / parameterise the microphone noise gate. Strength 0..=100
+    /// maps to threshold dB (0 → -60 dB barely cuts, 100 → 0 dB cuts
+    /// most of the signal — practical sweet spot is around 30–60).
+    #[serde(rename = "set-mic-noise-gate")]
+    SetMicNoiseGate { enabled: bool, strength: u8 },
+    /// Mild RNNoise. Strength 0..=100 maps to a low VAD-threshold
+    /// range (≤ 0.5) — meaningful suppression without the
+    /// aggressive cuts that AI NC produces.
+    #[serde(rename = "set-mic-noise-reduction")]
+    SetMicNoiseReduction { enabled: bool, strength: u8 },
+    /// Aggressive RNNoise. Strength 0..=100 maps to the full VAD-
+    /// threshold range (0..0.95) — at maximum the plugin cuts almost
+    /// everything but speech, including some quieter speech.
+    #[serde(rename = "set-mic-ai-nc")]
+    SetMicAiNoiseCancellation { enabled: bool, strength: u8 },
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -250,6 +293,7 @@ pub enum DaemonEvent {
         eq_state: Box<EqState>,
         surround_enabled: bool,
         surround_hrir_path: Option<String>,
+        mic_state: MicState,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -287,6 +331,13 @@ pub enum DaemonEvent {
     /// Fired when the HRIR file path changes (saved + applied or cleared).
     #[serde(rename = "surround-hrir-changed")]
     SurroundHrirChanged { path: Option<String> },
+
+    /// Fired whenever any microphone-processing feature toggles or
+    /// changes strength. The full MicState ships every time so the
+    /// GUI doesn't have to track which feature changed — it just
+    /// re-applies the snapshot.
+    #[serde(rename = "mic-state-changed")]
+    MicStateChanged { state: MicState },
 }
 
 #[cfg(test)]
@@ -364,6 +415,7 @@ mod tests {
             eq_state: Box::new(EqState::default()),
             surround_enabled: false,
             surround_hrir_path: None,
+            mic_state: MicState::default(),
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -553,6 +605,50 @@ mod tests {
             ClientCommand::SetAutoRouteBrowsers { enabled } => assert!(enabled),
             other => panic!("expected SetAutoRouteBrowsers, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn set_mic_commands_parse() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-mic-noise-gate","enabled":true,"strength":40}"#).unwrap();
+        match cmd {
+            ClientCommand::SetMicNoiseGate { enabled, strength } => {
+                assert!(enabled);
+                assert_eq!(strength, 40);
+            }
+            other => panic!("expected SetMicNoiseGate, got {other:?}"),
+        }
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-mic-ai-nc","enabled":false,"strength":80}"#).unwrap();
+        match cmd {
+            ClientCommand::SetMicAiNoiseCancellation { enabled, strength } => {
+                assert!(!enabled);
+                assert_eq!(strength, 80);
+            }
+            other => panic!("expected SetMicAiNoiseCancellation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mic_state_changed_event_shape() {
+        let ev = DaemonEvent::MicStateChanged {
+            state: MicState {
+                noise_gate: MicFeature {
+                    enabled: true,
+                    strength: 30,
+                },
+                noise_reduction: MicFeature::default(),
+                ai_noise_cancellation: MicFeature {
+                    enabled: true,
+                    strength: 70,
+                },
+            },
+        };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "mic-state-changed");
+        assert_eq!(json["state"]["noise_gate"]["enabled"], true);
+        assert_eq!(json["state"]["noise_gate"]["strength"], 30);
+        assert_eq!(json["state"]["ai_noise_cancellation"]["strength"], 70);
     }
 
     #[test]

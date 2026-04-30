@@ -19,6 +19,12 @@ Requires:       libnotify
 Requires:       hidapi
 
 Recommends:     python3-pyside6
+# Microphone-tab features pull in LADSPA plugins lazily — only
+# spawned by the daemon when the user enables a feature. Recommends
+# rather than Requires because nothing else needs them; users who
+# never visit the Microphone tab don't pay for the dependency.
+Recommends:     noise-suppression-for-voice
+Recommends:     swh-plugins
 
 %description
 Linux ChatMix implementation for the SteelSeries Arctis Nova Pro Wireless.

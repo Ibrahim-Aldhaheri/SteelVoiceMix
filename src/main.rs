@@ -3,6 +3,7 @@ mod config;
 mod display;
 mod filter_chain;
 mod hid;
+mod mic_chain;
 mod mixer;
 mod protocol;
 mod routing;
@@ -20,7 +21,10 @@ use log::{error, info, warn};
 use audio::SinkManager;
 use filter_chain::{FilterChainHandle, FilterChainSpec};
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
-use protocol::{default_channel_bands, ClientCommand, DaemonEvent, EqChannel, EqState};
+use protocol::{
+    default_channel_bands, ClientCommand, DaemonEvent, EqChannel, EqState, MicFeature,
+    MicState,
+};
 use routing::{spawn_router, RouterState};
 
 fn socket_path() -> PathBuf {
@@ -52,7 +56,38 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
             .surround_hrir_path
             .as_ref()
             .map(|p| p.display().to_string()),
+        mic_state: st.mic_state,
     }
+}
+
+/// Apply a single-feature update to the persisted MicState, push it
+/// into the SinkManager (which respawns the chain), persist, and
+/// broadcast the new state. Used by the three mic-feature command
+/// handlers — they only differ in which field of MicState they
+/// mutate, captured by the `update` closure.
+fn handle_mic_feature_update(
+    sinks: &SharedSinks,
+    state: &Arc<Mutex<MixerState>>,
+    subscribers: &Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
+    update: impl FnOnce(&mut MicState),
+    label: &str,
+    enabled: bool,
+    strength: u8,
+) {
+    let new_state: MicState = {
+        let mut st = state.lock().unwrap();
+        update(&mut st.mic_state);
+        st.mic_state
+    };
+    {
+        let mut sm = sinks.lock().unwrap();
+        sm.set_mic_state(new_state);
+    }
+    persist_sink_state(state);
+    info!(
+        "GUI requested: set-mic-{label} (enabled={enabled}, strength={strength})"
+    );
+    broadcast_event(subscribers, DaemonEvent::MicStateChanged { state: new_state });
 }
 
 /// Persist sink-toggle preferences. Reads all flags from the current
@@ -67,6 +102,7 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         eq_state: st.eq_state,
         surround_enabled: st.surround_enabled,
         surround_hrir_path: st.surround_hrir_path.clone(),
+        mic_state: st.mic_state,
     });
 }
 
@@ -283,6 +319,7 @@ fn handle_client(
                     st.eq_state = EqState::default();
                     st.surround_enabled = false;
                     st.surround_hrir_path = None;
+                    st.mic_state = MicState::default();
                 }
                 router
                     .enabled
@@ -331,6 +368,12 @@ fn handle_client(
                     &subscribers,
                     DaemonEvent::SurroundHrirChanged { path: None },
                 );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::MicStateChanged {
+                        state: MicState::default(),
+                    },
+                );
             }
             ClientCommand::SetSurroundEnabled { enabled } => {
                 let actual = {
@@ -378,6 +421,39 @@ fn handle_client(
                 broadcast_event(
                     &subscribers,
                     DaemonEvent::SurroundHrirChanged { path: display_path },
+                );
+            }
+            ClientCommand::SetMicNoiseGate { enabled, strength } => {
+                handle_mic_feature_update(
+                    &sinks,
+                    &state,
+                    &subscribers,
+                    |s| s.noise_gate = MicFeature { enabled, strength },
+                    "noise-gate",
+                    enabled,
+                    strength,
+                );
+            }
+            ClientCommand::SetMicNoiseReduction { enabled, strength } => {
+                handle_mic_feature_update(
+                    &sinks,
+                    &state,
+                    &subscribers,
+                    |s| s.noise_reduction = MicFeature { enabled, strength },
+                    "noise-reduction",
+                    enabled,
+                    strength,
+                );
+            }
+            ClientCommand::SetMicAiNoiseCancellation { enabled, strength } => {
+                handle_mic_feature_update(
+                    &sinks,
+                    &state,
+                    &subscribers,
+                    |s| s.ai_noise_cancellation = MicFeature { enabled, strength },
+                    "ai-nc",
+                    enabled,
+                    strength,
                 );
             }
             ClientCommand::SetEqBand {
@@ -523,6 +599,7 @@ fn main() {
     let eq_state = persisted.eq_state;
     let surround_enabled = persisted.surround_enabled;
     let surround_hrir_path = persisted.surround_hrir_path.clone();
+    let mic_state = persisted.mic_state;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -545,6 +622,12 @@ fn main() {
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "<not set>".into()),
     );
+    info!(
+        "Mic processing: gate={} nr={} ai_nc={}",
+        mic_state.noise_gate.enabled,
+        mic_state.noise_reduction.enabled,
+        mic_state.ai_noise_cancellation.enabled,
+    );
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(
         media_sink_enabled,
@@ -554,6 +637,7 @@ fn main() {
         eq_state,
         surround_enabled,
         surround_hrir_path.clone(),
+        mic_state,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
@@ -564,6 +648,7 @@ fn main() {
         eq_state,
         surround_enabled,
         surround_hrir_path,
+        mic_state,
     )));
     let router = Arc::new(RouterState::new(auto_route_browsers));
     spawn_router(router.clone(), running.clone());

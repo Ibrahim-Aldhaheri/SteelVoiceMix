@@ -11,7 +11,7 @@ use log::{debug, info, warn};
 use crate::audio::{SinkManager, CHAT_SINK, GAME_SINK};
 use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
-use crate::protocol::{DaemonEvent, EqState};
+use crate::protocol::{DaemonEvent, EqState, MicState};
 
 pub type SharedSinks = Arc<Mutex<SinkManager>>;
 
@@ -61,6 +61,7 @@ pub struct MixerState {
     pub eq_state: EqState,
     pub surround_enabled: bool,
     pub surround_hrir_path: Option<std::path::PathBuf>,
+    pub mic_state: MicState,
 }
 
 impl MixerState {
@@ -73,6 +74,7 @@ impl MixerState {
         eq_state: EqState,
         surround_enabled: bool,
         surround_hrir_path: Option<std::path::PathBuf>,
+        mic_state: MicState,
     ) -> Self {
         MixerState {
             connected: false,
@@ -86,6 +88,7 @@ impl MixerState {
             eq_state,
             surround_enabled,
             surround_hrir_path,
+            mic_state,
         }
     }
 }
