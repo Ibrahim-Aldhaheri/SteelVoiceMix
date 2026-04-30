@@ -293,6 +293,13 @@ class GameProfileManager(QObject):
     # active preset in a banner.
     applied_changed = Signal(str)
 
+    # Signal: bands list that the EQ tab should immediately load
+    # into its visible state. Emitted alongside applied_changed so
+    # the UI updates instantly without waiting for the daemon's
+    # eq-bands-changed broadcast roundtrip — preset name AND the
+    # actual band values land at the same time.
+    bands_to_load = Signal(list)
+
     def __init__(
         self,
         daemon_client,
@@ -438,6 +445,7 @@ class GameProfileManager(QObject):
         self._daemon.send_command(
             "set-eq-channel", channel="game", bands=bands,
         )
+        self.bands_to_load.emit(bands)
         self.applied_changed.emit(preset_name)
 
     def _switch(self, games) -> None:
@@ -455,6 +463,7 @@ class GameProfileManager(QObject):
         self._daemon.send_command(
             "set-eq-channel", channel="game", bands=bands,
         )
+        self.bands_to_load.emit(bands)
         self.applied_changed.emit(new_preset)
 
     def _exit(self) -> None:
@@ -463,10 +472,12 @@ class GameProfileManager(QObject):
             self.applied_changed.emit("")
             return
         log.info("Auto game-EQ: restoring user's pre-game Game EQ")
+        snapshot = self._snapshot_bands
         self._daemon.send_command(
             "set-eq-channel", channel="game",
-            bands=self._snapshot_bands,
+            bands=snapshot,
         )
+        self.bands_to_load.emit(snapshot)
         self._snapshot_bands = None
         self._active_preset = None
         self.applied_changed.emit("")

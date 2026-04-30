@@ -536,17 +536,35 @@ class EqualizerTab(QWidget):
         if self._game_eq_manager is not None:
             self._game_eq_manager.reconcile()
 
+    def _on_auto_bands_load(self, bands: list) -> None:
+        """GameProfileManager handed us the bands to display
+        immediately — either the auto-loaded preset on enter/switch
+        or the saved snapshot on exit. We don't wait for the
+        daemon's eq-bands-changed broadcast to roundtrip; the
+        broadcast still arrives and confirms the same data, but
+        the user's eyes get instant feedback. Mirrors what
+        _apply_preset does for manual loads."""
+        if not isinstance(bands, list) or not bands:
+            return
+        self._bands_by_channel["game"] = [dict(b) for b in bands]
+        if self._current_channel == "game":
+            self._render_sliders_for_channel("game")
+
     def _on_auto_applied(self, preset_name: str) -> None:
         """GameProfileManager signal: Auto Game-EQ has applied a
         preset (preset_name truthy) or restored the user snapshot
         (empty string). Update the status banner, sync the preset
-        combo to the auto-loaded preset, and force a slider re-
-        render. Sliders stay editable on purpose — the user may
-        want to fine-tune the auto-loaded preset live, and the
-        next watcher tick only re-applies on a *game change*, not
-        every poll."""
+        combo to the auto-loaded preset (or the user's pre-game
+        preset on restore), and force a slider re-render."""
+        was_engaged = self._auto_applied_preset is not None
         self._auto_applied_preset = preset_name or None
         if preset_name:
+            # Engaging — remember the user's pre-game preset name
+            # so we can put the combo back when the game closes.
+            if not was_engaged:
+                self._pre_auto_preset_game = self._active_preset_by_channel.get(
+                    "game", ""
+                )
             self.auto_lock_banner.setText(
                 f"🎮 Auto Game-EQ active — preset: {preset_name}. "
                 "Sliders are still editable; your tweaks stay until "
@@ -554,10 +572,6 @@ class EqualizerTab(QWidget):
                 "(at which point your pre-game EQ is restored)."
             )
             self.auto_lock_banner.show()
-            # Sync the preset combo + active-preset cache so the
-            # user sees which preset is loaded. Only meaningful when
-            # the user is actually viewing the Game channel — for
-            # other channels the combo shows that channel's preset.
             self._active_preset_by_channel["game"] = preset_name
             if self._current_channel == "game":
                 idx = self._index_for_preset_name(preset_name)
@@ -567,17 +581,29 @@ class EqualizerTab(QWidget):
                         self.preset_combo.setCurrentIndex(idx)
                     finally:
                         self.preset_combo.blockSignals(was_blocked)
-                # Force a fresh slider render — normally the daemon's
-                # eq-bands-changed broadcast does this, but if for any
-                # reason the broadcast hasn't arrived yet this paints
-                # what we already have in _bands_by_channel.
                 self._render_sliders_for_channel("game")
         else:
+            # Disengaging — restore both the banner and the preset
+            # combo to whatever the user had selected pre-game.
             self.auto_lock_banner.hide()
-            # Snapshot restored — the user's pre-game preset name
-            # (cached in _active_preset_by_channel before we
-            # overrode it) should already match. The daemon's
-            # broadcast paints the bands.
+            previous = getattr(self, "_pre_auto_preset_game", "") or ""
+            self._active_preset_by_channel["game"] = previous
+            if self._current_channel == "game":
+                idx = self._index_for_preset_name(previous) if previous else -1
+                was_blocked = self.preset_combo.blockSignals(True)
+                try:
+                    if idx >= 0:
+                        self.preset_combo.setCurrentIndex(idx)
+                    else:
+                        # No prior preset — leave combo at first item
+                        # (or wherever it lands); the snapshot bands
+                        # supplied via _on_auto_bands_load already
+                        # painted the sliders.
+                        pass
+                finally:
+                    self.preset_combo.blockSignals(was_blocked)
+                self._render_sliders_for_channel("game")
+            self._pre_auto_preset_game = ""
 
     def _on_detected_changed(
         self, name: str, preset, on_steel_game: bool
