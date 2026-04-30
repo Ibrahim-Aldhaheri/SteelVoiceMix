@@ -518,6 +518,8 @@ class EqualizerTab(QWidget):
             return
         preset_part = f" → {preset}" if preset else " (no preset match)"
         if on_steel_game:
+            # We confirmed the sink-input is on SteelGame — EQ will
+            # be audible.
             self.detected_label.setText(
                 f"Currently detected: {name}{preset_part}"
             )
@@ -525,9 +527,18 @@ class EqualizerTab(QWidget):
                 "font-size: 10px; padding: 4px 0; color: #4CAF50;"
             )
         else:
+            # The EQ command IS sent regardless — the manager doesn't
+            # gate on this flag — but if PipeWire didn't report a
+            # SteelGame routing for this stream, the EQ change might
+            # not be audible. Two cases: (a) the user really has the
+            # game on a different sink, (b) PipeWire's metadata-based
+            # routing hides the SteelGame target from pactl. Reword
+            # so the user knows it's a "maybe" not a "definitely
+            # won't work".
             self.detected_label.setText(
                 f"Currently detected: {name}{preset_part} "
-                "— not on SteelGame, EQ won't apply"
+                "— EQ applied; if you don't hear a change, route the "
+                "game to SteelGame in your system audio settings"
             )
             self.detected_label.setStyleSheet(
                 "font-size: 10px; padding: 4px 0; color: #FF9800;"

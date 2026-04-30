@@ -220,11 +220,27 @@ class GameWatcher(QThread):
                 return
             if app_binary and app_binary in ignored_bins:
                 return
+            sink_name = id_to_name.get(sink_id) if sink_id else None
             on_game = False
-            if sink_id and id_to_name.get(sink_id) == _GAME_SINK:
+            # Multiple ways to recognise SteelGame routing:
+            #  1. Sink id resolves to "SteelGame".
+            #  2. node.target property is "SteelGame".
+            #  3. Sink id resolves to a name CONTAINING "SteelGame"
+            #     (covers EQ/surround chain intermediates like
+            #     SteelGameEQ that some Pipewire builds expose as
+            #     virtual sinks rather than effect nodes).
+            if sink_name == _GAME_SINK:
+                on_game = True
+            elif sink_name and _GAME_SINK in sink_name:
                 on_game = True
             if node_target == _GAME_SINK:
                 on_game = True
+            log.info(
+                "Game-watcher: app=%r binary=%r sink_id=%s sink_name=%r "
+                "node_target=%r → on_game=%s",
+                app_name, app_binary, sink_id, sink_name,
+                node_target, on_game,
+            )
             out.append((app_name, on_game))
 
         for raw in r.stdout.splitlines():
