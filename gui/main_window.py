@@ -156,6 +156,9 @@ class MixerGUI(QMainWindow):
         self.eq_tab._game_eq_manager.detected_changed.connect(
             self.eq_tab._on_detected_changed
         )
+        self.eq_tab._game_eq_manager.applied_changed.connect(
+            self.eq_tab._on_auto_applied
+        )
         self.settings_tab = SettingsTab(
             self.settings, self.overlay, self.sinks_tab, self.daemon_client,
         )

@@ -287,6 +287,12 @@ class GameProfileManager(QObject):
     # to render the live "Currently detected" status line.
     detected_changed = Signal(str, object, bool)
 
+    # Signal: applied preset name, or empty string when no auto
+    # preset is currently engaged (snapshot restored). The EQ tab
+    # listens to lock the Game-channel controls and surface the
+    # active preset in a banner.
+    applied_changed = Signal(str)
+
     def __init__(
         self,
         daemon_client,
@@ -316,9 +322,13 @@ class GameProfileManager(QObject):
         return dict(self._last_seen)
 
     def on_games_changed(self, games: dict) -> None:
-        """Watcher tick: react to the dict of {app.name: on_steel_game}.
-        Always cache the latest seen list (UI uses it). EQ swaps
-        only run when the toggle is on."""
+        """Watcher tick: react to {app.name: on_steel_game}. Always
+        cache the latest seen list (UI uses it). EQ swaps only run
+        when the toggle is on, and we *always* reconcile against
+        desired state — not just on edge transitions — so flipping
+        the toggle on while a game is already running still loads
+        the matching preset (the previous edge-only logic missed
+        that case)."""
         self._last_seen = dict(games)
         # Emit a "detected" event for UI feedback regardless of
         # whether the toggle is on — the user wants to see what's
@@ -331,19 +341,42 @@ class GameProfileManager(QObject):
         else:
             self.detected_changed.emit("", None, False)
 
-        if not self._settings.get("auto_game_eq_enabled", False):
-            self._current_games = dict(games)
-            return
-        was_empty = not self._current_games
-        is_empty = not games
         self._current_games = dict(games)
+        self._reconcile()
 
-        if was_empty and not is_empty:
-            self._enter(games)
-        elif is_empty and not was_empty:
-            self._exit()
-        elif not is_empty:
-            self._switch(games)
+    def reconcile(self) -> None:
+        """Public re-entry point. Called when the toggle flips so
+        the manager re-evaluates state immediately (the watcher's
+        next tick is up to 2 s away)."""
+        self._reconcile()
+
+    def _reconcile(self) -> None:
+        """Bring auto-applied preset into agreement with desired
+        state, computed from `_current_games` + the toggle. Three
+        cases:
+          - toggle off + active preset → restore snapshot.
+          - toggle on  + games + active preset matches → no-op.
+          - toggle on  + games + no/wrong preset → enter or switch.
+          - toggle on  + no games + active preset → exit (restore)."""
+        auto_on = self._settings.get("auto_game_eq_enabled", False)
+        games = self._current_games
+        if not auto_on:
+            if self._active_preset is not None:
+                self._exit()
+            return
+        if games:
+            target = self._resolve_preset(games)
+            if target is None:
+                # Couldn't match anything — leave any active preset
+                # in place (we don't want to thrash) but log.
+                return
+            if self._active_preset is None:
+                self._enter(games)
+            elif target != self._active_preset:
+                self._switch(games)
+        else:
+            if self._active_preset is not None:
+                self._exit()
 
     # ---------------------------------------------------- transitions
 
@@ -398,6 +431,7 @@ class GameProfileManager(QObject):
         self._daemon.send_command(
             "set-eq-channel", channel="game", bands=bands,
         )
+        self.applied_changed.emit(preset_name)
 
     def _switch(self, games) -> None:
         new_preset = self._resolve_preset(games)
@@ -414,10 +448,12 @@ class GameProfileManager(QObject):
         self._daemon.send_command(
             "set-eq-channel", channel="game", bands=bands,
         )
+        self.applied_changed.emit(new_preset)
 
     def _exit(self) -> None:
         if self._snapshot_bands is None:
             self._active_preset = None
+            self.applied_changed.emit("")
             return
         log.info("Auto game-EQ: restoring user's pre-game Game EQ")
         self._daemon.send_command(
@@ -426,3 +462,4 @@ class GameProfileManager(QObject):
         )
         self._snapshot_bands = None
         self._active_preset = None
+        self.applied_changed.emit("")

@@ -136,6 +136,12 @@ class EqualizerTab(QWidget):
         # can subscribe to detected_changed.
         self._game_eq_manager = game_eq_manager
         self._eq_enabled = False
+        # Set when Auto Game-EQ has applied a preset to the Game
+        # channel. While truthy, the Game-channel sliders + preset
+        # combo are locked — any user change would just get clobbered
+        # by the next watcher tick. Cleared when the manager emits
+        # applied_changed("") (game closed → snapshot restored).
+        self._auto_applied_preset: str | None = None
 
         # Per-channel band data. Each channel carries its own
         # {freq, q, gain, type, enabled} list. Defaults match the Rust
@@ -223,7 +229,24 @@ class EqualizerTab(QWidget):
         # we re-run this populate to keep the combo in sync.
         self._refresh_channel_combo()
 
-        layout.addWidget(card("Equalizer", enable_row, ch_row))
+        # Banner shown when Auto Game-EQ has overridden the Game
+        # channel. While this is visible, the Game-channel sliders +
+        # preset combo are read-only (any change would be clobbered
+        # by the next watcher tick anyway). The banner lives inside
+        # the Equalizer card so it stays put as the user scrolls
+        # through preset / bands / favourites cards below.
+        self.auto_lock_banner = QLabel("")
+        self.auto_lock_banner.setStyleSheet(
+            "background: #FF9800; color: white; "
+            "padding: 6px 10px; border-radius: 6px; "
+            "font-size: 11px; font-weight: bold;"
+        )
+        self.auto_lock_banner.setWordWrap(True)
+        self.auto_lock_banner.hide()
+
+        layout.addWidget(card(
+            "Equalizer", enable_row, ch_row, self.auto_lock_banner,
+        ))
 
         # Preset row: searchable dropdown filtered by the current channel,
         # plus Load / Save / Delete actions. The combo is editable so the
@@ -505,6 +528,32 @@ class EqualizerTab(QWidget):
     def _toggle_auto_game(self, checked: bool) -> None:
         self._settings["auto_game_eq_enabled"] = checked
         save_settings(self._settings)
+        # Reconcile immediately rather than waiting up to 2 s for
+        # the next watcher tick. If a game is already running and
+        # the user just turned the feature on, this is what triggers
+        # the preset apply. If they turned it off mid-game, this
+        # restores their pre-game EQ.
+        if self._game_eq_manager is not None:
+            self._game_eq_manager.reconcile()
+
+    def _on_auto_applied(self, preset_name: str) -> None:
+        """GameProfileManager signal: Auto Game-EQ has applied a
+        preset (preset_name truthy) or restored the user snapshot
+        (empty string). Update the status banner. Sliders stay
+        editable on purpose — the user may want to fine-tune the
+        auto-loaded preset live, and the next watcher tick only
+        re-applies on a *game change*, not every poll."""
+        self._auto_applied_preset = preset_name or None
+        if preset_name:
+            self.auto_lock_banner.setText(
+                f"🎮 Auto Game-EQ active — preset: {preset_name}. "
+                "Sliders are still editable; your tweaks stay until "
+                "the next game change or until you close the game "
+                "(at which point your pre-game EQ is restored)."
+            )
+            self.auto_lock_banner.show()
+        else:
+            self.auto_lock_banner.hide()
 
     def _on_detected_changed(
         self, name: str, preset, on_steel_game: bool
