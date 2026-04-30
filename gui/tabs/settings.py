@@ -221,6 +221,22 @@ class SettingsTab(QWidget):
         # a terminal. Keeps the UX honest about the elevation step
         # while still being more discoverable than burying the info
         # in a README.
+        # Title row hosts a coloured "ALPHA" pill so the user can
+        # tell at a glance this card is the experimental one — the
+        # rest of the Settings tab is stable preferences.
+        alpha_title_row = QHBoxLayout()
+        alpha_title = QLabel("Alpha Channel")
+        alpha_title.setStyleSheet("font-size: 12px; font-weight: bold;")
+        alpha_pill = QLabel("ALPHA")
+        alpha_pill.setStyleSheet(
+            "background: #FF9800; color: white; "
+            "font-size: 9px; font-weight: bold; "
+            "padding: 2px 6px; border-radius: 8px;"
+        )
+        alpha_title_row.addWidget(alpha_title)
+        alpha_title_row.addWidget(alpha_pill)
+        alpha_title_row.addStretch(1)
+
         alpha_btns = QHBoxLayout()
         self.alpha_enable_btn = QPushButton("📋 Switch to alpha")
         self.alpha_enable_btn.setToolTip(
@@ -250,7 +266,9 @@ class SettingsTab(QWidget):
             "font-size: 10px; color: palette(placeholder-text);"
         )
 
-        layout.addWidget(card("Alpha Channel", alpha_btns, alpha_help))
+        # Title is bolted in via the row above so we pass title=None to
+        # card() and add our custom title row as the first child.
+        layout.addWidget(card(None, alpha_title_row, alpha_btns, alpha_help))
 
         # Reset card --------------------------------------------------
         reset_row = QHBoxLayout()

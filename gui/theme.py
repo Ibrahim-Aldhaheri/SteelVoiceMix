@@ -111,8 +111,25 @@ def apply_theme(mode: ThemeMode) -> None:
         # the rest of our QSS uses palette(...) references that
         # follow whatever we end up with here.
         app.setPalette(app.style().standardPalette())
-        return
-    app.setPalette(_dark_palette() if mode == "dark" else _light_palette())
+    else:
+        app.setPalette(_dark_palette() if mode == "dark" else _light_palette())
+    _refresh_stylesheets(app)
+
+
+def _refresh_stylesheets(app: QApplication) -> None:
+    """Force every top-level widget's QSS to re-resolve `palette(...)`
+    references against the new palette. Qt does not auto-refresh
+    parsed stylesheets when the application palette changes — the
+    widget keeps rendering with the colours that were resolved at
+    setStyleSheet() time. Re-setting the same stylesheet string
+    triggers a fresh parse + repolish, which picks up the new palette."""
+    for w in app.topLevelWidgets():
+        qss = w.styleSheet()
+        if qss:
+            w.setStyleSheet(qss)
+        s = w.style()
+        s.unpolish(w)
+        s.polish(w)
 
 
 def normalize_mode(value: str) -> ThemeMode:

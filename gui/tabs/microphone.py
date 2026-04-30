@@ -20,11 +20,15 @@ own command back at the daemon.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -68,6 +72,23 @@ class MicrophoneTab(QWidget):
         self._pending_strength: dict[str, int] = {}
         self._commit_timers: dict[str, QTimer] = {}
 
+        # Sidetone debounce timer — same pattern as the EQ tab. While
+        # the user drags the slider we only update the visible label;
+        # 250 ms after the last change we fire one set-sidetone HID
+        # write. Without this, every pixel of travel triggers an
+        # EEPROM save-state on the headset.
+        self._sidetone_pending: int | None = None
+        self._sidetone_commit_timer = QTimer(self)
+        self._sidetone_commit_timer.setSingleShot(True)
+        self._sidetone_commit_timer.setInterval(250)
+        self._sidetone_commit_timer.timeout.connect(self._commit_sidetone)
+
+        # Voice-test loopback (module-loopback id, or None when off).
+        # While the loopback is loaded the user hears the processed
+        # SteelMic playing back through their headset so they can
+        # judge how the gate / NR / AI-NC actually sound.
+        self._voice_test_module_id: int | None = None
+
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -107,6 +128,73 @@ class MicrophoneTab(QWidget):
             "Aggressive RNNoise — handles non-stationary noise (typing, "
             "dog barks, road noise) but can clip quieter speech at high "
             "strength. If both NR and AI NC are on, only AI NC runs.",
+        )
+
+        # Sidetone card (moved here from Home — sidetone is a
+        # microphone-side concern and grouping it with the gate / NR
+        # controls makes the page tell one coherent story).
+        sidetone_row = QHBoxLayout()
+        sidetone_lbl = QLabel("Sidetone")
+        sidetone_lbl.setFixedWidth(80)
+        self.sidetone_slider = QSlider(Qt.Horizontal)
+        self.sidetone_slider.setRange(0, 128)
+        self.sidetone_slider.setValue(0)
+        self.sidetone_slider.setMaximumWidth(420)
+        self.sidetone_slider.setEnabled(self._daemon is not None)
+        self.sidetone_value = QLabel("0")
+        self.sidetone_value.setFixedWidth(36)
+        self.sidetone_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.sidetone_slider.valueChanged.connect(self._on_sidetone_changed)
+        self.sidetone_slider.sliderReleased.connect(self._on_sidetone_released)
+        sidetone_row.addWidget(sidetone_lbl)
+        sidetone_row.addWidget(self.sidetone_slider, 1)
+        sidetone_row.addWidget(self.sidetone_value)
+
+        sidetone_help = QLabel(
+            "Hardware sidetone — how loudly the headset feeds your raw "
+            "mic back into your ears. The Arctis Nova Pro Wireless has "
+            "4 internal levels; the slider quantises into whichever "
+            "range it lands in."
+        )
+        sidetone_help.setWordWrap(True)
+        sidetone_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        # Voice-test card — a software loopback from the processed
+        # SteelMic source back into the headset. Lets the user A/B
+        # the gate / NR / AI-NC settings against their own voice
+        # without firing up Discord. We use `pactl load-module
+        # module-loopback`, capture its module id, and unload on
+        # toggle-off. latency_msec=20 keeps the round-trip from
+        # feeling laggy without taxing the scheduler.
+        voice_btn_row = QHBoxLayout()
+        self.voice_test_btn = QPushButton("🎧  Hear yourself (test mic)")
+        self.voice_test_btn.setCheckable(True)
+        self.voice_test_btn.setMaximumWidth(280)
+        self.voice_test_btn.toggled.connect(self._on_voice_test_toggled)
+        voice_btn_row.addWidget(self.voice_test_btn)
+        voice_btn_row.addStretch(1)
+
+        voice_help = QLabel(
+            "Loops the processed SteelMic back through your headset "
+            "so you can hear what the gate / NR / AI-NC actually do. "
+            "Toggle off when done — the loopback also stops "
+            "automatically when you close the app."
+        )
+        voice_help.setWordWrap(True)
+        voice_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        layout.addWidget(
+            card(
+                "Listen + Sidetone",
+                sidetone_row,
+                sidetone_help,
+                voice_btn_row,
+                voice_help,
+            )
         )
 
         notes = QLabel(
@@ -177,6 +265,12 @@ class MicrophoneTab(QWidget):
         slider = QSlider(Qt.Horizontal)
         slider.setRange(0, 100)
         slider.setValue(50)
+        # Cap width so the dial isn't 1500 px wide on a maximised
+        # window — at full extent the user has to drag forever to
+        # nudge by a few percent. 420 px feels right for a 0..100
+        # slider: precise enough for fine tweaks, fast enough to
+        # sweep the range in one motion.
+        slider.setMaximumWidth(420)
         slider.setEnabled(False)  # Re-enabled when toggle flips on
         value_lbl = QLabel("50")
         value_lbl.setFixedWidth(36)
@@ -244,6 +338,110 @@ class MicrophoneTab(QWidget):
             enabled=self._state[key]["enabled"],
             strength=int(strength),
         )
+
+    # ------------------------------------------------------- sidetone
+
+    def on_sidetone_changed(self, level: int) -> None:
+        """Daemon broadcast: persisted sidetone level changed (status
+        snapshot on connect, or another GUI client set it). Re-apply
+        with signals blocked so the echo doesn't loop back as another
+        set-sidetone command."""
+        was_blocked = self.sidetone_slider.blockSignals(True)
+        try:
+            self.sidetone_slider.setValue(level)
+        finally:
+            self.sidetone_slider.blockSignals(was_blocked)
+        self.sidetone_value.setText(str(level))
+
+    def _on_sidetone_changed(self, value: int) -> None:
+        self.sidetone_value.setText(str(value))
+        self._sidetone_pending = value
+        self._sidetone_commit_timer.start()
+
+    def _on_sidetone_released(self) -> None:
+        self._sidetone_pending = self.sidetone_slider.value()
+        self._sidetone_commit_timer.stop()
+        self._commit_sidetone()
+
+    def _commit_sidetone(self) -> None:
+        if self._daemon is None or self._sidetone_pending is None:
+            return
+        level = int(self._sidetone_pending)
+        self._sidetone_pending = None
+        self._daemon.send_command("set-sidetone", level=level)
+
+    # ------------------------------------------------------- voice test
+
+    def _on_voice_test_toggled(self, checked: bool) -> None:
+        """Toggle a `module-loopback` from SteelMic to the default
+        sink (the headset). `pactl load-module` prints the new module
+        id on stdout; we keep it so we can unload cleanly. If pactl
+        isn't on PATH or the load fails, surface a one-shot toast and
+        force the button back off."""
+        if checked:
+            if not shutil.which("pactl"):
+                QMessageBox.warning(
+                    self,
+                    "pactl not found",
+                    "Voice-test needs pactl on PATH (PipeWire / PulseAudio "
+                    "client tools). Install pulseaudio-utils (Debian/Ubuntu) "
+                    "or pulseaudio-utils / pipewire-pulse (Fedora) and "
+                    "try again.",
+                )
+                self.voice_test_btn.setChecked(False)
+                return
+            try:
+                result = subprocess.run(
+                    [
+                        "pactl",
+                        "load-module",
+                        "module-loopback",
+                        "source=SteelMic",
+                        "latency_msec=20",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "Voice-test failed",
+                    f"Could not start the loopback:\n{e}",
+                )
+                self.voice_test_btn.setChecked(False)
+                return
+            if result.returncode != 0:
+                QMessageBox.warning(
+                    self,
+                    "Voice-test failed",
+                    "pactl rejected the loopback. Make sure SteelMic "
+                    "exists (enable any mic feature first):\n\n"
+                    + (result.stderr or "(no error output)"),
+                )
+                self.voice_test_btn.setChecked(False)
+                return
+            try:
+                self._voice_test_module_id = int(result.stdout.strip())
+            except ValueError:
+                self._voice_test_module_id = None
+            self.voice_test_btn.setText("🛑  Stop voice test")
+        else:
+            self._teardown_voice_test()
+            self.voice_test_btn.setText("🎧  Hear yourself (test mic)")
+
+    def _teardown_voice_test(self) -> None:
+        if self._voice_test_module_id is None:
+            return
+        try:
+            subprocess.run(
+                ["pactl", "unload-module", str(self._voice_test_module_id)],
+                capture_output=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+        self._voice_test_module_id = None
 
     # ------------------------------------------------------- default-source
 
