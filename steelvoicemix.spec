@@ -1,5 +1,5 @@
 Name:           steelvoicemix
-Version:        0.3.0
+Version:        0.3.1
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta)
 
@@ -108,6 +108,17 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
+* Thu Apr 30 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.3.1-1
+- Fix: 'Check for updates' button now wipes the on-disk update cache
+  before querying GitHub, so it actually re-checks instead of
+  replaying the last 24 h's cached result.
+- Fix: EQ slider labels fall back to 'Band 1..10' for parametric
+  presets where multiple bands cluster in the same musical range
+  (the ASM library does this for game-specific tunings — three
+  sliders all labelled 'Brilliance' was confusing).
+- UX: ALPHA badge added next to the HDMI sink toggle to signal it
+  hasn't been hardware-verified against a real TV / AVR yet.
+
 * Thu Apr 30 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.3.0-1
 - Major feature: 10-band parametric EQ. Per-channel (Game / Chat /
   Media / HDMI) tunings driven by PipeWire filter chains, with a

@@ -39,6 +39,17 @@
     <modalias>usb:v1038p12E0*</modalias>
   </provides>
   <releases>
+    <release version="0.3.1" date="2026-04-30" type="development">
+      <description>
+        <p>Patch release: three small UX fixes on top of v0.3.0.</p>
+        <ul>
+          <li>'Check for updates' button now bypasses the 24-hour cache so it actually checks GitHub each time you click it.</li>
+          <li>EQ slider labels fall back to 'Band 1..10' when a parametric preset clusters multiple sliders in the same musical range (ASM game-specific tunings often do this — three sliders all labelled 'Brilliance' was confusing).</li>
+          <li>HDMI sink toggle in the Sinks tab gets an ALPHA badge to signal it hasn't been hardware-verified against a real TV / AVR yet.</li>
+        </ul>
+      </description>
+      <url>https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/releases/tag/v0.3.1</url>
+    </release>
     <release version="0.3.0" date="2026-04-30" type="development">
       <description>
         <p>
