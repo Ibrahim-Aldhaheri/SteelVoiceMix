@@ -74,6 +74,20 @@ DEFAULTS: dict[str, Any] = {
     # Appearance: 'auto' follows the system colour scheme; 'light'
     # / 'dark' override with our packaged palettes. See gui/theme.py.
     "theme_mode": "auto",
+    # Auto-switch the Game-channel EQ when a known game launches.
+    # When True, the GameWatcher polls SteelGame's sink-inputs and:
+    #   1. Looks up `game_eq_bindings[detected_name]` (manual override).
+    #   2. Falls back to fuzzy-matching the bundled ASM preset library.
+    #   3. Snapshots the current Game EQ, applies the matched preset.
+    #   4. Restores the snapshot when the game's sink-input disappears.
+    # Off by default — opt-in feature, audible only when on.
+    "auto_game_eq_enabled": False,
+    # Manual game-name → preset-name overrides. Takes precedence over
+    # the ASM fuzzy match. One preset can be bound to many games by
+    # adding multiple entries pointing at the same preset name. The
+    # preset name must already exist (built-in / ASM bundled / user
+    # save) on the Game channel.
+    "game_eq_bindings": {},
 }
 
 # Star-tier capacity per channel. Five is enough to cover the main use

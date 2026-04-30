@@ -47,6 +47,7 @@ from .theme import apply_theme, normalize_mode
 from .tabs.equalizer import EqualizerTab
 from .tabs.home import HomeTab
 from .tabs.microphone import MicrophoneTab
+from .game_eq import GameProfileManager, GameWatcher
 from .tabs.settings import SettingsTab
 from .tabs.sinks import SinksTab
 from .tabs.surround import SurroundTab
@@ -276,6 +277,19 @@ class MixerGUI(QMainWindow):
 
         self.signals.mic_state_changed.connect(self.mic_tab.on_mic_state_changed)
         self.signals.mic_state_changed.connect(self.home_tab.on_mic_state)
+
+        # Auto game-EQ orchestration. Manager reads the EQ tab's live
+        # bands cache to take its pre-game snapshot; watcher polls
+        # pactl in a background thread and emits a set every time
+        # the active-games list changes.
+        self.game_eq_manager = GameProfileManager(
+            self.daemon_client, self.settings, self.eq_tab._bands_by_channel
+        )
+        self.game_watcher = GameWatcher()
+        self.game_watcher.games_changed.connect(
+            self.game_eq_manager.on_games_changed
+        )
+        self.game_watcher.start()
         self.signals.mic_default_source_changed.connect(
             self.mic_tab.on_mic_default_source_changed
         )
@@ -409,6 +423,13 @@ class MixerGUI(QMainWindow):
         # in PipeWire.
         try:
             self.mic_tab._teardown_voice_test()
+        except Exception:
+            pass
+        # Stop the game watcher's poll loop so the QThread joins
+        # cleanly before the QApplication exits.
+        try:
+            self.game_watcher.stop()
+            self.game_watcher.wait(2000)
         except Exception:
             pass
         self.daemon_client.stop()

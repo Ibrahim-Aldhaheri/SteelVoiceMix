@@ -9,10 +9,13 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -44,6 +47,7 @@ from ..settings import (
     save as save_settings,
     save_profile,
 )
+from ..eq_presets import list_presets
 from ..theme import THEME_MODES, apply_theme, normalize_mode
 from ..widgets import POSITION_DISPLAY, card, labelled_toggle
 
@@ -215,6 +219,63 @@ class SettingsTab(QWidget):
             card("Audio Profiles", profile_row, profile_btns, profile_help)
         )
 
+        # Auto game-EQ card --------------------------------------------
+        # Toggle (with ALPHA badge — the watcher polls pactl every 2 s
+        # and game-detection relies on PipeWire's application.name
+        # which apps report inconsistently) + manual bindings table.
+        auto_game_row, self.auto_game_toggle = labelled_toggle(
+            "Auto-switch EQ when a known game launches",
+            badge="ALPHA",
+        )
+        self.auto_game_toggle.setChecked(
+            bool(self._settings.get("auto_game_eq_enabled", False))
+        )
+        self.auto_game_toggle.toggled.connect(self._toggle_auto_game)
+
+        # Manual bindings table — 2 columns: game name (free-text) and
+        # preset name (combo with every Game-channel preset visible
+        # in the EQ tab). Bindings take precedence over the bundled
+        # ASM fuzzy match.
+        self.bindings_table = QTableWidget(0, 2)
+        self.bindings_table.setHorizontalHeaderLabels(["Game name", "EQ preset"])
+        self.bindings_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
+        self.bindings_table.verticalHeader().setVisible(False)
+        self.bindings_table.setMinimumHeight(140)
+        self._refresh_bindings_table()
+
+        bindings_btns = QHBoxLayout()
+        add_btn = QPushButton("Add binding…")
+        add_btn.clicked.connect(self._add_binding)
+        del_btn = QPushButton("Remove selected")
+        del_btn.clicked.connect(self._remove_binding)
+        bindings_btns.addWidget(add_btn)
+        bindings_btns.addWidget(del_btn)
+        bindings_btns.addStretch(1)
+
+        auto_game_help = QLabel(
+            "When on, the app polls audio clients on the Game sink and, "
+            "if it recognises one, applies the matching ASM preset. The "
+            "manual table below overrides the auto-match — bind the same "
+            "preset to several games to share one tuning. Closing the "
+            "game restores whatever EQ you had before it launched."
+        )
+        auto_game_help.setWordWrap(True)
+        auto_game_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        layout.addWidget(
+            card(
+                "Auto Game-EQ",
+                auto_game_row,
+                self.bindings_table,
+                bindings_btns,
+                auto_game_help,
+            )
+        )
+
         # Alpha channel card -------------------------------------------
         # The GUI can't actually run sudo, so this card just shows the
         # commands and a "Copy to clipboard" button. Users paste into
@@ -335,6 +396,75 @@ class SettingsTab(QWidget):
     def _toggle_minimize_hint(self, checked: bool) -> None:
         self._settings["notify_minimize_hint"] = checked
         save_settings(self._settings)
+
+    def _toggle_auto_game(self, checked: bool) -> None:
+        self._settings["auto_game_eq_enabled"] = checked
+        save_settings(self._settings)
+
+    def _refresh_bindings_table(self) -> None:
+        """Repopulate the bindings table from `settings['game_eq_bindings']`."""
+        bindings: dict = self._settings.get("game_eq_bindings") or {}
+        self.bindings_table.setRowCount(0)
+        for game, preset in sorted(bindings.items()):
+            row = self.bindings_table.rowCount()
+            self.bindings_table.insertRow(row)
+            self.bindings_table.setItem(row, 0, QTableWidgetItem(game))
+            self.bindings_table.setItem(row, 1, QTableWidgetItem(preset))
+
+    def _add_binding(self) -> None:
+        """Two-step prompt: ask for the game name (free text — must
+        match what PipeWire's application.name reports for that game),
+        then pick the preset from the dropdown of every Game-channel
+        preset visible in the EQ tab."""
+        name, ok = QInputDialog.getText(
+            self,
+            "Bind game to preset",
+            "Game name (as it appears under PipeWire's "
+            "application.name):",
+        )
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        preset_names = [p["name"] for p in list_presets("game")]
+        if not preset_names:
+            QMessageBox.warning(
+                self,
+                "No presets available",
+                "There are no Game-channel presets to bind. Save one "
+                "from the Equalizer tab first.",
+            )
+            return
+        preset, ok = QInputDialog.getItem(
+            self,
+            f"Preset for '{name}'",
+            "EQ preset:",
+            preset_names,
+            0,
+            False,
+        )
+        if not ok or not preset:
+            return
+        bindings = dict(self._settings.get("game_eq_bindings") or {})
+        bindings[name] = preset
+        self._settings["game_eq_bindings"] = bindings
+        save_settings(self._settings)
+        self._refresh_bindings_table()
+
+    def _remove_binding(self) -> None:
+        rows = sorted(
+            {idx.row() for idx in self.bindings_table.selectedIndexes()},
+            reverse=True,
+        )
+        if not rows:
+            return
+        bindings = dict(self._settings.get("game_eq_bindings") or {})
+        for r in rows:
+            item = self.bindings_table.item(r, 0)
+            if item:
+                bindings.pop(item.text(), None)
+        self._settings["game_eq_bindings"] = bindings
+        save_settings(self._settings)
+        self._refresh_bindings_table()
 
     def _change_theme(self, index: int) -> None:
         mode = ("auto", "light", "dark")[index] if 0 <= index <= 2 else "auto"
@@ -530,6 +660,16 @@ class SettingsTab(QWidget):
                 self.orient_combo.setCurrentIndex(idx)
             finally:
                 self.orient_combo.blockSignals(was_blocked)
+        # Auto game-EQ toggle + bindings table (reset cleared
+        # bindings via reset_to_defaults_preserving_profiles too).
+        was_blocked = self.auto_game_toggle.blockSignals(True)
+        try:
+            self.auto_game_toggle.setChecked(
+                bool(self._settings.get("auto_game_eq_enabled", False))
+            )
+        finally:
+            self.auto_game_toggle.blockSignals(was_blocked)
+        self._refresh_bindings_table()
         # Theme combo + immediate re-apply so the live window flips
         # back to the default palette as part of the reset.
         mode = normalize_mode(self._settings.get("theme_mode", "auto"))
