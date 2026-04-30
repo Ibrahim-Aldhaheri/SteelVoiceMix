@@ -244,16 +244,23 @@ class MixerGUI(QMainWindow):
         # Media + HDMI rows in the channel combo dynamically.
         self.signals.media_sink_changed.connect(self.eq_tab.on_media_sink_changed)
         self.signals.hdmi_sink_changed.connect(self.eq_tab.on_hdmi_sink_changed)
+        # Home dashboard mirrors the same toggles in its status pills.
+        self.signals.media_sink_changed.connect(self.home_tab.on_media_enabled)
+        self.signals.hdmi_sink_changed.connect(self.home_tab.on_hdmi_enabled)
         self.signals.auto_route_browsers_changed.connect(
             self.sinks_tab.on_auto_route_changed
         )
 
         self.signals.eq_enabled_changed.connect(self.eq_tab.on_enabled_changed)
+        self.signals.eq_enabled_changed.connect(self.home_tab.on_eq_enabled)
         self.signals.eq_bands_changed.connect(self.eq_tab.on_bands_changed)
         self.signals.eq_full_state.connect(self.eq_tab.on_full_state)
 
         self.signals.surround_enabled_changed.connect(
             self.surround_tab.on_enabled_changed
+        )
+        self.signals.surround_enabled_changed.connect(
+            self.home_tab.on_surround_enabled
         )
         self.signals.surround_hrir_changed.connect(
             self.surround_tab.on_hrir_changed
@@ -268,6 +275,7 @@ class MixerGUI(QMainWindow):
         )
 
         self.signals.mic_state_changed.connect(self.mic_tab.on_mic_state_changed)
+        self.signals.mic_state_changed.connect(self.home_tab.on_mic_state)
         self.signals.mic_default_source_changed.connect(
             self.mic_tab.on_mic_default_source_changed
         )

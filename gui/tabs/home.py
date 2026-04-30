@@ -1,9 +1,21 @@
-"""Home tab — live ChatMix balance bars + battery."""
+"""Home tab — status dashboard. ChatMix balance + battery + a
+features-at-a-glance pill row showing what processing is live.
+
+Layout uses a two-column grid on the top half so a maximised window
+fills with content rather than a lonely strip of bars: ChatMix on
+the left, headset / battery on the right, both balanced at the
+same visual weight. The status row underneath is a single full-
+width card with one pill per feature (EQ / Surround / Media /
+HDMI / Mic-NR / Mic-Gate / Mic-AI). Pills colour green when active,
+neutral when inactive, so the user can sanity-check what's running
+without clicking through tabs.
+"""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -11,7 +23,35 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..widgets import card, make_bar
+from ..widgets import ACCENT, card, make_bar
+
+
+class _StatusPill(QLabel):
+    """Small rounded label that flips colour when `set_active(True)`.
+    Used in the bottom row to show which features are currently on.
+    Built on QLabel rather than QPushButton so it's clearly read-
+    only; the user changes state on the relevant feature tab."""
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(text, parent)
+        self.setAlignment(Qt.AlignCenter)
+        self.set_active(False)
+
+    def set_active(self, active: bool) -> None:
+        if active:
+            bg = ACCENT
+            fg = "white"
+            border = ACCENT
+        else:
+            bg = "transparent"
+            fg = "palette(placeholder-text)"
+            border = "palette(mid)"
+        self.setStyleSheet(
+            f"background: {bg}; color: {fg}; "
+            f"border: 1px solid {border}; "
+            "border-radius: 10px; padding: 4px 12px; "
+            "font-size: 10px; font-weight: bold;"
+        )
 
 
 class HomeTab(QWidget):
@@ -19,23 +59,31 @@ class HomeTab(QWidget):
         super().__init__(parent)
         self._daemon = daemon_client
 
-        # Outer layout adds horizontal padding stretches on each side so
-        # the content column stays a comfortable reading width when
-        # the user maximises the window. Without this, cards stretched
-        # edge-to-edge on a 1440p monitor and the empty card title
-        # rows looked sparse and unbalanced.
-        outer = QHBoxLayout(self)
-        outer.setContentsMargins(16, 16, 16, 16)
-        outer.setSpacing(0)
-        outer.addStretch(1)
-
-        column = QWidget()
-        column.setMaximumWidth(720)
-        layout = QVBoxLayout(column)
+        layout = QVBoxLayout(self)
         layout.setSpacing(12)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(16, 16, 16, 16)
 
-        # ChatMix card --------------------------------------------------
+        # Top row: ChatMix + Headset cards side-by-side. QGridLayout
+        # gives each column equal weight (setColumnStretch) so the
+        # cards expand together when the window grows. On a window
+        # narrower than ~640 px Qt automatically squashes them — still
+        # readable, just cosier.
+        top_grid = QGridLayout()
+        top_grid.setSpacing(12)
+        top_grid.setColumnStretch(0, 1)
+        top_grid.setColumnStretch(1, 1)
+        top_grid.addWidget(self._build_chatmix_card(), 0, 0)
+        top_grid.addWidget(self._build_headset_card(), 0, 1)
+        layout.addLayout(top_grid)
+
+        # Bottom row: full-width status pill grid.
+        layout.addWidget(self._build_status_card())
+
+        layout.addStretch(1)
+
+    # --------------------------------------------------------- card builders
+
+    def _build_chatmix_card(self) -> QWidget:
         game_row = QHBoxLayout()
         game_label = QLabel("🎮  Game")
         game_label.setFixedWidth(80)
@@ -53,12 +101,11 @@ class HomeTab(QWidget):
         self.dial_label = QLabel("⚖️  Balanced")
         self.dial_label.setAlignment(Qt.AlignCenter)
         self.dial_label.setStyleSheet(
-            "font-size: 12px; color: palette(placeholder-text);"
+            "font-size: 14px; font-weight: bold; padding-top: 4px;"
         )
+        return card("ChatMix", game_row, chat_row, self.dial_label)
 
-        layout.addWidget(card("ChatMix", game_row, chat_row, self.dial_label))
-
-        # Battery card --------------------------------------------------
+    def _build_headset_card(self) -> QWidget:
         battery_row = QHBoxLayout()
         self.battery_label = QLabel("🔋  Battery")
         self.battery_label.setFixedWidth(90)
@@ -71,12 +118,40 @@ class HomeTab(QWidget):
         battery_row.addWidget(self.battery_label)
         battery_row.addWidget(self.battery_bar)
 
-        layout.addWidget(card("Headset", battery_row))
+        self.battery_status = QLabel("Headset disconnected")
+        self.battery_status.setAlignment(Qt.AlignCenter)
+        self.battery_status.setStyleSheet(
+            "font-size: 14px; font-weight: bold; padding-top: 4px;"
+        )
+        return card("Headset", battery_row, self.battery_status)
 
-        layout.addStretch(1)
+    def _build_status_card(self) -> QWidget:
+        # Active-features pill row — the user sees at a glance which
+        # processing is live without clicking through Equalizer /
+        # Surround / Microphone / Sinks. Pills are read-only; flip
+        # them on the relevant tab.
+        self._pills: dict[str, _StatusPill] = {
+            "eq": _StatusPill("EQ"),
+            "surround": _StatusPill("Surround"),
+            "media": _StatusPill("Media sink"),
+            "hdmi": _StatusPill("HDMI sink"),
+            "mic_gate": _StatusPill("Mic Gate"),
+            "mic_nr": _StatusPill("Mic NR"),
+            "mic_ai": _StatusPill("Mic AI-NC"),
+        }
+        pill_row = QHBoxLayout()
+        pill_row.setSpacing(8)
+        for pill in self._pills.values():
+            pill_row.addWidget(pill)
+        pill_row.addStretch(1)
 
-        outer.addWidget(column, 0, Qt.AlignTop)
-        outer.addStretch(1)
+        hint = QLabel(
+            "Tap any feature's tab to toggle it. Green = active."
+        )
+        hint.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+        return card("Active Features", pill_row, hint)
 
     # ---------------------------------------------------- daemon-event hooks
 
@@ -103,14 +178,46 @@ class HomeTab(QWidget):
         if status == "charging":
             self.battery_bar.setFormat(f"⚡ {level}%")
             chunk = "#4CAF50"
+            text = "Charging"
         elif status == "offline":
             self.battery_bar.setFormat("Offline")
             self.battery_bar.setValue(0)
             chunk = "#FF9800"
+            text = "Headset offline"
         else:
             self.battery_bar.setFormat(f"{level}%")
             chunk = "#4CAF50" if level > 50 else "#FF9800" if level > 20 else "#f44336"
+            text = (
+                "Battery good" if level > 50
+                else "Battery low" if level > 20
+                else "Battery critical"
+            )
         self._set_battery_chunk(chunk)
+        self.battery_status.setText(text)
+
+    # ------------------------------------------------------- pill bindings
+
+    def on_eq_enabled(self, enabled: bool) -> None:
+        self._pills["eq"].set_active(enabled)
+
+    def on_surround_enabled(self, enabled: bool) -> None:
+        self._pills["surround"].set_active(enabled)
+
+    def on_media_enabled(self, enabled: bool) -> None:
+        self._pills["media"].set_active(enabled)
+
+    def on_hdmi_enabled(self, enabled: bool) -> None:
+        self._pills["hdmi"].set_active(enabled)
+
+    def on_mic_state(self, state: dict) -> None:
+        gate = bool(((state.get("noise_gate") or {}).get("enabled")))
+        nr = bool(((state.get("noise_reduction") or {}).get("enabled")))
+        ai = bool(((state.get("ai_noise_cancellation") or {}).get("enabled")))
+        self._pills["mic_gate"].set_active(gate)
+        self._pills["mic_nr"].set_active(nr)
+        self._pills["mic_ai"].set_active(ai)
+
+    # --------------------------------------------------------- internals
 
     def _set_battery_chunk(self, chunk: str) -> None:
         self.battery_bar.setStyleSheet(
