@@ -123,28 +123,49 @@ impl SurroundChainHandle {
             spec.hrir_path.display(),
         );
 
-        // Same 500 ms wait + explicit pw-link as the EQ chain — the
-        // chain output's effect_output.SteelSurround:output_FL/FR
-        // ports need time to register before we can link them.
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // Wait for the spawned pipewire child to register its
+        // capture + playback ports, then explicitly link the
+        // playback side to the headset. The previous rev used a
+        // single 500 ms sleep + single pw-link attempt; on a cold
+        // boot wireplumber sometimes takes a couple of seconds to
+        // finish enumerating new nodes, so the link silently failed
+        // and the user had to toggle surround off→on to recover.
+        // Retry with backoff (~500 ms × 8 attempts = up to 4 s) so
+        // we cover that window without a wasteful fixed long sleep.
         let playback_node = format!("effect_output.{CHAIN_NAME}");
         for ch in ["FL", "FR"] {
             let from = format!("{playback_node}:output_{ch}");
             let to = format!("{}:playback_{ch}", spec.playback_target);
-            let res = Command::new("pw-link")
-                .args([&from, &to])
-                .stderr(Stdio::piped())
-                .stdout(Stdio::null())
-                .output();
-            match res {
-                Ok(out) if out.status.success() => {
-                    info!("Linked {from} → {to}");
+            let mut linked = false;
+            let mut last_err = String::new();
+            for attempt in 0..8 {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                let res = Command::new("pw-link")
+                    .args([&from, &to])
+                    .stderr(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .output();
+                match res {
+                    Ok(out) if out.status.success() => {
+                        info!(
+                            "Linked {from} → {to} (attempt {})",
+                            attempt + 1
+                        );
+                        linked = true;
+                        break;
+                    }
+                    Ok(out) => {
+                        last_err = String::from_utf8_lossy(&out.stderr)
+                            .trim()
+                            .to_string();
+                    }
+                    Err(e) => last_err = e.to_string(),
                 }
-                Ok(out) => warn!(
-                    "pw-link {from} → {to} failed: {}",
-                    String::from_utf8_lossy(&out.stderr).trim()
-                ),
-                Err(e) => warn!("pw-link {from} → {to} spawn error: {e}"),
+            }
+            if !linked {
+                warn!(
+                    "pw-link {from} → {to} failed after retries: {last_err}"
+                );
             }
         }
 

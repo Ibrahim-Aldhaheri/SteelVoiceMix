@@ -298,36 +298,48 @@ impl FilterChainHandle {
             conf_path.display()
         );
 
-        // Wait for the spawned daemon to register its nodes before we
-        // try to link them. 500 ms is empirically enough on a healthy box.
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        // Wire chain output → target playback explicitly. Best effort: if
-        // either side hasn't registered yet, this fails silently and the
-        // user just gets no audio through the chain — same symptom as
-        // before, no worse. In practice the 500 ms wait above is enough.
+        // Wait for the spawned daemon to register its nodes, then
+        // explicitly link the chain output to the playback target.
+        // Earlier rev used a single 500 ms sleep + single pw-link
+        // call; on cold boot (daemon restart while wireplumber is
+        // still settling) the link silently failed and the user
+        // had no audio until they toggled the feature off→on.
+        // Retry with 500 ms × 8 attempts (up to 4 s total) so we
+        // cover that startup window.
         let playback_node = spec.playback_node();
         for ch in ["FL", "FR"] {
             let from = format!("{playback_node}:output_{ch}");
             let to = format!("{}:playback_{ch}", spec.playback_target);
-            let status = Command::new("pw-link")
-                .args([&from, &to])
-                .stderr(Stdio::piped())
-                .stdout(Stdio::null())
-                .output();
-            match status {
-                Ok(out) if out.status.success() => {
-                    info!("Linked {from} → {to}");
+            let mut linked = false;
+            let mut last_err = String::new();
+            for attempt in 0..8 {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                let status = Command::new("pw-link")
+                    .args([&from, &to])
+                    .stderr(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .output();
+                match status {
+                    Ok(out) if out.status.success() => {
+                        info!(
+                            "Linked {from} → {to} (attempt {})",
+                            attempt + 1
+                        );
+                        linked = true;
+                        break;
+                    }
+                    Ok(out) => {
+                        last_err = String::from_utf8_lossy(&out.stderr)
+                            .trim()
+                            .to_string();
+                    }
+                    Err(e) => last_err = e.to_string(),
                 }
-                Ok(out) => {
-                    warn!(
-                        "pw-link {from} → {to} failed: {}",
-                        String::from_utf8_lossy(&out.stderr).trim()
-                    );
-                }
-                Err(e) => {
-                    warn!("pw-link {from} → {to} spawn error: {e}");
-                }
+            }
+            if !linked {
+                warn!(
+                    "pw-link {from} → {to} failed after retries: {last_err}"
+                );
             }
         }
 
