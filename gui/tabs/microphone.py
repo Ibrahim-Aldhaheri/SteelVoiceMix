@@ -93,6 +93,26 @@ class MicrophoneTab(QWidget):
         layout.setSpacing(12)
         layout.setContentsMargins(16, 16, 16, 16)
 
+        # ALPHA banner — every feature on this tab is still being
+        # validated on real hardware. Surface that prominently so
+        # users go in with the right expectations.
+        alpha_row = QHBoxLayout()
+        alpha_pill = QLabel("ALPHA")
+        alpha_pill.setStyleSheet(
+            "background: #FF9800; color: white; "
+            "font-size: 9px; font-weight: bold; "
+            "padding: 2px 6px; border-radius: 8px;"
+        )
+        alpha_text = QLabel(
+            "All microphone features on this tab are still being "
+            "tested. Behaviour may change between releases; report "
+            "issues on GitHub."
+        )
+        alpha_text.setWordWrap(True)
+        alpha_text.setStyleSheet("font-size: 11px;")
+        alpha_row.addWidget(alpha_pill, 0, Qt.AlignTop)
+        alpha_row.addWidget(alpha_text, 1)
+
         intro = QLabel(
             "Apply capture-side processing to your headset's microphone. "
             "Apps record from the SteelMic source — selectable in your "
@@ -102,7 +122,7 @@ class MicrophoneTab(QWidget):
         intro.setStyleSheet(
             "font-size: 11px; color: palette(placeholder-text);"
         )
-        layout.addWidget(card("Microphone Processing", intro))
+        layout.addWidget(card("Microphone Processing", alpha_row, intro))
 
         self.gate_toggle, self.gate_slider, self.gate_value = self._add_feature_card(
             layout,
