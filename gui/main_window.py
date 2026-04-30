@@ -137,7 +137,7 @@ class MixerGUI(QMainWindow):
         self.sinks_tab = SinksTab(self.daemon_client)
         self.eq_tab = EqualizerTab(self.daemon_client, self.settings)
         self.surround_tab = SurroundTab(self.daemon_client)
-        self.mic_tab = MicrophoneTab(self.daemon_client)
+        self.mic_tab = MicrophoneTab(self.daemon_client, self.settings)
         self.settings_tab = SettingsTab(
             self.settings, self.overlay, self.sinks_tab, self.daemon_client
         )
@@ -263,6 +263,9 @@ class MixerGUI(QMainWindow):
         )
 
         self.signals.mic_state_changed.connect(self.mic_tab.on_mic_state_changed)
+        self.signals.mic_default_source_changed.connect(
+            self.mic_tab.on_mic_default_source_changed
+        )
         self.signals.sidetone_changed.connect(self.home_tab.on_sidetone_changed)
         self.signals.notifications_enabled_changed.connect(
             self.settings_tab.on_daemon_notifications_changed

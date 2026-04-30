@@ -65,6 +65,12 @@ DEFAULTS: dict[str, Any] = {
     # bind to. Once this flips True we never auto-send again, so a
     # user who later clears the path stays cleared.
     "surround_default_applied": False,
+    # One-shot marker: True after we've shown the "we promoted
+    # SteelMic to your default mic" notification once. The mic chain
+    # silently swaps the default every time it spawns; this flag
+    # gates the user-facing dialog so it only appears the very
+    # first time, not every toggle.
+    "mic_default_promoted_shown": False,
 }
 
 # Star-tier capacity per channel. Five is enough to cover the main use

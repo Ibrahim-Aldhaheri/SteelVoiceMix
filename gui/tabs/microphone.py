@@ -24,11 +24,13 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
 
+from ..settings import save as save_settings
 from ..widgets import card, labelled_toggle
 
 # Daemon command + MicState key names. The daemon's MicState fields
@@ -43,9 +45,13 @@ _FEATURES = (
 
 
 class MicrophoneTab(QWidget):
-    def __init__(self, daemon_client, parent=None):
+    def __init__(self, daemon_client, settings: dict, parent=None):
         super().__init__(parent)
         self._daemon = daemon_client
+        # Settings dict is shared with the rest of the GUI so the
+        # one-time "default source promoted" marker persists across
+        # launches alongside overlay/profile prefs.
+        self._settings = settings
 
         # Local mirror of the daemon's MicState so we can issue
         # incremental updates (only the changed feature's command)
@@ -238,3 +244,31 @@ class MicrophoneTab(QWidget):
             enabled=self._state[key]["enabled"],
             strength=int(strength),
         )
+
+    # ------------------------------------------------------- default-source
+
+    def on_mic_default_source_changed(self, active: bool) -> None:
+        """Daemon broadcast: SteelMic is now (or no longer) the
+        system default source. The first time it goes active in a
+        user's life, surface a one-shot dialog explaining what just
+        changed — without it, the swap is invisible and people get
+        confused why their default mic suddenly says SteelMic. After
+        the first time, persisted via settings.json so we don't
+        nag on every subsequent toggle."""
+        if not active:
+            return
+        if self._settings.get("mic_default_promoted_shown", False):
+            return
+        QMessageBox.information(
+            self,
+            "Default microphone changed",
+            "Heads up: SteelMic is now your system's default "
+            "microphone source. Apps that follow the system default "
+            "(most do) will pick up the processed audio automatically. "
+            "If you'd rather use a different mic, switch the default "
+            "back from your system audio settings — disabling all "
+            "microphone features here also restores the previous "
+            "default.\n\nThis notice only shows once.",
+        )
+        self._settings["mic_default_promoted_shown"] = True
+        save_settings(self._settings)

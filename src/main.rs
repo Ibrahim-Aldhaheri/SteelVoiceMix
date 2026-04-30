@@ -81,15 +81,24 @@ fn handle_mic_feature_update(
         update(&mut st.mic_state);
         st.mic_state
     };
-    {
+    let default_active = {
         let mut sm = sinks.lock().unwrap();
-        sm.set_mic_state(new_state);
-    }
+        sm.set_mic_state(new_state)
+    };
     persist_sink_state(state);
     info!(
         "GUI requested: set-mic-{label} (enabled={enabled}, strength={strength})"
     );
     broadcast_event(subscribers, DaemonEvent::MicStateChanged { state: new_state });
+    // The default-source change is a separate event so the GUI can
+    // tie its one-time notification to it specifically (rather than
+    // showing one every mic-state-changed event).
+    broadcast_event(
+        subscribers,
+        DaemonEvent::MicDefaultSourceChanged {
+            active: default_active,
+        },
+    );
 }
 
 /// Persist sink-toggle preferences. Reads all flags from the current
@@ -379,6 +388,10 @@ fn handle_client(
                     DaemonEvent::MicStateChanged {
                         state: MicState::default(),
                     },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::MicDefaultSourceChanged { active: false },
                 );
                 broadcast_event(
                     &subscribers,

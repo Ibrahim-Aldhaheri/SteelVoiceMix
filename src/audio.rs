@@ -94,6 +94,11 @@ pub struct SinkManager {
     /// Live mic chain handle when the chain is running. Dropping it
     /// kills the spawned pipewire child and removes the conf file.
     mic_chain: Option<MicChainHandle>,
+    /// System default source captured the moment we promoted
+    /// SteelMic. Restored on teardown so disabling all mic features
+    /// puts the user back where they were. None when SteelMic isn't
+    /// the active default.
+    previous_default_source: Option<String>,
     /// Cached hardware microphone source name. Found at headset-
     /// connect time and reused on every mic-state respawn.
     mic_source: Option<String>,
@@ -132,34 +137,46 @@ impl SinkManager {
             mic_state,
             mic_chain: None,
             mic_source: None,
+            previous_default_source: None,
             output_sink: None,
             hdmi_target: None,
         }
     }
 
     /// Apply a fresh MicState. If the new state has any feature
-    /// enabled and we know the mic source, the chain (re)spawns;
-    /// otherwise the chain is torn down. Caller is responsible for
-    /// emitting the broadcast event.
-    pub fn set_mic_state(&mut self, new_state: MicState) {
+    /// enabled and we know the mic source, the chain (re)spawns and
+    /// SteelMic is promoted to the system default source so apps
+    /// that follow the default get the processed audio without
+    /// having to manually pick the source. On teardown we restore
+    /// whatever default the user had before. Returns true iff
+    /// SteelMic became (or stayed) the active default after this
+    /// call — the daemon emits MicDefaultSourceChanged based on it.
+    pub fn set_mic_state(&mut self, new_state: MicState) -> bool {
         self.mic_state = new_state;
         // Tear down the current chain unconditionally — strength
         // changes need a respawn since LADSPA control values are
         // baked into the conf file at spawn time.
+        let was_running = self.mic_chain.is_some();
         if let Some(handle) = self.mic_chain.take() {
             handle.shutdown();
         }
         let Some(source) = self.mic_source.clone() else {
             // Headset not connected yet. State is stored; the next
             // create_sinks call will pick it up.
-            return;
+            if was_running {
+                self.demote_steelmic_default();
+            }
+            return false;
         };
         let spec = MicChainSpec {
             mic_source: &source,
             state: self.mic_state,
         };
         if !spec.has_active_features() {
-            return;
+            if was_running {
+                self.demote_steelmic_default();
+            }
+            return false;
         }
         match MicChainHandle::spawn(&spec) {
             Some(handle) => {
@@ -170,10 +187,66 @@ impl SinkManager {
                     self.mic_state.noise_reduction.enabled,
                     self.mic_state.ai_noise_cancellation.enabled,
                 );
+                self.promote_steelmic_default()
             }
-            None => warn!(
-                "Failed to spawn mic chain — see prior warnings (LADSPA plugin missing?)"
-            ),
+            None => {
+                warn!(
+                    "Failed to spawn mic chain — see prior warnings (LADSPA plugin missing?)"
+                );
+                false
+            }
+        }
+    }
+
+    /// Capture the user's current default source, then make SteelMic
+    /// the new default. Idempotent — if SteelMic is already default,
+    /// returns true without re-running pactl. Returns false if pactl
+    /// isn't available or the swap fails (chain still works, just
+    /// not as default).
+    fn promote_steelmic_default(&mut self) -> bool {
+        const STEEL_MIC: &str = "SteelMic";
+        let current = current_default_source();
+        if current.as_deref() == Some(STEEL_MIC) {
+            // Already there. Don't overwrite previous_default_source
+            // because we may have set it on an earlier promote we
+            // want to restore back to.
+            return true;
+        }
+        if self.previous_default_source.is_none() {
+            self.previous_default_source = current;
+        }
+        let ok = Command::new("pactl")
+            .args(["set-default-source", STEEL_MIC])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            info!(
+                "Promoted SteelMic to default source (was: {:?})",
+                self.previous_default_source.as_deref().unwrap_or("(unset)")
+            );
+        } else {
+            warn!("Failed to set SteelMic as default source via pactl");
+            // Don't keep a stale "previous" if the set failed.
+            self.previous_default_source = None;
+        }
+        ok
+    }
+
+    /// Restore the default source we captured at promote time.
+    /// No-op if we never promoted in the first place.
+    fn demote_steelmic_default(&mut self) {
+        if let Some(prev) = self.previous_default_source.take() {
+            let ok = Command::new("pactl")
+                .args(["set-default-source", &prev])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
+                info!("Restored default source to {prev}");
+            } else {
+                warn!("Failed to restore default source to {prev}");
+            }
         }
     }
 
@@ -1129,6 +1202,32 @@ fn remove_eq_from_channel(
     eq.filter.shutdown();
     info!("Removed EQ chain for {null_sink_name}");
     true
+}
+
+/// Read the user's current default source via `pactl info`. Returns
+/// the source's node-name (parsed from the "Default Source: …" line)
+/// or None if pactl is missing / output unparseable. Used by the
+/// mic-chain promote/demote logic so we can restore the user's
+/// previous default when the chain shuts down.
+fn current_default_source() -> Option<String> {
+    let out = Command::new("pactl")
+        .arg("info")
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("Default Source:") {
+            let name = rest.trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn load_module(args: &[&str]) -> Option<u32> {

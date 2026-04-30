@@ -360,6 +360,13 @@ pub enum DaemonEvent {
     /// Fired when daemon-side desktop notifications are toggled.
     #[serde(rename = "notifications-enabled-changed")]
     NotificationsEnabledChanged { enabled: bool },
+
+    /// Fired when the daemon promotes / demotes SteelMic as the
+    /// system default source. `active=true` means SteelMic is now
+    /// the default; the GUI uses this to show a one-time
+    /// notification explaining what just changed.
+    #[serde(rename = "mic-default-source-changed")]
+    MicDefaultSourceChanged { active: bool },
 }
 
 #[cfg(test)]
@@ -671,6 +678,14 @@ mod tests {
             }
             other => panic!("expected SetMicAiNoiseCancellation, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn mic_default_source_changed_event_shape() {
+        let ev = DaemonEvent::MicDefaultSourceChanged { active: true };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "mic-default-source-changed");
+        assert_eq!(json["active"], true);
     }
 
     #[test]

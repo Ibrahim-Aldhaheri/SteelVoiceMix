@@ -111,6 +111,10 @@ class DaemonSignals(QObject):
     # own minimize-to-tray toast; this one gates the connect /
     # disconnect notify-send popups emitted by the Rust daemon).
     notifications_enabled_changed = Signal(bool)
+    # Daemon promoted (or restored) SteelMic as the system default
+    # source. `active=True` = SteelMic is now the default; the GUI
+    # uses this for a one-time "we changed your default mic" notice.
+    mic_default_source_changed = Signal(bool)
 
 
 class DaemonClient:
@@ -202,6 +206,10 @@ class DaemonClient:
         elif ev == "notifications-enabled-changed":
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("enabled", True))
+            )
+        elif ev == "mic-default-source-changed":
+            self.signals.mic_default_source_changed.emit(
+                bool(event.get("active", False))
             )
         elif ev == "eq-bands-changed":
             channel = event.get("channel", "")
