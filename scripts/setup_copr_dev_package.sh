@@ -87,7 +87,7 @@ esac
 copr-cli "${action}-package-custom" "$PROJECT" \
     --name "$PACKAGE" \
     --script "$script_path" \
-    --script-builddeps "rpkg-util git" \
+    --script-builddeps "rpkg git" \
     --script-resultdir "result"
 
 echo
