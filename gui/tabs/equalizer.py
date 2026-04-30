@@ -539,10 +539,12 @@ class EqualizerTab(QWidget):
     def _on_auto_applied(self, preset_name: str) -> None:
         """GameProfileManager signal: Auto Game-EQ has applied a
         preset (preset_name truthy) or restored the user snapshot
-        (empty string). Update the status banner. Sliders stay
-        editable on purpose — the user may want to fine-tune the
-        auto-loaded preset live, and the next watcher tick only
-        re-applies on a *game change*, not every poll."""
+        (empty string). Update the status banner, sync the preset
+        combo to the auto-loaded preset, and force a slider re-
+        render. Sliders stay editable on purpose — the user may
+        want to fine-tune the auto-loaded preset live, and the
+        next watcher tick only re-applies on a *game change*, not
+        every poll."""
         self._auto_applied_preset = preset_name or None
         if preset_name:
             self.auto_lock_banner.setText(
@@ -552,8 +554,30 @@ class EqualizerTab(QWidget):
                 "(at which point your pre-game EQ is restored)."
             )
             self.auto_lock_banner.show()
+            # Sync the preset combo + active-preset cache so the
+            # user sees which preset is loaded. Only meaningful when
+            # the user is actually viewing the Game channel — for
+            # other channels the combo shows that channel's preset.
+            self._active_preset_by_channel["game"] = preset_name
+            if self._current_channel == "game":
+                idx = self._index_for_preset_name(preset_name)
+                if idx >= 0:
+                    was_blocked = self.preset_combo.blockSignals(True)
+                    try:
+                        self.preset_combo.setCurrentIndex(idx)
+                    finally:
+                        self.preset_combo.blockSignals(was_blocked)
+                # Force a fresh slider render — normally the daemon's
+                # eq-bands-changed broadcast does this, but if for any
+                # reason the broadcast hasn't arrived yet this paints
+                # what we already have in _bands_by_channel.
+                self._render_sliders_for_channel("game")
         else:
             self.auto_lock_banner.hide()
+            # Snapshot restored — the user's pre-game preset name
+            # (cached in _active_preset_by_channel before we
+            # overrode it) should already match. The daemon's
+            # broadcast paints the bands.
 
     def _on_detected_changed(
         self, name: str, preset, on_steel_game: bool

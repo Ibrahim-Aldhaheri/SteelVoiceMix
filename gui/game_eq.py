@@ -352,14 +352,13 @@ class GameProfileManager(QObject):
 
     def _reconcile(self) -> None:
         """Bring auto-applied preset into agreement with desired
-        state, computed from `_current_games` + the toggle. Three
-        cases:
-          - toggle off + active preset → restore snapshot.
-          - toggle on  + games + active preset matches → no-op.
-          - toggle on  + games + no/wrong preset → enter or switch.
-          - toggle on  + no games + active preset → exit (restore)."""
+        state, computed from `_current_games` + the toggle."""
         auto_on = self._settings.get("auto_game_eq_enabled", False)
         games = self._current_games
+        log.info(
+            "Auto game-EQ reconcile: auto_on=%s games=%s active_preset=%r",
+            auto_on, list(games.keys()), self._active_preset,
+        )
         if not auto_on:
             if self._active_preset is not None:
                 self._exit()
@@ -413,12 +412,16 @@ class GameProfileManager(QObject):
 
     def _enter(self, games) -> None:
         preset_name = self._resolve_preset(games)
+        log.info("Auto game-EQ enter: games=%s → preset=%r", games, preset_name)
         if not preset_name:
-            log.info("Auto game-EQ: no preset match for %s", games)
             return
         bands = find_preset_bands(preset_name)
         if not bands:
-            log.warning("Auto game-EQ: preset %r vanished from disk", preset_name)
+            log.warning(
+                "Auto game-EQ: preset %r matched but find_preset_bands "
+                "returned no bands — preset list source mismatch?",
+                preset_name,
+            )
             return
         # Snapshot the user's current Game EQ before we overwrite it.
         snapshot = self._eq_state.get("game")
@@ -427,7 +430,11 @@ class GameProfileManager(QObject):
         else:
             self._snapshot_bands = None
         self._active_preset = preset_name
-        log.info("Auto game-EQ: applying %r for %s", preset_name, games)
+        log.info(
+            "Auto game-EQ: sending set-eq-channel game with %d bands "
+            "(first band: %s)",
+            len(bands), bands[0] if bands else None,
+        )
         self._daemon.send_command(
             "set-eq-channel", channel="game", bands=bands,
         )

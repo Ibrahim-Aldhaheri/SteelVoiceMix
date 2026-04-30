@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import sys
@@ -13,6 +14,17 @@ from PySide6.QtWidgets import QApplication
 from .i18n import setup_translator
 from .main_window import MixerGUI
 from .settings import APP_NAME
+
+# Configure logging at import time so module-level `log = getLogger(...)`
+# calls inherit the right level. INFO is the right default for an app
+# users look at — WARN-and-up was hiding the diagnostic trail of the
+# daemon-client and game-watcher modules. Users can crank to DEBUG via
+# STEELVOICEMIX_DEBUG=1 in the environment when reporting issues.
+_log_level = logging.DEBUG if os.environ.get("STEELVOICEMIX_DEBUG") else logging.INFO
+logging.basicConfig(
+    level=_log_level,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 # Per-user socket name — no path, QLocalServer places it under
 # $XDG_RUNTIME_DIR (or /tmp) automatically. Including the UID keeps the
