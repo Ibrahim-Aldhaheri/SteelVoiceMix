@@ -62,6 +62,8 @@ pub struct MixerState {
     pub surround_enabled: bool,
     pub surround_hrir_path: Option<std::path::PathBuf>,
     pub mic_state: MicState,
+    pub sidetone_level: u8,
+    pub notifications_enabled: bool,
 }
 
 impl MixerState {
@@ -75,6 +77,8 @@ impl MixerState {
         surround_enabled: bool,
         surround_hrir_path: Option<std::path::PathBuf>,
         mic_state: MicState,
+        sidetone_level: u8,
+        notifications_enabled: bool,
     ) -> Self {
         MixerState {
             connected: false,
@@ -89,6 +93,8 @@ impl MixerState {
             surround_enabled,
             surround_hrir_path,
             mic_state,
+            sidetone_level,
+            notifications_enabled,
         }
     }
 }
@@ -144,9 +150,20 @@ impl Mixer {
         broadcast_event(&self.subscribers, event);
     }
 
-    /// Send a desktop notification via notify-send.
+    /// Send a desktop notification via notify-send. Two gates:
+    ///   - `notify_available`: notify-send is installed (probed once
+    ///     at construction; doesn't change at runtime).
+    ///   - `notify_enabled` constructor arg: the `--no-notify` CLI
+    ///     flag, hard-disable for the whole daemon lifetime.
+    ///   - `MixerState.notifications_enabled`: runtime user toggle
+    ///     from the GUI Settings tab — read on every call so the
+    ///     user can flip it without restarting the daemon.
     fn notify(&self, summary: &str, body: &str) {
         if !self.notify_enabled || !self.notify_available {
+            return;
+        }
+        let runtime_on = self.state.lock().unwrap().notifications_enabled;
+        if !runtime_on {
             return;
         }
         let mut cmd = std::process::Command::new("notify-send");
@@ -224,6 +241,15 @@ impl Mixer {
             return None;
         }
         info!("Base station connected, ChatMix enabled");
+
+        // Push the persisted sidetone level to the device on connect.
+        // The headset's EEPROM remembers across power cycles, but we
+        // re-send anyway in case the user's been on a different
+        // machine since.
+        let level = self.state.lock().unwrap().sidetone_level;
+        if let Err(e) = dev.set_sidetone(level) {
+            warn!("Could not restore sidetone level {level}: {e}");
+        }
 
         Some((dev, output_sink))
     }
@@ -319,8 +345,25 @@ impl Mixer {
         display: &mut Option<ChatMixGauge>,
     ) -> SessionEnd {
         let mut last_battery_poll = Instant::now();
+        // Track the last-applied sidetone level so we can detect
+        // GUI-driven changes from MixerState and push them to the
+        // device. Initialised from current state (already applied at
+        // connect) so the first iteration doesn't double-send.
+        let mut last_sidetone = self.state.lock().unwrap().sidetone_level;
 
         while self.running.load(Ordering::Relaxed) {
+            // Apply any pending sidetone change from the GUI. Cheap
+            // — one mutex acquire per loop iteration, same pattern
+            // we use for chatmix updates.
+            let want_sidetone = self.state.lock().unwrap().sidetone_level;
+            if want_sidetone != last_sidetone {
+                if let Err(e) = dev.set_sidetone(want_sidetone) {
+                    warn!("Failed to apply sidetone {want_sidetone}: {e}");
+                } else {
+                    last_sidetone = want_sidetone;
+                }
+            }
+
             // Short timeout keeps dial-to-update latency low; battery
             // polling still triggers every BATTERY_POLL_INTERVAL.
             match dev.read(100) {

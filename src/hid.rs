@@ -20,6 +20,15 @@ pub const OPT_CHATMIX_ICON: u8 = 0x8D;
 pub const OPT_CHATMIX_ENABLE: u8 = 0x49;
 pub const OPT_CHATMIX: u8 = 0x45;
 pub const OPT_BATTERY: u8 = 0xB0;
+// Sidetone level — the Arctis Nova Pro Wireless takes a 4-step
+// setting (0..=3 device-side), unlike the more common 0..=128 on
+// other SteelSeries devices. Confirmed against Sapd/HeadsetControl's
+// `lib/devices/steelseries_arctis_nova_pro_wireless.hpp`.
+pub const OPT_SIDETONE: u8 = 0x39;
+// Save current settings to the device's EEPROM. Standard SteelSeries
+// "save state" command — sent after each parameter change so the
+// setting survives a power cycle.
+pub const OPT_SAVE_STATE: u8 = 0x09;
 
 /// Battery status decoded from HID response.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -101,6 +110,36 @@ impl NovaDevice {
     pub fn disable_chatmix(&self) -> Result<(), HidError> {
         let _ = self.send(&[TX, OPT_CHATMIX_ENABLE, 0]);
         let _ = self.send(&[TX, OPT_CHATMIX_ICON, 0]);
+        Ok(())
+    }
+
+    /// Set sidetone level. Public API takes a 0..=128 input (matches
+    /// HeadsetControl's normalised range) and maps to the device's
+    /// 4-step internal setting:
+    ///
+    /// ```text
+    /// 0          → 0  (off)
+    /// 1..=42     → 1  (low)
+    /// 43..=85    → 2  (medium)
+    /// 86..=128   → 3  (high)
+    /// ```
+    ///
+    /// Followed by a save-state command so the change survives a
+    /// power cycle. Same flow Sapd/HeadsetControl uses for this
+    /// device family.
+    pub fn set_sidetone(&self, level: u8) -> Result<(), HidError> {
+        let level = level.min(128);
+        let device_level: u8 = if level == 0 {
+            0
+        } else if level <= 42 {
+            1
+        } else if level <= 85 {
+            2
+        } else {
+            3
+        };
+        self.send(&[TX, OPT_SIDETONE, device_level])?;
+        let _ = self.send(&[TX, OPT_SAVE_STATE]);
         Ok(())
     }
 

@@ -57,6 +57,8 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
             .as_ref()
             .map(|p| p.display().to_string()),
         mic_state: st.mic_state,
+        sidetone_level: st.sidetone_level,
+        notifications_enabled: st.notifications_enabled,
     }
 }
 
@@ -103,6 +105,8 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         surround_enabled: st.surround_enabled,
         surround_hrir_path: st.surround_hrir_path.clone(),
         mic_state: st.mic_state,
+        sidetone_level: st.sidetone_level,
+        notifications_enabled: st.notifications_enabled,
     });
 }
 
@@ -320,6 +324,8 @@ fn handle_client(
                     st.surround_enabled = false;
                     st.surround_hrir_path = None;
                     st.mic_state = MicState::default();
+                    st.sidetone_level = 0;
+                    st.notifications_enabled = true;
                 }
                 router
                     .enabled
@@ -373,6 +379,14 @@ fn handle_client(
                     DaemonEvent::MicStateChanged {
                         state: MicState::default(),
                     },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::SidetoneChanged { level: 0 },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::NotificationsEnabledChanged { enabled: true },
                 );
             }
             ClientCommand::SetSurroundEnabled { enabled } => {
@@ -454,6 +468,31 @@ fn handle_client(
                     "ai-nc",
                     enabled,
                     strength,
+                );
+            }
+            ClientCommand::SetSidetone { level } => {
+                let clamped = level.min(128);
+                {
+                    let mut st = state.lock().unwrap();
+                    st.sidetone_level = clamped;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: set-sidetone level={clamped} — applied on next event-loop iteration");
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::SidetoneChanged { level: clamped },
+                );
+            }
+            ClientCommand::SetNotificationsEnabled { enabled } => {
+                {
+                    let mut st = state.lock().unwrap();
+                    st.notifications_enabled = enabled;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: set-notifications-enabled={enabled}");
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::NotificationsEnabledChanged { enabled },
                 );
             }
             ClientCommand::SetEqBand {
@@ -600,6 +639,8 @@ fn main() {
     let surround_enabled = persisted.surround_enabled;
     let surround_hrir_path = persisted.surround_hrir_path.clone();
     let mic_state = persisted.mic_state;
+    let sidetone_level = persisted.sidetone_level;
+    let notifications_enabled = persisted.notifications_enabled;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -628,6 +669,10 @@ fn main() {
         mic_state.noise_reduction.enabled,
         mic_state.ai_noise_cancellation.enabled,
     );
+    info!(
+        "Sidetone level: {} | Daemon notifications: {}",
+        sidetone_level, notifications_enabled,
+    );
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(
         media_sink_enabled,
@@ -638,6 +683,8 @@ fn main() {
         surround_enabled,
         surround_hrir_path.clone(),
         mic_state,
+        sidetone_level,
+        notifications_enabled,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));

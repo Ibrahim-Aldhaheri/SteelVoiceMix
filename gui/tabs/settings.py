@@ -6,6 +6,7 @@ import logging
 import subprocess
 
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QHBoxLayout,
     QInputDialog,
@@ -14,6 +15,20 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+)
+
+
+_ALPHA_REPO = "abokhalil/steelvoicemix-dev"
+_STABLE_REPO = "abokhalil/steelvoicemix"
+
+_ALPHA_ENABLE_CMD = (
+    f"sudo dnf copr enable {_ALPHA_REPO} -y && "
+    "sudo dnf upgrade steelvoicemix --refresh -y"
+)
+_ALPHA_DISABLE_CMD = (
+    f"sudo dnf copr disable {_ALPHA_REPO} -y && "
+    f"sudo dnf copr enable {_STABLE_REPO} -y && "
+    "sudo dnf distro-sync steelvoicemix -y"
 )
 
 from ..settings import (
@@ -101,10 +116,14 @@ class SettingsTab(QWidget):
         layout.addWidget(card("Startup", autostart_row))
 
         # Notifications card -------------------------------------------
-        # Only the minimize-to-tray hint is GUI-side; daemon notifications
-        # (connect/disconnect via notify-send) currently live behind the
-        # `--no-notify` CLI flag and would need a daemon protocol change
-        # to be runtime-toggleable. Not flagged urgent yet.
+        # Two distinct toggles:
+        #   - Minimize-to-tray toast: GUI-side (closeEvent in main
+        #     window). Off by default — was the most-flagged annoyance
+        #     in the v0.2.x era.
+        #   - Daemon connect / disconnect notifications: emitted by
+        #     the Rust daemon via notify-send when the headset comes
+        #     up or drops. On by default (matches the legacy
+        #     --no-notify-as-only-control behaviour).
         minimize_row, self.minimize_toggle = labelled_toggle(
             "Show toast when minimised to tray",
             tooltip=(
@@ -117,7 +136,22 @@ class SettingsTab(QWidget):
             self._settings.get("notify_minimize_hint", False)
         )
         self.minimize_toggle.toggled.connect(self._toggle_minimize_hint)
-        layout.addWidget(card("Notifications", minimize_row))
+
+        daemon_notif_row, self.daemon_notif_toggle = labelled_toggle(
+            "Show 🎧 connect / disconnect notifications",
+            tooltip=(
+                "Desktop notifications emitted by the daemon when the "
+                "base station connects or drops. Distinct from the "
+                "minimize-to-tray toast above — those are GUI-side."
+            ),
+        )
+        # Default on, mirrors the daemon's default. The first
+        # mic-state / Status snapshot from the daemon will correct it
+        # if the user persisted a different value.
+        self.daemon_notif_toggle.setChecked(True)
+        self.daemon_notif_toggle.toggled.connect(self._toggle_daemon_notifs)
+
+        layout.addWidget(card("Notifications", minimize_row, daemon_notif_row))
 
         # Profiles card ------------------------------------------------
         profile_row = QHBoxLayout()
@@ -150,6 +184,43 @@ class SettingsTab(QWidget):
         layout.addWidget(
             card("Audio Profiles", profile_row, profile_btns, profile_help)
         )
+
+        # Alpha channel card -------------------------------------------
+        # The GUI can't actually run sudo, so this card just shows the
+        # commands and a "Copy to clipboard" button. Users paste into
+        # a terminal. Keeps the UX honest about the elevation step
+        # while still being more discoverable than burying the info
+        # in a README.
+        alpha_btns = QHBoxLayout()
+        self.alpha_enable_btn = QPushButton("📋 Switch to alpha")
+        self.alpha_enable_btn.setToolTip(
+            "Copy the dnf commands that swap to the alpha COPR repo."
+        )
+        self.alpha_enable_btn.clicked.connect(self._copy_alpha_enable)
+        self.alpha_disable_btn = QPushButton("📋 Back to stable")
+        self.alpha_disable_btn.setToolTip(
+            "Copy the dnf commands that switch back to the stable repo."
+        )
+        self.alpha_disable_btn.clicked.connect(self._copy_alpha_disable)
+        alpha_btns.addWidget(self.alpha_enable_btn)
+        alpha_btns.addWidget(self.alpha_disable_btn)
+        alpha_btns.addStretch(1)
+
+        alpha_help = QLabel(
+            "Alpha builds rebuild from the dev branch on every commit "
+            "— bleeding-edge features, but expect rough edges. "
+            "Clicking either button copies the dnf commands to your "
+            "clipboard; paste into a terminal to actually switch. "
+            "After the swap, run `sudo dnf upgrade steelvoicemix` to "
+            "pull the new build. Going back to stable downgrades "
+            "cleanly via dnf."
+        )
+        alpha_help.setWordWrap(True)
+        alpha_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        layout.addWidget(card("Alpha Channel", alpha_btns, alpha_help))
 
         # Reset card --------------------------------------------------
         reset_row = QHBoxLayout()
@@ -216,6 +287,38 @@ class SettingsTab(QWidget):
     def _toggle_minimize_hint(self, checked: bool) -> None:
         self._settings["notify_minimize_hint"] = checked
         save_settings(self._settings)
+
+    def _copy_to_clipboard(self, text: str, label: str) -> None:
+        cb = QApplication.clipboard()
+        cb.setText(text)
+        QMessageBox.information(
+            self,
+            "Copied",
+            f"{label} commands copied to clipboard. Paste into a "
+            "terminal:\n\n" + text,
+        )
+
+    def _copy_alpha_enable(self) -> None:
+        self._copy_to_clipboard(_ALPHA_ENABLE_CMD, "Alpha-enable")
+
+    def _copy_alpha_disable(self) -> None:
+        self._copy_to_clipboard(_ALPHA_DISABLE_CMD, "Stable-restore")
+
+    def _toggle_daemon_notifs(self, checked: bool) -> None:
+        # Pure daemon-side state — we just send the command and let
+        # the broadcast event refresh the toggle. The daemon owns
+        # persistence here (in daemon.json), not settings.json.
+        self._daemon.send_command("set-notifications-enabled", enabled=checked)
+
+    def on_daemon_notifications_changed(self, enabled: bool) -> None:
+        """Daemon broadcast: the connect / disconnect notification
+        toggle changed. Re-apply with signals blocked so the echo
+        doesn't loop back as another set-notifications-enabled."""
+        was_blocked = self.daemon_notif_toggle.blockSignals(True)
+        try:
+            self.daemon_notif_toggle.setChecked(enabled)
+        finally:
+            self.daemon_notif_toggle.blockSignals(was_blocked)
 
     def _toggle_autostart(self, checked: bool) -> None:
         self._settings["autostart"] = checked

@@ -105,6 +105,12 @@ class DaemonSignals(QObject):
     #   {"noise_gate": {"enabled": bool, "strength": int},
     #    "noise_reduction": {...}, "ai_noise_cancellation": {...}}
     mic_state_changed = Signal(dict)
+    # Hardware sidetone level (0..=128 normalised on the wire).
+    sidetone_changed = Signal(int)
+    # Daemon-side desktop notification toggle (separate from the GUI's
+    # own minimize-to-tray toast; this one gates the connect /
+    # disconnect notify-send popups emitted by the Rust daemon).
+    notifications_enabled_changed = Signal(bool)
 
 
 class DaemonClient:
@@ -191,6 +197,12 @@ class DaemonClient:
             mic = event.get("state")
             if isinstance(mic, dict):
                 self.signals.mic_state_changed.emit(_normalize_mic_state(mic))
+        elif ev == "sidetone-changed":
+            self.signals.sidetone_changed.emit(int(event.get("level", 0)))
+        elif ev == "notifications-enabled-changed":
+            self.signals.notifications_enabled_changed.emit(
+                bool(event.get("enabled", True))
+            )
         elif ev == "eq-bands-changed":
             channel = event.get("channel", "")
             bands = event.get("bands")
@@ -221,6 +233,10 @@ class DaemonClient:
             mic = event.get("mic_state")
             if isinstance(mic, dict):
                 self.signals.mic_state_changed.emit(_normalize_mic_state(mic))
+            self.signals.sidetone_changed.emit(int(event.get("sidetone_level", 0)))
+            self.signals.notifications_enabled_changed.emit(
+                bool(event.get("notifications_enabled", True))
+            )
             eq_state = event.get("eq_state") or event.get("eq_gains")
             if isinstance(eq_state, dict):
                 state: dict[str, list[dict]] = {}

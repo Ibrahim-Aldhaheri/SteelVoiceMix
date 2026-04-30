@@ -254,6 +254,16 @@ pub enum ClientCommand {
     /// everything but speech, including some quieter speech.
     #[serde(rename = "set-mic-ai-nc")]
     SetMicAiNoiseCancellation { enabled: bool, strength: u8 },
+    /// Set headset hardware sidetone level. 0..=128 normalised — the
+    /// daemon maps to the device's 4-step internal setting and saves
+    /// to EEPROM so it persists across power cycles.
+    #[serde(rename = "set-sidetone")]
+    SetSidetone { level: u8 },
+    /// Toggle daemon-side desktop notifications (the connect /
+    /// disconnect notify-send popups). Distinct from the GUI's own
+    /// minimize-to-tray toast, which is GUI-side only.
+    #[serde(rename = "set-notifications-enabled")]
+    SetNotificationsEnabled { enabled: bool },
 }
 
 /// Events sent by the daemon to subscribed GUI clients.
@@ -294,6 +304,8 @@ pub enum DaemonEvent {
         surround_enabled: bool,
         surround_hrir_path: Option<String>,
         mic_state: MicState,
+        sidetone_level: u8,
+        notifications_enabled: bool,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -338,6 +350,16 @@ pub enum DaemonEvent {
     /// re-applies the snapshot.
     #[serde(rename = "mic-state-changed")]
     MicStateChanged { state: MicState },
+
+    /// Fired when sidetone level changes (GUI command, persisted
+    /// state restore, etc.). Carries the level the daemon stored,
+    /// post-clamp.
+    #[serde(rename = "sidetone-changed")]
+    SidetoneChanged { level: u8 },
+
+    /// Fired when daemon-side desktop notifications are toggled.
+    #[serde(rename = "notifications-enabled-changed")]
+    NotificationsEnabledChanged { enabled: bool },
 }
 
 #[cfg(test)]
@@ -416,6 +438,8 @@ mod tests {
             surround_enabled: false,
             surround_hrir_path: None,
             mic_state: MicState::default(),
+            sidetone_level: 0,
+            notifications_enabled: true,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -604,6 +628,26 @@ mod tests {
         match cmd {
             ClientCommand::SetAutoRouteBrowsers { enabled } => assert!(enabled),
             other => panic!("expected SetAutoRouteBrowsers, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_sidetone_command_parses() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-sidetone","level":64}"#).unwrap();
+        match cmd {
+            ClientCommand::SetSidetone { level } => assert_eq!(level, 64),
+            other => panic!("expected SetSidetone, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_notifications_enabled_command_parses() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-notifications-enabled","enabled":false}"#).unwrap();
+        match cmd {
+            ClientCommand::SetNotificationsEnabled { enabled } => assert!(!enabled),
+            other => panic!("expected SetNotificationsEnabled, got {other:?}"),
         }
     }
 

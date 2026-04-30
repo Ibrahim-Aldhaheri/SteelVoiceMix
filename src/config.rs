@@ -56,9 +56,30 @@ pub struct DaemonState {
     /// LADSPA filter chain covering whichever combination is on.
     #[serde(default)]
     pub mic_state: MicState,
+    /// Headset hardware sidetone level (0..=128, normalised; daemon
+    /// maps to the device's 4-step internal setting). Persisted so
+    /// the daemon can restore it on reconnect — the headset's EEPROM
+    /// already remembers across power cycles, but we re-send on each
+    /// connect to handle the case where the user switched between
+    /// machines.
+    #[serde(default = "default_sidetone_level")]
+    pub sidetone_level: u8,
+    /// Whether the daemon emits desktop notifications via notify-send
+    /// on connect/disconnect events. Defaults true (consistent with
+    /// the legacy --no-notify CLI flag's "off-only" semantics).
+    #[serde(default = "default_notifications_enabled")]
+    pub notifications_enabled: bool,
 }
 
 fn default_surround_enabled() -> bool {
+    true
+}
+
+fn default_sidetone_level() -> u8 {
+    0
+}
+
+fn default_notifications_enabled() -> bool {
     true
 }
 
@@ -73,6 +94,8 @@ impl Default for DaemonState {
             surround_enabled: default_surround_enabled(),
             surround_hrir_path: None,
             mic_state: MicState::default(),
+            sidetone_level: default_sidetone_level(),
+            notifications_enabled: default_notifications_enabled(),
         }
     }
 }

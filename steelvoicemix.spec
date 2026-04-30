@@ -19,12 +19,15 @@ Requires:       libnotify
 Requires:       hidapi
 
 Recommends:     python3-pyside6
-# Microphone-tab features pull in LADSPA plugins lazily — only
-# spawned by the daemon when the user enables a feature. Recommends
-# rather than Requires because nothing else needs them; users who
-# never visit the Microphone tab don't pay for the dependency.
-Recommends:     noise-suppression-for-voice
-Recommends:     swh-plugins
+# Microphone-tab features depend on these LADSPA plugins. Required
+# (not just recommended) so the Microphone tab works out of the box
+# — combined size is ~6 MB, small enough that always-installing them
+# beats the friction of "why doesn't AI NC work?" for users who
+# don't read the README. Daemon still spawns the chain lazily; if a
+# user genuinely wants to drop the deps, they can `dnf remove
+# --noautoremove`.
+Requires:       noise-suppression-for-voice
+Requires:       swh-plugins
 
 %description
 Linux ChatMix implementation for the SteelSeries Arctis Nova Pro Wireless.
