@@ -48,9 +48,13 @@ _FUZZY_THRESHOLD = 0.62
 # list sink-inputs is cheap (~5 ms typical).
 _POLL_INTERVAL_MS = 2000
 
-# Name of the sink we filter on. Anything not playing here is ignored
-# (a YouTube tab on Media doesn't trigger a game profile, for
-# instance).
+# Sink whose audio we'd ideally apply the Game EQ to. We *prefer*
+# clients on SteelGame, but the watcher does NOT filter to it —
+# many users keep their default sink as the headset and never
+# manually route games into SteelGame. Filtering would silently
+# drop those cases. We still note SteelGame membership in the
+# emitted set so the orchestrator can warn when a matched game
+# isn't routed where the EQ would actually take effect.
 _GAME_SINK = "SteelGame"
 
 
@@ -107,17 +111,18 @@ def find_preset_bands(preset_name: str) -> list[dict] | None:
 
 
 class GameWatcher(QThread):
-    """Background thread that publishes the set of active games on
-    SteelGame. Emits `games_changed(set[str])` with the union of
-    `application.name` values whenever the set changes — both on
-    addition and removal."""
+    """Background thread that publishes the set of active candidate-
+    game clients seen on PipeWire. Emits `games_changed(dict)` with
+    the latest snapshot whenever it changes — keys are
+    `application.name` strings, values are booleans for whether the
+    client is on SteelGame. The orchestrator decides what to do."""
 
-    games_changed = Signal(set)
+    games_changed = Signal(dict)
 
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
         self._stop = False
-        self._last: frozenset[str] = frozenset()
+        self._last: tuple[tuple[str, bool], ...] = ()
 
     def stop(self) -> None:
         self._stop = True
@@ -127,10 +132,17 @@ class GameWatcher(QThread):
             log.warning("pactl not on PATH; auto game-EQ disabled")
             return
         while not self._stop:
-            current = frozenset(self._scan())
-            if current != self._last:
-                self._last = current
-                self.games_changed.emit(set(current))
+            scanned = self._scan()
+            # Stable canonical key for change detection: dedupe + sort.
+            canon = tuple(sorted(set(scanned)))
+            if canon != self._last:
+                self._last = canon
+                # Convert to dict for the slot — duplicates collapse,
+                # any "on_game" win wins (sorted True > False on bool).
+                snapshot: dict[str, bool] = {}
+                for name, on_game in scanned:
+                    snapshot[name] = snapshot.get(name, False) or on_game
+                self.games_changed.emit(snapshot)
             # msleep yields cooperatively so stop() flips promptly
             # rather than after a full 2-second wait.
             for _ in range(_POLL_INTERVAL_MS // 50):
@@ -138,15 +150,36 @@ class GameWatcher(QThread):
                     return
                 self.msleep(50)
 
+    # Apps that aren't games but report sink-inputs we don't want to
+    # match against. Skip anything whose binary or name lives in
+    # this allow-list-of-skips. Browsers are auto-routed to Media
+    # via the daemon already; the rest are noisy false positives
+    # (system sounds, voice clients, etc).
+    _IGNORED_APPS = frozenset({
+        "Spotify", "Discord", "WEBRTC VoiceEngine", "Web Content",
+        "Steam", "Steam Voice Settings",
+    })
+    _IGNORED_BINARIES = frozenset({
+        "firefox", "firefox-bin", "chromium", "chromium-browser",
+        "chrome", "google-chrome", "brave", "brave-browser",
+        "spotify", "discord", "vesktop", "telegram-desktop",
+        "obs", "OBS", "easyeffects", "pavucontrol", "qpwgraph",
+    })
+
     @staticmethod
-    def _scan() -> list[str]:
-        """Read sink-inputs and return every `application.name`
-        whose target sink is SteelGame. pactl's verbose listing
-        groups one block per sink-input, with a `Sink: NNN` header
-        line and an indented `Properties:` section underneath. We
-        identify membership in SteelGame two ways — via `Sink: <id>`
+    def _scan() -> list[tuple[str, bool]]:
+        """Read sink-inputs and return `(application.name, on_steel_game)`
+        tuples for every active client that looks like it could be a
+        game. We do NOT filter out clients that aren't on SteelGame —
+        the user may not have routed games there, and a silent miss
+        is the worst possible UX. The orchestrator decides whether
+        to apply the EQ based on the on_steel_game flag.
+
+        pactl's verbose listing groups one block per sink-input with
+        a `Sink: <id>` header and an indented `Properties:` section.
+        We identify SteelGame membership two ways — via `Sink: <id>`
         cross-referenced against `pactl list sinks short`, and via
-        the `node.target` property if it's set. Either match wins."""
+        the `node.target` property if set. Either match wins."""
         try:
             sinks = subprocess.run(
                 ["pactl", "list", "sinks", "short"],
@@ -171,36 +204,43 @@ class GameWatcher(QThread):
                 if len(parts) >= 2 and parts[0].isdigit():
                     id_to_name[parts[0]] = parts[1]
 
-        out: list[str] = []
+        out: list[tuple[str, bool]] = []
         sink_id: str | None = None
         node_target: str | None = None
         app_name: str | None = None
+        app_binary: str | None = None
+
+        ignored_apps = GameWatcher._IGNORED_APPS
+        ignored_bins = GameWatcher._IGNORED_BINARIES
 
         def flush() -> None:
+            if not app_name:
+                return
+            if app_name in ignored_apps:
+                return
+            if app_binary and app_binary in ignored_bins:
+                return
             on_game = False
             if sink_id and id_to_name.get(sink_id) == _GAME_SINK:
                 on_game = True
             if node_target == _GAME_SINK:
                 on_game = True
-            if on_game and app_name:
-                out.append(app_name)
+            out.append((app_name, on_game))
 
         for raw in r.stdout.splitlines():
-            line = raw.rstrip()
-            stripped = line.strip()
+            stripped = raw.strip()
             if stripped.startswith("Sink Input #"):
                 flush()
                 sink_id = None
                 node_target = None
                 app_name = None
+                app_binary = None
                 continue
-            # Sink id header line — top-level (single tab indent).
             if stripped.startswith("Sink:"):
                 rest = stripped[5:].strip()
                 if rest.isdigit():
                     sink_id = rest
                 continue
-            # Properties section: `\t\tkey = "value"`.
             if "=" in stripped:
                 key, _, value = stripped.partition("=")
                 key = key.strip()
@@ -209,6 +249,8 @@ class GameWatcher(QThread):
                     node_target = value
                 elif key == "application.name" and value:
                     app_name = value
+                elif key == "application.process.binary" and value:
+                    app_binary = value
         flush()
         return out
 
@@ -221,6 +263,13 @@ class GameProfileManager(QObject):
     snapshot of the user's pre-game Game-channel bands so the close-
     of-game restore returns to exactly that state — not 'flat', not
     a different preset the user happened to have selected before."""
+
+    # Signal: (game_name, preset_name, on_steel_game). preset_name
+    # is None when nothing matched. on_steel_game is False when the
+    # detected game isn't routed to SteelGame — the EQ won't take
+    # effect until the user moves the stream. UI listens to this
+    # to render the live "Currently detected" status line.
+    detected_changed = Signal(str, object, bool)
 
     def __init__(
         self,
@@ -240,35 +289,49 @@ class GameProfileManager(QObject):
         self._eq_state = eq_state
         self._snapshot_bands: list[dict] | None = None
         self._active_preset: str | None = None
-        self._current_games: set[str] = set()
+        self._current_games: dict[str, bool] = {}
+        self._last_seen: dict[str, bool] = {}
 
-    def on_games_changed(self, games: set) -> None:
-        """Watcher tick: react to changes in the set of running
-        games on SteelGame. Three transitions matter:
-          - empty → non-empty: apply the matched preset (if any).
-          - non-empty → empty: restore the user's pre-game EQ.
-          - swap: re-match against the new top game (rare)."""
+    def latest_seen(self) -> dict[str, bool]:
+        """Snapshot of the most recent watcher tick. Used by the
+        Settings UI to populate the manual-binding dropdown with
+        currently-active app names so the user picks the exact
+        string PipeWire reports rather than typing it."""
+        return dict(self._last_seen)
+
+    def on_games_changed(self, games: dict) -> None:
+        """Watcher tick: react to the dict of {app.name: on_steel_game}.
+        Always cache the latest seen list (UI uses it). EQ swaps
+        only run when the toggle is on."""
+        self._last_seen = dict(games)
+        # Emit a "detected" event for UI feedback regardless of
+        # whether the toggle is on — the user wants to see what's
+        # being seen even before they enable the auto-switch.
+        if games:
+            top = sorted(games.keys())[0]
+            preset = self._resolve_preset(games)
+            on_game = games.get(top, False)
+            self.detected_changed.emit(top, preset, on_game)
+        else:
+            self.detected_changed.emit("", None, False)
+
         if not self._settings.get("auto_game_eq_enabled", False):
-            # Toggle off — don't touch EQ even if games come and go.
-            self._current_games = set(games)
+            self._current_games = dict(games)
             return
         was_empty = not self._current_games
         is_empty = not games
-        self._current_games = set(games)
+        self._current_games = dict(games)
 
         if was_empty and not is_empty:
             self._enter(games)
         elif is_empty and not was_empty:
             self._exit()
         elif not is_empty:
-            # Same scenario as enter, but we already have a snapshot.
-            # Re-evaluate the match in case the new top game maps to
-            # a different preset.
             self._switch(games)
 
     # ---------------------------------------------------- transitions
 
-    def _resolve_preset(self, games: set) -> str | None:
+    def _resolve_preset(self, games) -> str | None:
         """Return the preset name to apply for any of `games`, or
         None if nothing maps. Manual bindings win over fuzzy ASM
         matches; among the games in the set, the first one that
@@ -284,7 +347,7 @@ class GameProfileManager(QObject):
                 return asm
         return None
 
-    def _enter(self, games: set) -> None:
+    def _enter(self, games) -> None:
         preset_name = self._resolve_preset(games)
         if not preset_name:
             log.info("Auto game-EQ: no preset match for %s", games)
@@ -305,7 +368,7 @@ class GameProfileManager(QObject):
             "set-eq-channel", channel="game", bands=bands,
         )
 
-    def _switch(self, games: set) -> None:
+    def _switch(self, games) -> None:
         new_preset = self._resolve_preset(games)
         if new_preset == self._active_preset or new_preset is None:
             return

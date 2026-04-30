@@ -34,10 +34,9 @@ PACKAGE="steelvoicemix"
 read -r -d '' BUILD_SCRIPT <<'EOF' || true
 #!/bin/bash
 set -eu
-# Fedora 44 dropped `rpkg-util`. Install `rpkg` directly — it pulls
-# `rpkg-macros` (provides `git_dir_version`) transitively and gives
-# us the `rpkg` CLI all in one. Works across F43, F44 and rawhide.
-dnf -y install rpkg git
+# rpkg + git are pre-installed by COPR via --script-builddeps below
+# (mock handles it before invoking this script). Don't re-install
+# them inline — F44 chroot ships only dnf5, not the `dnf` symlink.
 git clone --depth=50 https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix.git
 cd SteelVoiceMix
 git fetch --unshallow --tags 2>/dev/null || git fetch --tags

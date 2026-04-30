@@ -144,8 +144,17 @@ class MixerGUI(QMainWindow):
         self.eq_tab = EqualizerTab(self.daemon_client, self.settings)
         self.surround_tab = SurroundTab(self.daemon_client)
         self.mic_tab = MicrophoneTab(self.daemon_client, self.settings)
+        # Build the game-EQ manager early so SettingsTab can read its
+        # latest_seen() for the manual-binding dropdown.
+        self.game_eq_manager = GameProfileManager(
+            self.daemon_client, self.settings, self.eq_tab._bands_by_channel
+        )
         self.settings_tab = SettingsTab(
-            self.settings, self.overlay, self.sinks_tab, self.daemon_client
+            self.settings,
+            self.overlay,
+            self.sinks_tab,
+            self.daemon_client,
+            game_eq_manager=self.game_eq_manager,
         )
 
         # Sidebar nav: a vertical QListWidget on the left that drives a
@@ -278,13 +287,10 @@ class MixerGUI(QMainWindow):
         self.signals.mic_state_changed.connect(self.mic_tab.on_mic_state_changed)
         self.signals.mic_state_changed.connect(self.home_tab.on_mic_state)
 
-        # Auto game-EQ orchestration. Manager reads the EQ tab's live
-        # bands cache to take its pre-game snapshot; watcher polls
-        # pactl in a background thread and emits a set every time
-        # the active-games list changes.
-        self.game_eq_manager = GameProfileManager(
-            self.daemon_client, self.settings, self.eq_tab._bands_by_channel
-        )
+        # Game-EQ watcher (manager already built above so SettingsTab
+        # can wire to its detected_changed signal). Watcher polls
+        # pactl in a background thread and emits a snapshot dict
+        # every time the active-clients list changes.
         self.game_watcher = GameWatcher()
         self.game_watcher.games_changed.connect(
             self.game_eq_manager.on_games_changed
