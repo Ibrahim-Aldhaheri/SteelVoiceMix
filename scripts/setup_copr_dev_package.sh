@@ -37,10 +37,15 @@ set -eu
 # rpkg + git are pre-installed by COPR via --script-builddeps below
 # (mock handles it before invoking this script). Don't re-install
 # them inline — F44 chroot ships only dnf5, not the `dnf` symlink.
-git clone --depth=50 https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix.git
+#
+# Clone the dev branch directly (-b dev) — a default-branch clone
+# only fetches main, so a follow-up `git checkout dev` would fail
+# with 'pathspec dev did not match'. Then unshallow + fetch tags so
+# rpkg's git_dir_version macro can describe back to the latest
+# stable tag for proper version sorting.
+git clone --depth=50 -b dev https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix.git
 cd SteelVoiceMix
 git fetch --unshallow --tags 2>/dev/null || git fetch --tags
-git checkout dev
 rpkg srpm --spec steelvoicemix-dev.spec --outdir "$outdir"
 EOF
 
