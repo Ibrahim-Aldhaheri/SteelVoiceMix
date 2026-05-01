@@ -82,46 +82,7 @@ class SinksTab(QWidget):
 
         layout.addWidget(card("Auto-Routing", auto_row))
 
-        # Default-sink cycle card -------------------------------------
-        # Quick way to flip the system default between Steel sinks
-        # without diving into KDE's audio applet. Shares one
-        # implementation with the (optional) keyboard shortcut bound
-        # in MixerGUI — see gui/sink_cycle.py.
-        cycle_row = QHBoxLayout()
-        self.cycle_btn = QPushButton("🔁  Cycle default sink")
-        self.cycle_btn.setToolTip(
-            "Advance the system default sink between SteelGame, "
-            "SteelChat, SteelMedia, and SteelHDMI in order. The "
-            "shortcut version (Settings → Default sink shortcut) "
-            "fires the same action from anywhere in the GUI."
-        )
-        self.cycle_btn.clicked.connect(self._on_cycle_clicked)
-        self.cycle_status = QLabel("")
-        self.cycle_status.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
-        )
-        cycle_row.addWidget(self.cycle_btn)
-        cycle_row.addWidget(self.cycle_status, 1)
-        layout.addWidget(card("Default Sink", cycle_row))
-
         layout.addStretch(1)
-
-    def _on_cycle_clicked(self) -> None:
-        """Click handler for the Cycle Default Sink button. Same
-        helper the optional keyboard shortcut uses. Reads the
-        per-user exclude list from settings so users can keep e.g.
-        SteelChat out of the rotation. Updates the inline status
-        label so the user sees what changed."""
-        from ..sink_cycle import cycle_default_sink
-        from ..settings import load as load_settings
-        excludes = load_settings().get("default_sink_cycle_exclude") or []
-        prev, new = cycle_default_sink(exclude=excludes)
-        if not new:
-            self.cycle_status.setText("⚠ No SteelVoiceMix sinks loaded.")
-        elif new == prev:
-            self.cycle_status.setText(f"Default already on {new}.")
-        else:
-            self.cycle_status.setText(f"Default → {new} (was {prev or '?'})")
 
     # ------------------------------------------------- public state queries
 
