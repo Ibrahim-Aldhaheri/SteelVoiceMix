@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLayout,
     QProgressBar,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -399,6 +400,19 @@ class NoWheelComboBox(QComboBox):
     silently changes app behaviour without the user touching it.
     Using this subclass instead is a one-character swap that
     eliminates the surprise."""
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
+
+
+class NoWheelSlider(QSlider):
+    """QSlider subclass that ignores mouse-wheel events. Same
+    reasoning as NoWheelComboBox: stock QSlider's wheel scroll
+    nudges the value, and the EQ-band sliders fork the active
+    preset to a fresh Custom-N on any change. Users scrolling
+    over the EQ tab kept losing their preset selection. Using
+    this subclass is a drop-in fix wherever the slider's value
+    is committed to a daemon command."""
 
     def wheelEvent(self, event) -> None:
         event.ignore()

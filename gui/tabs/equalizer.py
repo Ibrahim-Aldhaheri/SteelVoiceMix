@@ -48,7 +48,7 @@ from ..settings import (
     rename_favourite,
     save as save_settings,
 )
-from ..widgets import NoWheelComboBox, card, labelled_toggle
+from ..widgets import NoWheelComboBox, NoWheelSlider, card, labelled_toggle
 
 
 # Common parametric-EQ preset JSONs use 10 filter slots
@@ -354,7 +354,12 @@ class EqualizerTab(QWidget):
             self.band_value_labels.append(value_lbl)
             band_col.addWidget(value_lbl)
 
-            slider = QSlider(Qt.Vertical)
+            # NoWheelSlider — stock QSlider's wheel-scroll changed band
+            # gain by accident every time the user scrolled the EQ tab,
+            # forking the active preset to a fresh Custom-N. Subclass
+            # ignores the wheel event entirely; arrow keys + drag still
+            # work for keyboard / pointer users.
+            slider = NoWheelSlider(Qt.Vertical)
             # Slider unit = 0.1 dB. Range: -120 to 120 → -12.0 to +12.0 dB.
             slider.setRange(-120, 120)
             slider.setValue(0)

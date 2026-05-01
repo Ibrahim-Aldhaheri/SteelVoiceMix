@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..settings import save as save_settings
-from ..widgets import card, labelled_toggle
+from ..widgets import NoWheelSlider, card, labelled_toggle
 
 # Daemon command + MicState key names. The daemon's MicState fields
 # are noise_gate / noise_reduction / ai_noise_cancellation; the
@@ -264,7 +264,7 @@ class MicrophoneTab(QWidget):
         sidetone_row = QHBoxLayout()
         sidetone_lbl = QLabel("Sidetone")
         sidetone_lbl.setFixedWidth(80)
-        self.sidetone_slider = QSlider(Qt.Horizontal)
+        self.sidetone_slider = NoWheelSlider(Qt.Horizontal)
         self.sidetone_slider.setRange(0, 3)
         self.sidetone_slider.setSingleStep(1)
         self.sidetone_slider.setPageStep(1)
@@ -392,7 +392,7 @@ class MicrophoneTab(QWidget):
         slider_row = QHBoxLayout()
         strength_lbl = QLabel("Strength")
         strength_lbl.setFixedWidth(80)
-        slider = QSlider(Qt.Horizontal)
+        slider = NoWheelSlider(Qt.Horizontal)
         slider.setRange(0, 100)
         slider.setValue(50)
         # Cap width so the dial isn't 1500 px wide on a maximised
