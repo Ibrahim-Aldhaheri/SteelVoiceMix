@@ -112,8 +112,10 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release \\
     -DBUILD_AU_PLUGIN=OFF -DBUILD_LV2_PLUGIN=OFF
 cmake --build build -j --target rnnoise_ladspa
 
-# Install the built .so to the system LADSPA path
-sudo install -Dm755 build/ladspa/librnnoise_ladspa.so \\
+# Install the built .so to the system LADSPA path. cmake puts it
+# under build/bin/ladspa/ (the bin/ prefix comes from JUCE's
+# default RUNTIME_OUTPUT_DIRECTORY).
+sudo install -Dm755 build/bin/ladspa/librnnoise_ladspa.so \\
     /usr/lib64/ladspa/librnnoise_ladspa.so
 
 # Restart steelvoicemix-gui so the LADSPA probe re-runs
