@@ -782,26 +782,83 @@ class EqualizerTab(QWidget):
         # Re-render to refresh the priority column numbers.
         self._refresh_bindings_table()
 
-    def _add_binding(self) -> None:
-        active: list[str] = []
+    def _collect_binding_candidates(self) -> list[str]:
+        """Build a deduped, ordered list of binding suggestions.
+        Audio clients first (proven to match PipeWire's
+        application.name), then windowed apps via wmctrl. Free-text
+        input is still allowed — the combo is editable."""
+        seen: set[str] = set()
+        out: list[str] = []
+        # Active audio clients from the watcher — reuse what's
+        # already in cache rather than re-running pactl.
         if self._game_eq_manager is not None:
-            active = sorted(self._game_eq_manager.latest_seen().keys())
-        if active:
-            name, ok = QInputDialog.getItem(
-                self,
-                "Bind game to preset",
-                "Active audio clients — pick the one to bind:",
-                active,
-                0,
-                False,
+            for name in sorted(self._game_eq_manager.latest_seen().keys()):
+                if name and name not in seen:
+                    seen.add(name)
+                    out.append(name)
+        # Windowed applications via wmctrl. Optional — if wmctrl
+        # isn't installed we just skip this source (no error,
+        # the audio-clients list is enough for most users).
+        import shutil
+        import subprocess
+        if shutil.which("wmctrl"):
+            try:
+                r = subprocess.run(
+                    ["wmctrl", "-l"],
+                    capture_output=True, text=True, timeout=2,
+                )
+                if r.returncode == 0:
+                    for line in r.stdout.splitlines():
+                        # wmctrl -l format: "<id> <desktop> <host> <title>"
+                        parts = line.split(None, 3)
+                        if len(parts) < 4:
+                            continue
+                        title = parts[3].strip()
+                        # Filter out empty titles, our own GUI, and
+                        # very long titles (likely web-page tabs).
+                        if (
+                            title
+                            and title not in seen
+                            and "SteelVoiceMix" not in title
+                            and len(title) <= 80
+                        ):
+                            seen.add(title)
+                            out.append(title)
+            except Exception:
+                pass
+        return out
+
+    def _add_binding(self) -> None:
+        # Combine three sources so the user has one dropdown to pick
+        # from regardless of whether the target app is currently
+        # making audio:
+        #   1. Audio clients PipeWire is reporting right now (best —
+        #      proven names that match what the daemon will see).
+        #   2. Open windowed applications via wmctrl, if available
+        #      (catches Steam Big Picture, launchers, native games
+        #      that opened their window before producing audio).
+        #   3. Free-text input — the combo is editable so users can
+        #      pre-bind anything they expect to run later, even
+        #      something not currently visible at all.
+        active = self._collect_binding_candidates()
+        prompt = (
+            "Pick a running app or game from the list — or type a "
+            "custom name. Bindings match against PipeWire's "
+            "application.name when audio starts."
+        )
+        if not active:
+            prompt = (
+                "No running apps detected. Type a custom name below — "
+                "it'll match when the app produces audio later."
             )
-        else:
-            name, ok = QInputDialog.getText(
-                self,
-                "Bind game to preset",
-                "No active audio clients detected — enter the game "
-                "name manually (must match application.name):",
-            )
+        name, ok = QInputDialog.getItem(
+            self,
+            "Bind app to preset",
+            prompt,
+            active,
+            0,
+            True,  # editable: user can type anything
+        )
         if not ok or not name or not name.strip():
             return
         name = name.strip()
