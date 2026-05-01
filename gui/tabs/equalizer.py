@@ -922,17 +922,83 @@ class EqualizerTab(QWidget):
         if channel not in self._bands_by_channel:
             return
         self._bands_by_channel[channel] = list(bands)
+        # Reconcile the active-preset cache so the combo doesn't keep
+        # showing the previous selection when bands actually changed
+        # (e.g. auto-game-EQ load, profile load, or daemon-side reset).
+        self._reconcile_active_preset(channel)
         if channel == self._current_channel:
             self._render_sliders_for_channel(channel)
+            # Sync the combo too — _refresh_preset_combo reads the
+            # active-preset cache we just updated.
+            self._refresh_preset_combo()
 
     def on_full_state(self, state: dict) -> None:
         """Initial Status snapshot delivered every channel's band data
-        at once (Game / Chat / Media / HDMI). Cache them all and refresh
-        the visible sliders."""
+        at once (Game / Chat / Media / HDMI / Mic). Cache them all and
+        reconcile the active-preset name from the loaded bands so the
+        preset combo doesn't show 'Flat' while the sliders sit on a
+        non-flat preset (the bug we hit on first restart after upgrade
+        from a stable that didn't persist active_preset)."""
         for ch in ("game", "chat", "media", "hdmi", "mic"):
             if ch in state:
                 self._bands_by_channel[ch] = list(state[ch])
+                self._reconcile_active_preset(ch)
         self._render_sliders_for_channel(self._current_channel)
+        self._refresh_preset_combo()
+
+    def _reconcile_active_preset(self, channel: str) -> None:
+        """Look at the currently-loaded bands for `channel` and set
+        `_active_preset_by_channel[channel]` to the name of whichever
+        bundled / built-in / user preset matches them, or '' if no
+        preset matches.
+
+        We do this because the daemon persists the BANDS (which is
+        the source of truth for the audio chain) but NOT which
+        preset name the bands came from — that's GUI-side metadata.
+        Without this reconcile, after a daemon restart the user sees
+        their non-flat bands but the combo still says 'Flat'."""
+        bands = self._bands_by_channel.get(channel)
+        if not bands:
+            return
+        matched = self._find_preset_name_for_bands(channel, bands)
+        # Empty string is fine — means 'bands don't match any known
+        # preset' which is the legitimate state when the user has
+        # been hand-editing.
+        self._active_preset_by_channel[channel] = matched
+
+    def _find_preset_name_for_bands(
+        self, channel: str, bands: list[dict],
+    ) -> str:
+        """Find the preset whose bands match `bands` exactly (within
+        float tolerance). Returns the preset name, or '' if none
+        matches. Iterates list_presets(channel) which already merges
+        built-in + ASM-bundled + user presets."""
+        for preset in list_presets(channel):
+            preset_bands = preset.get("bands") or []
+            if self._bands_equal(bands, preset_bands):
+                return str(preset.get("name", ""))
+        return ""
+
+    @staticmethod
+    def _bands_equal(a: list[dict], b: list[dict]) -> bool:
+        """Field-by-field band comparison with float tolerance for
+        freq / q / gain. Type + enabled compare exactly."""
+        if len(a) != len(b):
+            return False
+        for ba, bb in zip(a, b):
+            if not isinstance(ba, dict) or not isinstance(bb, dict):
+                return False
+            if abs(float(ba.get("freq", 0)) - float(bb.get("freq", 0))) > 0.5:
+                return False
+            if abs(float(ba.get("q", 0)) - float(bb.get("q", 0))) > 0.001:
+                return False
+            if abs(float(ba.get("gain", 0)) - float(bb.get("gain", 0))) > 0.05:
+                return False
+            if str(ba.get("type", "")) != str(bb.get("type", "")):
+                return False
+            if bool(ba.get("enabled", True)) != bool(bb.get("enabled", True)):
+                return False
+        return True
 
     def on_media_sink_changed(self, enabled: bool) -> None:
         """Sink toggled in another tab → make Media available (or not)

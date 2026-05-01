@@ -15,6 +15,12 @@ BuildRequires:  systemd-rpm-macros
 Requires:       pipewire
 Requires:       pulseaudio-utils
 Requires:       pipewire-utils
+# wmctrl powers the Auto Game-EQ Add Binding dialog's 'open
+# windowed apps' suggestion list. X11-only — degrades gracefully
+# (no error, just one fewer suggestion source) when the user is
+# on Wayland or has wmctrl uninstalled, but having it pre-pulled
+# means most KDE Plasma X11 sessions work out of the box.
+Requires:       wmctrl
 Requires:       libnotify
 Requires:       hidapi
 
