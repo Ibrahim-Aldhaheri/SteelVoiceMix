@@ -48,8 +48,8 @@ jobs:
 
       - name: Trigger rebuild for dev @ ${{ github.sha }}
         # `build-package` re-runs whatever source method the COPR
-        # project is configured with (Custom script, git auto-rebuild,
-        # etc.). The dev project's script picks up dev's HEAD on
-        # every trigger, so the build always reflects the latest
-        # commit even when this workflow runs concurrently with itself.
-        run: copr-cli build-package abokhalil/steelvoicemix-dev --name steelvoicemix
+        # project is configured with (SCM with rpkg method on the
+        # dev spec). The package was renamed from `steelvoicemix` to
+        # `steelvoicemix-dev` so users can `dnf install steelvoicemix-dev`
+        # without overlapping with the stable `steelvoicemix` package.
+        run: copr-cli build-package abokhalil/steelvoicemix-dev --name steelvoicemix-dev
