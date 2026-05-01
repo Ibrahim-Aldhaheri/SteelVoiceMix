@@ -44,7 +44,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
-use log::{info, warn};
+use log::{debug, info, warn};
 
 use crate::protocol::{BandType, EqBand, NUM_BANDS};
 
@@ -358,7 +358,7 @@ impl FilterChainHandle {
         let _ = self.child.kill();
         let _ = self.child.wait();
         let _ = fs::remove_file(&self.conf_path);
-        info!(
+        debug!(
             "Filter chain '{}' (pid {pid}) shut down; removed {}",
             self.sink_name,
             self.conf_path.display()

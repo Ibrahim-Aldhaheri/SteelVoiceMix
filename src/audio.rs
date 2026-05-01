@@ -6,7 +6,7 @@
 
 use std::process::{Command, Stdio};
 
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 
 use std::path::PathBuf;
 
@@ -223,7 +223,10 @@ impl SinkManager {
             .map(|s| s.success())
             .unwrap_or(false);
         if ok {
-            info!(
+            // Repeats on every mic-state change (chain respawn). Move
+            // to debug — the first one-shot promotion is interesting,
+            // the subsequent re-confirmations are not.
+            debug!(
                 "Promoted SteelMic to default source (was: {:?})",
                 self.previous_default_source.as_deref().unwrap_or("(unset)")
             );

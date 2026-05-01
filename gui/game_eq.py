@@ -243,7 +243,11 @@ class GameWatcher(QThread):
                 on_game = True
             if node_target == _GAME_SINK:
                 on_game = True
-            log.info(
+            # Per-scan log fires every 2 s × per sink-input on
+            # SteelGame — easily 90 lines/min with one game running.
+            # DEBUG-only so the journal stays readable; bring it back
+            # via STEELVOICEMIX_DEBUG=1.
+            log.debug(
                 "Game-watcher: app=%r binary=%r sink_id=%s sink_name=%r "
                 "node_target=%r → on_game=%s",
                 app_name, app_binary, sink_id, sink_name,
@@ -385,7 +389,10 @@ class GameProfileManager(QObject):
             self._consecutive_empty_ticks = 0
         else:
             self._consecutive_empty_ticks += 1
-        log.info(
+        # Per-tick reconcile log — DEBUG only so the journal isn't
+        # spammed every 2 s. The actual transitions (_enter / _switch
+        # / _exit) still log at INFO so users see preset changes.
+        log.debug(
             "Auto game-EQ reconcile: auto_on=%s games=%s active_preset=%r "
             "empty_ticks=%d",
             auto_on, list(games.keys()), self._active_preset,
