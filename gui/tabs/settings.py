@@ -23,11 +23,12 @@ _STABLE_REPO = "abokhalil/steelvoicemix"
 
 _ALPHA_ENABLE_CMD = (
     f"sudo dnf copr enable {_ALPHA_REPO} -y && "
-    "sudo dnf install steelvoicemix-dev -y"
+    "sudo dnf upgrade steelvoicemix --refresh -y"
 )
 _ALPHA_DISABLE_CMD = (
-    "sudo dnf swap steelvoicemix-dev steelvoicemix -y && "
-    f"sudo dnf copr disable {_ALPHA_REPO} -y"
+    f"sudo dnf copr disable {_ALPHA_REPO} -y && "
+    f"sudo dnf copr enable {_STABLE_REPO} -y && "
+    "sudo dnf distro-sync steelvoicemix -y"
 )
 
 from ..settings import (

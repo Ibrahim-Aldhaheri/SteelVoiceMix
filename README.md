@@ -111,14 +111,17 @@ systemctl --user daemon-reload
 systemctl --user enable --now steelvoicemix steelvoicemix-gui
 ```
 
-Beta / dev channel — same files, distinct package name so the two
-don't co-exist by accident:
+Beta / dev channel — same package name, just a different COPR repo.
+Don't keep both repos enabled at once:
 
 ```bash
+# Switch from stable to dev:
 sudo dnf copr enable abokhalil/steelvoicemix-dev
-sudo dnf install steelvoicemix-dev
-# Switch back to stable any time:
-sudo dnf swap steelvoicemix-dev steelvoicemix
+sudo dnf upgrade steelvoicemix --refresh
+
+# Switch back to stable:
+sudo dnf copr disable abokhalil/steelvoicemix-dev
+sudo dnf distro-sync steelvoicemix
 ```
 
 ### From source

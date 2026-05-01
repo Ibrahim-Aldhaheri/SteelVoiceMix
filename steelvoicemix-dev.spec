@@ -1,16 +1,21 @@
 # Beta-channel spec — used by the abokhalil/steelvoicemix-dev COPR
-# project. Installs the same files as the stable spec but ships
-# under a distinct package NAME (`steelvoicemix-dev`) so users can
-# tell which channel they're on at a glance:
+# project. Installs the same files as the stable spec under the
+# same package name (`steelvoicemix`); users pick a channel by
+# which COPR repo is enabled, following the conventional Fedora /
+# COPR pattern (same model the kernel uses across stable/testing/
+# rawhide).
 #
-#   sudo dnf install steelvoicemix       # stable
-#   sudo dnf install steelvoicemix-dev   # beta / dev
+# Channel switching:
 #
-# `Provides: steelvoicemix` + `Conflicts: steelvoicemix` makes the
-# two mutually exclusive but interchangeable: dnf swaps cleanly in
-# either direction without orphaning files. Anyone depending on
-# `steelvoicemix` (e.g. a downstream meta-package, the Flatpak
-# manifest's host bridge) is satisfied by either RPM.
+#   # Move from stable to dev:
+#   sudo dnf copr enable abokhalil/steelvoicemix-dev
+#   sudo dnf upgrade steelvoicemix --refresh
+#
+#   # Back to stable:
+#   sudo dnf copr disable abokhalil/steelvoicemix-dev
+#   sudo dnf distro-sync steelvoicemix
+#
+# Don't keep both repos enabled at once.
 #
 # Versioning convention. Both specs hard-code Version manually;
 # auto-versioning via rpkg's `git_dir_version` macro caused weird
@@ -27,12 +32,11 @@
 #   next stable          0.3.2   (when ready: bump steelvoicemix.spec
 #                                 to 0.3.2 and dev spec to 0.3.3~beta1)
 #
-# RPM's vercmp orders `0.3.2~betaN < 0.3.2`, so users with both COPR
-# repos enabled get the latest beta until the stable release lands,
-# then they upgrade to stable cleanly via dnf swap (or
-# `dnf install steelvoicemix` which the Conflicts: handles).
+# RPM's vercmp orders `0.3.2~betaN < 0.3.2`, so users on the dev
+# repo who switch back to stable upgrade cleanly to the next
+# stable release.
 
-Name:           steelvoicemix-dev
+Name:           steelvoicemix
 Version:        0.3.2~beta1
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta / dev channel)
@@ -40,12 +44,6 @@ Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta 
 License:        GPL-3.0-or-later
 URL:            https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix
 Source0:        {{{ git_dir_pack }}}
-
-# Drop-in replacement for the stable package. Same files; users
-# pick a channel by package name, not by enabled COPR.
-Provides:       steelvoicemix = %{version}-%{release}
-Conflicts:      steelvoicemix
-Obsoletes:      steelvoicemix < %{version}-%{release}
 
 BuildRequires:  rust >= 1.70
 BuildRequires:  cargo
@@ -77,34 +75,26 @@ COPR project (abokhalil/steelvoicemix) if you want fewer surprises.
 cargo build --release
 
 %install
-# All paths use the literal `steelvoicemix` (NOT %{name}) because:
-#   - The GUI launcher hardcodes /usr/share/steelvoicemix/...
-#   - Service files reference /usr/bin/steelvoicemix.
-#   - Settings + state directories live at ~/.config/steelvoicemix.
-# Switching the package Name to steelvoicemix-dev for distribution
-# purposes shouldn't move files around — that would break upgrade
-# paths between channels and orphan user state.
-
 # Daemon binary
 install -Dm755 target/release/steelvoicemix %{buildroot}%{_bindir}/steelvoicemix
 
 # GUI entry shim + package
-install -Dm644 steelvoicemix-gui.py %{buildroot}%{_datadir}/steelvoicemix/steelvoicemix-gui.py
-install -d %{buildroot}%{_datadir}/steelvoicemix/gui
-install -Dm644 gui/*.py %{buildroot}%{_datadir}/steelvoicemix/gui/
-install -d %{buildroot}%{_datadir}/steelvoicemix/gui/tabs
-install -Dm644 gui/tabs/*.py %{buildroot}%{_datadir}/steelvoicemix/gui/tabs/
+install -Dm644 steelvoicemix-gui.py %{buildroot}%{_datadir}/%{name}/steelvoicemix-gui.py
+install -d %{buildroot}%{_datadir}/%{name}/gui
+install -Dm644 gui/*.py %{buildroot}%{_datadir}/%{name}/gui/
+install -d %{buildroot}%{_datadir}/%{name}/gui/tabs
+install -Dm644 gui/tabs/*.py %{buildroot}%{_datadir}/%{name}/gui/tabs/
 
 # Bundled ASM preset library + default HRIR
-install -d %{buildroot}%{_datadir}/steelvoicemix/gui/presets/asm/game
+install -d %{buildroot}%{_datadir}/%{name}/gui/presets/asm/game
 install -Dm644 gui/presets/asm/game/*.json \
-    %{buildroot}%{_datadir}/steelvoicemix/gui/presets/asm/game/
-install -d %{buildroot}%{_datadir}/steelvoicemix/gui/presets/asm/chat
+    %{buildroot}%{_datadir}/%{name}/gui/presets/asm/game/
+install -d %{buildroot}%{_datadir}/%{name}/gui/presets/asm/chat
 install -Dm644 gui/presets/asm/chat/*.json \
-    %{buildroot}%{_datadir}/steelvoicemix/gui/presets/asm/chat/
-install -d %{buildroot}%{_datadir}/steelvoicemix/gui/data/hrir
+    %{buildroot}%{_datadir}/%{name}/gui/presets/asm/chat/
+install -d %{buildroot}%{_datadir}/%{name}/gui/data/hrir
 install -Dm644 gui/data/hrir/EAC_Default.wav \
-    %{buildroot}%{_datadir}/steelvoicemix/gui/data/hrir/EAC_Default.wav
+    %{buildroot}%{_datadir}/%{name}/gui/data/hrir/EAC_Default.wav
 
 # GUI launcher — force XCB so overlay positioning works under Wayland
 cat > %{buildroot}%{_bindir}/steelvoicemix-gui << 'EOF'
@@ -148,7 +138,7 @@ udevadm control --reload-rules 2>/dev/null || :
 %doc README.md
 %{_bindir}/steelvoicemix
 %{_bindir}/steelvoicemix-gui
-%{_datadir}/steelvoicemix/
+%{_datadir}/%{name}/
 %{_userunitdir}/steelvoicemix.service
 %{_userunitdir}/steelvoicemix-gui.service
 %{_udevrulesdir}/50-nova-pro-wireless.rules
