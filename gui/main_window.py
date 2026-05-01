@@ -111,6 +111,17 @@ class MixerGUI(QMainWindow):
         self._update_checker = None
         self._start_update_check()
 
+        # Universal cleanup: aboutToQuit fires for every exit path
+        # (tray Quit action, X button when no tray, SIGTERM, SIGINT,
+        # programmatic QApplication.quit). Without this, app.py's
+        # SIGTERM handler called QApplication.quit() directly and
+        # bypassed _quit(), leaving the GameWatcher QThread running
+        # when the app exited — Qt aborted with "QThread destroyed
+        # while still running" (visible in the KDE crash dialog).
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._cleanup_on_quit)
+
     # ---------------------------------------------------------------- layout
 
     def _build_ui(self):
@@ -433,6 +444,16 @@ class MixerGUI(QMainWindow):
             )
 
     def _quit(self) -> None:
+        # User-driven quit: ask Qt to exit. aboutToQuit will fire
+        # _cleanup_on_quit which actually stops the threads.
+        QApplication.quit()
+
+    def _cleanup_on_quit(self) -> None:
+        """Bound to QApplication.aboutToQuit. Idempotent — safe to
+        run multiple times."""
+        if getattr(self, "_cleanup_done", False):
+            return
+        self._cleanup_done = True
         # Unload the mic-loopback if the voice test was left on so a
         # restart of the app doesn't leave an orphaned module pinned
         # in PipeWire.
@@ -441,14 +462,18 @@ class MixerGUI(QMainWindow):
         except Exception:
             pass
         # Stop the game watcher's poll loop so the QThread joins
-        # cleanly before the QApplication exits.
+        # cleanly before the QApplication exits. Without this, Qt
+        # aborts with "QThread: Destroyed while thread is still
+        # running" — that's the SIGABRT users saw on systemd stop.
         try:
             self.game_watcher.stop()
             self.game_watcher.wait(2000)
         except Exception:
             pass
-        self.daemon_client.stop()
-        QApplication.quit()
+        try:
+            self.daemon_client.stop()
+        except Exception:
+            pass
 
     # -------------------------------------------------------------- daemon
 
