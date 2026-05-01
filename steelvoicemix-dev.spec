@@ -1,24 +1,33 @@
-# Alpha-channel spec — used by the abokhalil/steelvoicemix-dev COPR
+# Beta-channel spec — used by the abokhalil/steelvoicemix-dev COPR
 # project. Identical install layout to the stable spec; the only
-# difference is how Version + Release are derived.
+# difference is the version number.
 #
-# Versioning. Stable spec hard-codes `Version: 0.3.1`. This dev spec
-# uses rpkg's `git_dir_version` macro, which expands to something
-# like `0.3.1.55.gba09e17` — the latest tag (`v0.3.1`) plus the
-# commit count and short SHA since. RPM's vercmp orders these as
-# stable 0.3.1 < dev 0.3.1.<n>.g<sha> < future stable 0.3.2,
-# so users with both repos enabled always pull the highest version.
+# Versioning convention. Both specs hard-code Version manually;
+# auto-versioning via rpkg's `git_dir_version` macro caused weird
+# fallback strings (0.0.git.<count>.<sha>) under COPR's depth-
+# limited clone. Manual is simpler and more predictable.
+#
+# This spec carries the BETA of the next stable release. Bump the
+# beta number when cutting a new dev snapshot for users to test:
+#
+#   stable               0.3.1   (steelvoicemix.spec)
+#   dev / beta           0.3.2~beta1
+#                        0.3.2~beta2
+#                        0.3.2~beta3
+#   next stable          0.3.2   (when ready: bump steelvoicemix.spec
+#                                 to 0.3.2 and dev spec to 0.3.3~beta1)
+#
+# RPM's vercmp orders `0.3.2~betaN < 0.3.2`, so users with both COPR
+# repos enabled get the latest beta until the stable release lands,
+# then they upgrade to stable cleanly.
 #
 # Disable channel switching: just `dnf copr disable abokhalil/steelvoicemix-dev`
-# and `dnf upgrade` (or `dnf downgrade steelvoicemix` if you're
-# currently on a dev build that compares higher than the latest
-# stable). Don't run both repos enabled long-term — alpha tracks
-# break frequently.
+# and `dnf distro-sync steelvoicemix` to drop back to stable.
 
 Name:           steelvoicemix
-Version:        {{{ git_dir_version }}}
+Version:        0.3.2~beta1
 Release:        1%{?dist}
-Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (alpha / dev channel)
+Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta / dev channel)
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix
