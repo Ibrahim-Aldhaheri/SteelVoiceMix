@@ -102,11 +102,23 @@ sudo apt install cargo libhidapi-dev pulseaudio-utils libnotify-bin
 
 ### Fedora (COPR — recommended)
 
+Stable channel:
+
 ```bash
 sudo dnf copr enable abokhalil/steelvoicemix
 sudo dnf install steelvoicemix
 systemctl --user daemon-reload
 systemctl --user enable --now steelvoicemix steelvoicemix-gui
+```
+
+Beta / dev channel — same files, distinct package name so the two
+don't co-exist by accident:
+
+```bash
+sudo dnf copr enable abokhalil/steelvoicemix-dev
+sudo dnf install steelvoicemix-dev
+# Switch back to stable any time:
+sudo dnf swap steelvoicemix-dev steelvoicemix
 ```
 
 ### From source
