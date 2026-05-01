@@ -279,6 +279,7 @@ class MicrophoneTab(QWidget):
             "volume. Pick the mode that suits your voice — Broadcast "
             "is audible levelling (Steve Harris SC4), Soft is gentle "
             "transparency (Dyson). Both ship in ladspa-swh-plugins.",
+            badge="ALPHA",
         )
         # Inject the plugin-choice combo into the card. The card is
         # the QWidget that _add_feature_card just appended; reach
@@ -311,6 +312,18 @@ class MicrophoneTab(QWidget):
         sidetone_row = QHBoxLayout()
         sidetone_lbl = QLabel("Sidetone")
         sidetone_lbl.setFixedWidth(80)
+        sidetone_alpha = QLabel("ALPHA")
+        sidetone_alpha.setStyleSheet(
+            "background: #FF9800; color: white; "
+            "font-size: 9px; font-weight: bold; "
+            "padding: 2px 6px; border-radius: 8px;"
+        )
+        sidetone_alpha.setToolTip(
+            "Sidetone may not work on the wireless variant of the "
+            "Arctis Nova Pro — slider position quantises but the "
+            "headset firmware may ignore the HID write. Confirmed "
+            "untested across all hardware revisions."
+        )
         self.sidetone_slider = NoWheelSlider(Qt.Horizontal)
         self.sidetone_slider.setRange(0, 3)
         self.sidetone_slider.setSingleStep(1)
@@ -324,6 +337,7 @@ class MicrophoneTab(QWidget):
         self.sidetone_value.setFixedWidth(72)
         self.sidetone_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         sidetone_row.addWidget(sidetone_lbl)
+        sidetone_row.addWidget(sidetone_alpha)
         sidetone_row.addWidget(self.sidetone_slider, 1)
         sidetone_row.addWidget(self.sidetone_value)
 
@@ -448,8 +462,9 @@ class MicrophoneTab(QWidget):
         key: str,
         title: str,
         description: str,
+        badge: str | None = None,
     ):
-        toggle_row, toggle = labelled_toggle("Enabled")
+        toggle_row, toggle = labelled_toggle("Enabled", badge=badge)
         toggle.toggled.connect(lambda checked, k=key: self._on_toggled(k, checked))
 
         slider_row = QHBoxLayout()
