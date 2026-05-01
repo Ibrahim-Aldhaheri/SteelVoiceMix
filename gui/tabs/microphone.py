@@ -26,10 +26,15 @@ import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QClipboard
 from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QSlider,
     QVBoxLayout,
@@ -81,18 +86,40 @@ _INSTALL_RNNOISE_HINT = (
 # (gate_1410.so), while Debian/Ubuntu bundle them into one
 # (swh_plugins.so). We accept either; the probe walks the list
 # and reports installed if any of them resolve in LADSPA_PATH.
-_PLUGIN_REQUIREMENTS: dict[str, tuple[tuple[str, ...], str]] = {
+#
+# `install_hint` is the short orange line shown inline on the
+# card. `build_cmd` is the multi-line shell snippet shown in the
+# "How to install" modal — None if no build path beyond dnf.
+_BUILD_RNNOISE = """\
+# Install build deps
+sudo dnf install rnnoise-devel cmake gcc-c++ ladspa-devel git -y
+
+# Clone, build, install
+git clone https://github.com/werman/noise-suppression-for-voice.git
+cd noise-suppression-for-voice
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+sudo install -Dm755 build/ladspa/librnnoise_ladspa.so \\
+    /usr/lib64/ladspa/librnnoise_ladspa.so
+
+# Restart steelvoicemix-gui so the LADSPA probe re-runs
+systemctl --user restart steelvoicemix-gui"""
+
+_PLUGIN_REQUIREMENTS: dict[str, tuple[tuple[str, ...], str, "str | None"]] = {
     "noise_gate": (
         ("gate_1410.so", "swh_plugins.so"),
+        f"sudo dnf install {_INSTALL_DNF}",
         f"sudo dnf install {_INSTALL_DNF}",
     ),
     "noise_reduction": (
         ("librnnoise_ladspa.so",),
         _INSTALL_RNNOISE_HINT,
+        _BUILD_RNNOISE,
     ),
     "ai_noise_cancellation": (
         ("librnnoise_ladspa.so",),
         _INSTALL_RNNOISE_HINT,
+        _BUILD_RNNOISE,
     ),
 }
 
@@ -392,8 +419,8 @@ class MicrophoneTab(QWidget):
         # tooltip pointing at the providing package, plus a
         # red-tinted hint in the card body itself so the user
         # doesn't have to hover to understand why.
-        plugin_filenames, install_hint = _PLUGIN_REQUIREMENTS.get(
-            key, ((), "")
+        plugin_filenames, install_hint, build_cmd = _PLUGIN_REQUIREMENTS.get(
+            key, ((), "", None)
         )
         plugin_present = (
             not plugin_filenames or _plugin_available(plugin_filenames)
@@ -406,6 +433,12 @@ class MicrophoneTab(QWidget):
             toggle.setToolTip(
                 f"Missing LADSPA plugin: {display_name}. {install_hint}"
             )
+            # Warning row: orange ⚠ message on the left, "Show
+            # install steps" button on the right. The button opens
+            # a modal with the full command sequence + a Copy
+            # button — saves users from typing or screenshot-OCRing
+            # commands they can't select directly.
+            warn_row = QHBoxLayout()
             missing_lbl = QLabel(
                 f"⚠ Missing LADSPA plugin <code>{display_name}</code>. "
                 f"{install_hint}"
@@ -416,7 +449,19 @@ class MicrophoneTab(QWidget):
             missing_lbl.setStyleSheet(
                 "font-size: 10px; color: #FF9800; padding-top: 4px;"
             )
-            contents.append(missing_lbl)
+            warn_row.addWidget(missing_lbl, 1)
+            if build_cmd:
+                info_btn = QPushButton("ⓘ  Show install steps")
+                info_btn.setStyleSheet(
+                    "font-size: 10px; padding: 4px 10px; "
+                    "border: 1px solid #FF9800; color: #FF9800;"
+                )
+                info_btn.clicked.connect(
+                    lambda _checked, cmd=build_cmd, t=title:
+                        self._show_install_modal(t, cmd)
+                )
+                warn_row.addWidget(info_btn, 0, Qt.AlignTop)
+            contents.append(warn_row)
 
         parent_layout.addWidget(card(title, *contents))
 
@@ -544,6 +589,67 @@ class MicrophoneTab(QWidget):
         else:
             self._teardown_voice_test()
             self.voice_test_btn.setText("🎧  Hear yourself (test mic)")
+
+    # ---------------------------------------------------- install modal
+
+    def _show_install_modal(self, feature_title: str, command_text: str) -> None:
+        """Modal dialog with copyable install commands. Triggered by
+        the ⓘ button next to a 'Missing LADSPA plugin' warning when
+        we have a build-from-source recipe (e.g. for librnnoise_ladspa
+        which Fedora doesn't package). The QPlainTextEdit makes the
+        text selectable; the Copy button puts it on the clipboard so
+        users don't have to hand-select."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Install {feature_title} dependencies")
+        dlg.setMinimumWidth(560)
+
+        layout = QVBoxLayout(dlg)
+
+        intro = QLabel(
+            "Run these commands in a terminal to build and install "
+            "the missing LADSPA plugin. After it's done, restart "
+            "steelvoicemix-gui (the last command does this) and the "
+            "feature toggle will go enabled."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        text_edit = QPlainTextEdit()
+        text_edit.setPlainText(command_text)
+        text_edit.setReadOnly(True)
+        text_edit.setStyleSheet(
+            "font-family: monospace; font-size: 11px; "
+            "background: palette(base);"
+        )
+        text_edit.setMinimumHeight(220)
+        layout.addWidget(text_edit, 1)
+
+        btn_row = QHBoxLayout()
+        copy_btn = QPushButton("📋  Copy to clipboard")
+        copy_btn.clicked.connect(
+            lambda: self._copy_to_clipboard_with_feedback(
+                command_text, copy_btn
+            )
+        )
+        btn_row.addWidget(copy_btn)
+        btn_row.addStretch(1)
+        close_box = QDialogButtonBox(QDialogButtonBox.Close)
+        close_box.rejected.connect(dlg.reject)
+        btn_row.addWidget(close_box)
+        layout.addLayout(btn_row)
+
+        dlg.exec()
+
+    def _copy_to_clipboard_with_feedback(
+        self, text: str, btn: QPushButton
+    ) -> None:
+        """Copy `text` to the system clipboard and flash the button
+        label so the user gets visual confirmation. Restores the
+        original label after 1.5 s."""
+        QApplication.clipboard().setText(text)
+        original = btn.text()
+        btn.setText("✓  Copied!")
+        QTimer.singleShot(1500, lambda: btn.setText(original))
 
     def _teardown_voice_test(self) -> None:
         if self._voice_test_proc is None:
