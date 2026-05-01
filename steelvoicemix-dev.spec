@@ -37,7 +37,7 @@
 # stable release.
 
 Name:           steelvoicemix
-Version:        0.4.1~beta8
+Version:        0.4.1~beta9
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta / dev channel)
 
@@ -54,10 +54,10 @@ Requires:       pipewire
 Requires:       pulseaudio-utils
 Requires:       pipewire-utils
 # wmctrl powers the Auto Game-EQ Add Binding dialog's 'open
-# windowed apps' suggestion list. Hard Requires so it actually
-# gets pulled — Recommends only fires on first install, not on
-# upgrades, leaving existing users without the dep.
-Requires:       wmctrl
+# windowed apps' suggestion list. Recommends — keeps installs
+# robust against transient repo issues, and dnf still pulls it
+# automatically on first install.
+Recommends:     wmctrl
 Requires:       libnotify
 Requires:       hidapi
 
