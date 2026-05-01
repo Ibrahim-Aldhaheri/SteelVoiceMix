@@ -166,11 +166,21 @@ HDMI_PRESETS: list[dict] = [
 ]
 
 
+# Mic channel only ships Flat as the built-in. The 14 ASM presets
+# bundled at gui/presets/asm/mic/ provide the variety (Balanced,
+# Walkie Talkie, Less Nasal, etc.). Flat staying as the very first
+# entry means the preset combo opens to a passthrough by default.
+MIC_PRESETS: list[dict] = [
+    {"name": "Flat", "bands": _flat()},
+]
+
+
 BUILT_IN_PRESETS: dict[str, list[dict]] = {
     "game": GAME_PRESETS,
     "chat": CHAT_PRESETS,
     "media": MEDIA_PRESETS,
     "hdmi": HDMI_PRESETS,
+    "mic": MIC_PRESETS,
 }
 
 
