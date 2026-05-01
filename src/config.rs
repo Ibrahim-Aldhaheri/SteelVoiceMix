@@ -60,6 +60,15 @@ pub struct DaemonState {
     /// LADSPA filter chain covering whichever combination is on.
     #[serde(default)]
     pub mic_state: MicState,
+    /// One-shot migration marker: when False on startup, the daemon
+    /// overwrites `mic_state` with MicState::default() (which enables
+    /// the noise gate at strength 60 — the Arctis Nova Pro is hot)
+    /// and flips this to True. Pre-existing user configs that have
+    /// never touched the mic features get the new sensible defaults
+    /// once; users who later disable the gate stay disabled across
+    /// restarts.
+    #[serde(default)]
+    pub mic_default_applied: bool,
     /// Headset hardware sidetone level (0..=128, normalised; daemon
     /// maps to the device's 4-step internal setting). Persisted so
     /// the daemon can restore it on reconnect — the headset's EEPROM
@@ -102,6 +111,7 @@ impl Default for DaemonState {
             surround_enabled: default_surround_enabled(),
             surround_hrir_path: None,
             mic_state: MicState::default(),
+            mic_default_applied: true,
             sidetone_level: default_sidetone_level(),
             notifications_enabled: default_notifications_enabled(),
         }

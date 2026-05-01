@@ -114,6 +114,10 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         surround_enabled: st.surround_enabled,
         surround_hrir_path: st.surround_hrir_path.clone(),
         mic_state: st.mic_state,
+        // Migration is a one-shot at process startup; once any
+        // state has been persisted the marker should stay True
+        // forever so subsequent restarts skip the override.
+        mic_default_applied: true,
         sidetone_level: st.sidetone_level,
         notifications_enabled: st.notifications_enabled,
     });
@@ -643,7 +647,24 @@ fn main() {
     // the Default (both false) — new users aren't surprised by extra output
     // devices they didn't ask for. --no-* CLI flags are session-only overrides
     // that do NOT overwrite the stored preference.
-    let persisted = config::load();
+    let mut persisted = config::load();
+    // One-shot migration: existing configs from before mic-defaults
+    // shipped have all-zero MicState. Apply the new sensible default
+    // (gate on at strength 60) and flip the marker so we don't
+    // override user choices on subsequent starts.
+    if !persisted.mic_default_applied {
+        info!(
+            "Applying mic-state default (one-shot migration): {:?}",
+            MicState::default()
+        );
+        persisted.mic_state = MicState::default();
+        persisted.mic_default_applied = true;
+        // Write back immediately so the marker flips on disk before
+        // any future state change overwrites the file. Otherwise a
+        // crash between migration and the first persist_sink_state()
+        // would re-trigger the migration on next start.
+        config::save(&persisted);
+    }
     let media_sink_enabled = if no_media_sink { false } else { persisted.media_sink_enabled };
     let hdmi_sink_enabled = if no_hdmi_sink { false } else { persisted.hdmi_sink_enabled };
     let auto_route_browsers = persisted.auto_route_browsers;
