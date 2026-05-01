@@ -20,8 +20,10 @@ own command back at the daemon.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -46,6 +48,42 @@ _FEATURES = (
     ("noise_reduction", "set-mic-noise-reduction"),
     ("ai_noise_cancellation", "set-mic-ai-nc"),
 )
+
+# Standard LADSPA install paths on Linux. We probe these in order;
+# the LADSPA_PATH env var (if set) takes precedence. Both lib64 and
+# lib variants are common — Fedora uses lib64, Debian uses lib.
+_LADSPA_DIRS = (
+    "/usr/lib64/ladspa",
+    "/usr/lib/ladspa",
+    "/usr/lib/x86_64-linux-gnu/ladspa",
+    "/usr/local/lib/ladspa",
+    "/usr/local/lib64/ladspa",
+)
+
+# Each feature's plugin file → providing package. Used by the
+# availability check at startup to disable toggles whose plugin
+# isn't installed, plus surface a clear "install <pkg>" hint.
+_PLUGIN_REQUIREMENTS: dict[str, tuple[str, str]] = {
+    "noise_gate": ("swh_plugins.so", "swh-plugins"),
+    "noise_reduction": ("librnnoise_ladspa.so", "noise-suppression-for-voice"),
+    "ai_noise_cancellation": ("librnnoise_ladspa.so", "noise-suppression-for-voice"),
+}
+
+
+def _ladspa_search_paths() -> tuple[str, ...]:
+    """Honour LADSPA_PATH (colon-separated, like PATH) first; fall back
+    to the well-known distro defaults so a user with no env override
+    still gets a correct probe."""
+    env = os.environ.get("LADSPA_PATH", "")
+    extra = tuple(p for p in env.split(":") if p)
+    return extra + _LADSPA_DIRS
+
+
+def _plugin_available(filename: str) -> bool:
+    for d in _ladspa_search_paths():
+        if (Path(d) / filename).is_file():
+            return True
+    return False
 
 
 class MicrophoneTab(QWidget):
@@ -311,7 +349,42 @@ class MicrophoneTab(QWidget):
             "font-size: 10px; color: palette(placeholder-text);"
         )
 
-        parent_layout.addWidget(card(title, toggle_row, slider_row, desc))
+        # LADSPA-plugin availability gate. Each feature needs a
+        # specific plugin file installed; if it's missing, the
+        # toggle silently fails (chain spawns but the LADSPA load
+        # errors and the feature doesn't take effect). Probe at
+        # build time and disable the toggle + slider with a clear
+        # tooltip pointing at the providing package, plus a
+        # red-tinted hint in the card body itself so the user
+        # doesn't have to hover to understand why.
+        plugin_filename, package_name = _PLUGIN_REQUIREMENTS.get(
+            key, ("", "")
+        )
+        plugin_present = (
+            not plugin_filename or _plugin_available(plugin_filename)
+        )
+        contents = [toggle_row, slider_row, desc]
+        if not plugin_present:
+            toggle.setEnabled(False)
+            slider.setEnabled(False)
+            tooltip = (
+                f"Missing LADSPA plugin: {plugin_filename}. "
+                f"Install with: sudo dnf install {package_name}"
+            )
+            toggle.setToolTip(tooltip)
+            missing_lbl = QLabel(
+                f"⚠ Missing dependency — install <b>{package_name}</b> "
+                f"to enable this feature.<br>"
+                f"<code>sudo dnf install {package_name}</code>"
+            )
+            missing_lbl.setWordWrap(True)
+            missing_lbl.setTextFormat(Qt.RichText)
+            missing_lbl.setStyleSheet(
+                "font-size: 10px; color: #FF9800; padding-top: 4px;"
+            )
+            contents.append(missing_lbl)
+
+        parent_layout.addWidget(card(title, *contents))
 
         # Debounce timer for this feature's slider drags.
         timer = QTimer(self)
