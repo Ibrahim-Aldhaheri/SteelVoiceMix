@@ -184,17 +184,6 @@ class MicrophoneTab(QWidget):
         self._pending_strength: dict[str, int] = {}
         self._commit_timers: dict[str, QTimer] = {}
 
-        # Sidetone debounce timer — same pattern as the EQ tab. While
-        # the user drags the slider we only update the visible label;
-        # 250 ms after the last change we fire one set-sidetone HID
-        # write. Without this, every pixel of travel triggers an
-        # EEPROM save-state on the headset.
-        self._sidetone_pending: int | None = None
-        self._sidetone_commit_timer = QTimer(self)
-        self._sidetone_commit_timer.setSingleShot(True)
-        self._sidetone_commit_timer.setInterval(250)
-        self._sidetone_commit_timer.timeout.connect(self._commit_sidetone)
-
         # Voice-test loopback. We use pw-loopback (PipeWire-native)
         # rather than `pactl load-module module-loopback` because the
         # PA compat shim has a race on creation — the sink-input is
@@ -266,31 +255,27 @@ class MicrophoneTab(QWidget):
             "strength. If both NR and AI NC are on, only AI NC runs.",
         )
 
-        # Sidetone card (moved here from Home — sidetone is a
-        # microphone-side concern and grouping it with the gate / NR
-        # controls makes the page tell one coherent story).
-        sidetone_row = QHBoxLayout()
-        sidetone_lbl = QLabel("Sidetone")
-        sidetone_lbl.setFixedWidth(80)
-        self.sidetone_slider = QSlider(Qt.Horizontal)
-        self.sidetone_slider.setRange(0, 128)
-        self.sidetone_slider.setValue(0)
-        self.sidetone_slider.setMaximumWidth(420)
-        self.sidetone_slider.setEnabled(self._daemon is not None)
-        self.sidetone_value = QLabel("0")
-        self.sidetone_value.setFixedWidth(36)
-        self.sidetone_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.sidetone_slider.valueChanged.connect(self._on_sidetone_changed)
-        self.sidetone_slider.sliderReleased.connect(self._on_sidetone_released)
-        sidetone_row.addWidget(sidetone_lbl)
-        sidetone_row.addWidget(self.sidetone_slider, 1)
-        sidetone_row.addWidget(self.sidetone_value)
+        # Sidetone toggle (moved here from Home — sidetone is a
+        # microphone-side concern). The Arctis Nova Pro Wireless has
+        # 4 hardware levels (off / low / medium / high) but the
+        # difference between low/medium/high is barely audible on
+        # this device, so we expose a single On/Off toggle that maps
+        # to off=0 / on=64 (medium). Users who want a specific level
+        # can still set it via the daemon command directly.
+        sidetone_row, self.sidetone_toggle = labelled_toggle(
+            "Sidetone (hear yourself in the headset)"
+        )
+        # Initialised from the daemon's broadcast — see
+        # on_sidetone_changed below.
+        self.sidetone_toggle.setEnabled(self._daemon is not None)
+        self.sidetone_toggle.toggled.connect(self._on_sidetone_toggled)
 
         sidetone_help = QLabel(
-            "Hardware sidetone — how loudly the headset feeds your raw "
-            "mic back into your ears. The Arctis Nova Pro Wireless has "
-            "4 internal levels; the slider quantises into whichever "
-            "range it lands in."
+            "Hardware sidetone — when on, the headset feeds your raw "
+            "mic back into your ears at a fixed medium level. The "
+            "Arctis Nova Pro Wireless has 4 internal levels but the "
+            "difference between low / medium / high is barely audible, "
+            "so we collapse them into a single on/off."
         )
         sidetone_help.setWordWrap(True)
         sidetone_help.setStyleSheet(
@@ -529,33 +514,27 @@ class MicrophoneTab(QWidget):
 
     # ------------------------------------------------------- sidetone
 
+    # When the user flips the toggle on, send this level — falls into
+    # the device's "medium" bucket (43..=85 → hardware level 2 in
+    # daemon's HID mapping). Off is just level=0.
+    _SIDETONE_ON_LEVEL = 64
+
     def on_sidetone_changed(self, level: int) -> None:
         """Daemon broadcast: persisted sidetone level changed (status
-        snapshot on connect, or another GUI client set it). Re-apply
-        with signals blocked so the echo doesn't loop back as another
-        set-sidetone command."""
-        was_blocked = self.sidetone_slider.blockSignals(True)
+        snapshot on connect, or another GUI client set it). Map any
+        non-zero level to checked, zero to unchecked. Block signals
+        so the echo doesn't loop back as another set-sidetone
+        command."""
+        was_blocked = self.sidetone_toggle.blockSignals(True)
         try:
-            self.sidetone_slider.setValue(level)
+            self.sidetone_toggle.setChecked(level > 0)
         finally:
-            self.sidetone_slider.blockSignals(was_blocked)
-        self.sidetone_value.setText(str(level))
+            self.sidetone_toggle.blockSignals(was_blocked)
 
-    def _on_sidetone_changed(self, value: int) -> None:
-        self.sidetone_value.setText(str(value))
-        self._sidetone_pending = value
-        self._sidetone_commit_timer.start()
-
-    def _on_sidetone_released(self) -> None:
-        self._sidetone_pending = self.sidetone_slider.value()
-        self._sidetone_commit_timer.stop()
-        self._commit_sidetone()
-
-    def _commit_sidetone(self) -> None:
-        if self._daemon is None or self._sidetone_pending is None:
+    def _on_sidetone_toggled(self, checked: bool) -> None:
+        if self._daemon is None:
             return
-        level = int(self._sidetone_pending)
-        self._sidetone_pending = None
+        level = self._SIDETONE_ON_LEVEL if checked else 0
         self._daemon.send_command("set-sidetone", level=level)
 
     # ------------------------------------------------------- voice test
