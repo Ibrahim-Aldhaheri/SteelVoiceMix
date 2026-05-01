@@ -1,5 +1,5 @@
 Name:           steelvoicemix
-Version:        0.3.1
+Version:        0.3.2
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux
 
@@ -126,6 +126,54 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
+* Fri May 01 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.3.2-1
+- Major feature: Microphone capture-side processing. Three
+  independent toggles (Noise Gate / Noise Reduction / AI Noise
+  Cancellation), each with a strength slider. Daemon spawns one
+  PipeWire filter chain covering the enabled combination. New
+  Volume Stabilizer adds compression — Broadcast (SC4 mono) or
+  Soft (Dyson) modes. Microphone is exposed as the SteelMic
+  virtual source apps record from. All mic features tagged ALPHA.
+- Major feature: per-channel mic EQ — the mic chain now runs 10
+  biquad bands after the gate / NR / AI-NC stages. Microphone
+  appears as a fifth channel in the Equalizer tab alongside Game /
+  Chat / Media / HDMI. Bundled 14 ASM mic presets (Balanced,
+  Walkie Talkie, Less Nasal, Broadcast, etc.) plus a built-in Flat.
+- Major feature: Auto Game-EQ. Background watcher polls
+  PipeWire's sink-inputs and applies a matching ASM preset on the
+  Game channel when a known game appears. Drag-orderable manual
+  bindings let users override the auto-match. Snapshot/restore
+  flow preserves the user's pre-game EQ. Friendlier Add Binding
+  dialog now combines active audio clients, open windows
+  (via wmctrl), and free-text input.
+- Audio profiles now snapshot the live EQ + mic state in addition
+  to overlay options + Media / HDMI sink toggles. One-click
+  load restores everything via daemon commands.
+- Voice test ('Hear yourself') loopback with a shared service so
+  the Microphone tab and the EQ tab's Mic channel drive the same
+  pw-loopback subprocess.
+- Theme switcher: Auto / Light / Dark. Window now responsive
+  (minimum 820x660, default 900x740, no longer fixed-size).
+- Sidetone reverted to a 4-step slider (Off / Low / Medium /
+  High) tagged ALPHA — the wireless variant's firmware may
+  ignore HID writes despite the slider quantising correctly.
+- Home tab redesigned: 2-column ChatMix + Headset cards plus a
+  full-width 'Active Features' pill row showing what processing
+  is currently on at a glance.
+- Settings: Report Issue button (copies a diagnostic block to the
+  clipboard + opens GitHub's New Issue page). Start-minimised-to-
+  tray toggle. Alpha-channel switch buttons.
+- Mic chain watchdog: detects dead pw-loopback subprocesses after
+  system suspend and respawns them automatically.
+- Mouse-wheel scroll on EQ + Mic sliders now ignored — accidental
+  scrolls were forking the active preset to a fresh Custom-N.
+- Logging: per-tick chatter (game watcher, reconcile, default-
+  source promotions) demoted to DEBUG. Set RUST_LOG=debug or
+  STEELVOICEMIX_DEBUG=1 to see the full trail.
+- Crash fix: Qt aborted with 'QThread destroyed while running'
+  on every systemd service restart — cleanup now routed through
+  QApplication::aboutToQuit so every exit path stops the threads.
+
 * Thu Apr 30 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.3.1-1
 - Fix: 'Check for updates' button now wipes the on-disk update cache
   before querying GitHub, so it actually re-checks instead of

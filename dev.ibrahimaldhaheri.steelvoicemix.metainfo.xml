@@ -39,6 +39,25 @@
     <modalias>usb:v1038p12E0*</modalias>
   </provides>
   <releases>
+    <release version="0.3.2" date="2026-05-01" type="stable">
+      <description>
+        <p>
+          Major release: full mic-side processing chain (Noise Gate,
+          Noise Reduction, AI Noise Cancellation, Volume Stabilizer)
+          plus per-channel mic EQ with 14 bundled ASM presets. New
+          Auto Game-EQ feature applies a matching preset to the Game
+          channel based on the running game's audio client; supports
+          drag-orderable manual bindings.
+        </p>
+        <p>
+          Audio profiles now snapshot EQ + mic state. Voice-test
+          loopback for A/B'ing changes. Theme switcher (Auto / Light
+          / Dark) with system-following default. Responsive window.
+          Crash fix on systemd restart. Logging quieter at INFO; full
+          trail via DEBUG. Mic features and sidetone tagged ALPHA.
+        </p>
+      </description>
+    </release>
     <release version="0.3.1" date="2026-04-30" type="stable">
       <description>
         <p>Patch release: three small UX fixes on top of v0.3.0.</p>
