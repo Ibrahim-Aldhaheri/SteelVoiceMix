@@ -152,11 +152,15 @@ class MicrophoneTab(QWidget):
         self._sidetone_commit_timer.setInterval(250)
         self._sidetone_commit_timer.timeout.connect(self._commit_sidetone)
 
-        # Voice-test loopback (module-loopback id, or None when off).
-        # While the loopback is loaded the user hears the processed
-        # SteelMic playing back through their headset so they can
-        # judge how the gate / NR / AI-NC actually sound.
-        self._voice_test_module_id: int | None = None
+        # Voice-test loopback. We use pw-loopback (PipeWire-native)
+        # rather than `pactl load-module module-loopback` because the
+        # PA compat shim has a race on creation — the sink-input is
+        # already accepting audio before we can mute it, leading to
+        # a painful burst at full volume on the first ~100 ms. The
+        # PipeWire-native loopback stays silent until real audio
+        # arrives. We track the spawned subprocess.Popen handle so
+        # we can kill it on stop / app quit.
+        self._voice_test_proc: "subprocess.Popen | None" = None
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -496,141 +500,64 @@ class MicrophoneTab(QWidget):
     # ------------------------------------------------------- voice test
 
     def _on_voice_test_toggled(self, checked: bool) -> None:
-        """Toggle a `module-loopback` from SteelMic to the default
-        sink (the headset). The new sink-input is muted at load time
-        and unmuted ~300 ms later so the user doesn't hear the
-        startup transient — module-loopback's initial buffer plays
-        out garbage before the capture side has filled it.
-
-        `pactl load-module` prints the new module id on stdout; we
-        keep it to unload cleanly. If pactl isn't on PATH or the
-        load fails, surface a one-shot toast and force the button
-        back off."""
+        """Toggle a pw-loopback subprocess from SteelMic to the
+        default sink. PipeWire's native loopback stays silent until
+        real audio arrives — no buffer-dump burst on creation,
+        unlike `pactl load-module module-loopback` which had a 100 ms+
+        race window where audio leaked at full volume."""
         if checked:
-            if not shutil.which("pactl"):
+            if not shutil.which("pw-loopback"):
                 QMessageBox.warning(
                     self,
-                    "pactl not found",
-                    "Voice-test needs pactl on PATH (PipeWire / PulseAudio "
-                    "client tools). Install pulseaudio-utils (Debian/Ubuntu) "
-                    "or pulseaudio-utils / pipewire-pulse (Fedora) and "
-                    "try again.",
+                    "pw-loopback not found",
+                    "Voice-test needs pw-loopback on PATH (part of the "
+                    "pipewire-utils package). Install it and try again.",
                 )
                 self.voice_test_btn.setChecked(False)
                 return
+            # Spawn the loopback as a managed subprocess. Capture
+            # side targets SteelMic (the processed mic source);
+            # playback side hits the system default sink. Latency
+            # 80 ms keeps the round-trip from feeling laggy.
             try:
-                # Higher latency_msec (80) buys the buffer enough
-                # time to fill with real audio before the unmute
-                # window closes. Combined with the mute-on-load /
-                # unmute-after-300ms below, the burst is gone.
-                result = subprocess.run(
+                self._voice_test_proc = subprocess.Popen(
                     [
-                        "pactl",
-                        "load-module",
-                        "module-loopback",
-                        "source=SteelMic",
-                        "latency_msec=80",
-                        "sink_input_properties=media.name=SteelVoiceMix-VoiceTest",
+                        "pw-loopback",
+                        "--capture-props=node.target=SteelMic "
+                        "media.name=SteelVoiceMix-VoiceTest",
+                        "--playback-props=media.name=SteelVoiceMix-VoiceTest",
+                        "--latency", "80",
                     ],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
             except Exception as e:
                 QMessageBox.warning(
                     self,
                     "Voice-test failed",
-                    f"Could not start the loopback:\n{e}",
+                    f"Could not start pw-loopback:\n{e}",
                 )
                 self.voice_test_btn.setChecked(False)
+                self._voice_test_proc = None
                 return
-            if result.returncode != 0:
-                QMessageBox.warning(
-                    self,
-                    "Voice-test failed",
-                    "pactl rejected the loopback. Make sure SteelMic "
-                    "exists (enable any mic feature first):\n\n"
-                    + (result.stderr or "(no error output)"),
-                )
-                self.voice_test_btn.setChecked(False)
-                return
-            try:
-                self._voice_test_module_id = int(result.stdout.strip())
-            except ValueError:
-                self._voice_test_module_id = None
             self.voice_test_btn.setText("🛑  Stop voice test")
-            # Mute the freshly-created sink-input now, schedule unmute
-            # after 300 ms. The sink-input id has to be discovered
-            # via pactl list short — module-loopback doesn't print it.
-            self._mute_voice_test_sink_input()
-            QTimer.singleShot(300, self._unmute_voice_test_sink_input)
         else:
             self._teardown_voice_test()
             self.voice_test_btn.setText("🎧  Hear yourself (test mic)")
 
-    def _voice_test_sink_input_id(self) -> int | None:
-        """Find the sink-input id our loopback owns. We tagged it via
-        sink_input_properties=media.name=...; match on that to be
-        robust to other loopbacks the user may already have running."""
-        try:
-            r = subprocess.run(
-                ["pactl", "list", "sink-inputs"],
-                capture_output=True, text=True, timeout=3,
-            )
-        except Exception:
-            return None
-        if r.returncode != 0:
-            return None
-        current_id: int | None = None
-        for line in r.stdout.splitlines():
-            line = line.strip()
-            if line.startswith("Sink Input #"):
-                try:
-                    current_id = int(line.split("#", 1)[1])
-                except ValueError:
-                    current_id = None
-            elif "SteelVoiceMix-VoiceTest" in line and current_id is not None:
-                return current_id
-        return None
-
-    def _mute_voice_test_sink_input(self) -> None:
-        sid = self._voice_test_sink_input_id()
-        if sid is None:
-            return
-        try:
-            subprocess.run(
-                ["pactl", "set-sink-input-mute", str(sid), "1"],
-                capture_output=True, timeout=3,
-            )
-        except Exception:
-            pass
-
-    def _unmute_voice_test_sink_input(self) -> None:
-        if self._voice_test_module_id is None:
-            return
-        sid = self._voice_test_sink_input_id()
-        if sid is None:
-            return
-        try:
-            subprocess.run(
-                ["pactl", "set-sink-input-mute", str(sid), "0"],
-                capture_output=True, timeout=3,
-            )
-        except Exception:
-            pass
-
     def _teardown_voice_test(self) -> None:
-        if self._voice_test_module_id is None:
+        if self._voice_test_proc is None:
             return
         try:
-            subprocess.run(
-                ["pactl", "unload-module", str(self._voice_test_module_id)],
-                capture_output=True,
-                timeout=5,
-            )
+            self._voice_test_proc.terminate()
+            try:
+                self._voice_test_proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self._voice_test_proc.kill()
+                self._voice_test_proc.wait(timeout=1)
         except Exception:
             pass
-        self._voice_test_module_id = None
+        self._voice_test_proc = None
 
     # ------------------------------------------------------- default-source
 
