@@ -94,6 +94,15 @@ DEFAULTS: dict[str, Any] = {
     # Migrated automatically from the legacy dict shape on first
     # load by `gui/settings.py:load()`.
     "game_eq_bindings": [],
+    # Default-sink cycle shortcut. When enabled, the configured
+    # key combo cycles the system default sink between the loaded
+    # SteelVoiceMix virtual sinks (Game / Chat / Media / HDMI).
+    # Off by default — adds a global-ish keybinding, which users
+    # should opt into. The combo is a Qt key-sequence string;
+    # default Ctrl+Shift+S works in most desktop environments
+    # without conflicting with common app shortcuts.
+    "default_sink_cycle_enabled": False,
+    "default_sink_cycle_combo": "Ctrl+Shift+S",
 }
 
 # Star-tier capacity per channel. Five is enough to cover the main use

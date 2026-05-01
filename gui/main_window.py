@@ -15,7 +15,7 @@ import os
 import threading
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -111,6 +111,7 @@ class MixerGUI(QMainWindow):
         self._start_daemon_client()
         self._update_checker = None
         self._start_update_check()
+        self._install_default_sink_shortcut()
 
         # Universal cleanup: aboutToQuit fires for every exit path
         # (tray Quit action, X button when no tray, SIGTERM, SIGINT,
@@ -453,6 +454,48 @@ class MixerGUI(QMainWindow):
                 QSystemTrayIcon.Information,
                 2000,
             )
+
+    def _install_default_sink_shortcut(self) -> None:
+        """Bind the configured key sequence to gui.sink_cycle. Only
+        active when settings['default_sink_cycle_enabled'] is True;
+        Qt fires the shortcut when the GUI window has keyboard
+        focus (system-wide hotkeys aren't a thing in Qt without
+        DE-specific D-Bus integration, which is out of scope)."""
+        if not self.settings.get("default_sink_cycle_enabled", False):
+            return
+        combo = self.settings.get("default_sink_cycle_combo", "Ctrl+Shift+S")
+        seq = QKeySequence(combo)
+        if seq.isEmpty():
+            return
+        # Owned by self so the shortcut is GC-safe and lives as long
+        # as the window does.
+        self._default_sink_shortcut = QShortcut(seq, self)
+        self._default_sink_shortcut.activated.connect(
+            self._on_default_sink_shortcut
+        )
+
+    def _on_default_sink_shortcut(self) -> None:
+        from .sink_cycle import cycle_default_sink
+        prev, new = cycle_default_sink()
+        if not new:
+            self._show_tray_message(
+                "Cycle default sink failed",
+                "No SteelVoiceMix sinks loaded.",
+            )
+        else:
+            self._show_tray_message(
+                "Default sink",
+                f"{new}" if new == prev else f"{prev or '?'} → {new}",
+            )
+
+    def _show_tray_message(self, title: str, body: str) -> None:
+        """Best-effort tray toast — silently no-op if no tray exists."""
+        if getattr(self, "tray", None) is None:
+            return
+        try:
+            self.tray.showMessage(title, body, msecs=2000)
+        except Exception:
+            pass
 
     def _quit(self) -> None:
         # User-driven quit: ask Qt to exit. aboutToQuit will fire

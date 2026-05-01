@@ -176,6 +176,48 @@ class SettingsTab(QWidget):
 
         layout.addWidget(card("Startup", autostart_row, start_min_row))
 
+        # Shortcut card -----------------------------------------------
+        # Optional QShortcut to cycle the system default sink between
+        # SteelGame / SteelChat / SteelMedia / SteelHDMI. Off by
+        # default — Qt shortcuts only fire while the GUI has focus,
+        # so this is most useful on a multi-monitor setup or with
+        # the GUI parked on a side screen. Users wanting global
+        # (system-wide) shortcuts can bind their DE's keyboard
+        # settings to a shell command — TBD whether we ship a CLI.
+        cycle_row, self.cycle_toggle = labelled_toggle(
+            "Cycle default sink shortcut",
+        )
+        self.cycle_toggle.setChecked(
+            bool(self._settings.get("default_sink_cycle_enabled", False))
+        )
+        self.cycle_toggle.toggled.connect(self._toggle_cycle_shortcut)
+
+        from PySide6.QtWidgets import QLineEdit
+        cycle_combo_row = QHBoxLayout()
+        combo_lbl = QLabel("Key combo")
+        combo_lbl.setFixedWidth(80)
+        self.cycle_combo_edit = QLineEdit(
+            self._settings.get("default_sink_cycle_combo", "Ctrl+Shift+S")
+        )
+        self.cycle_combo_edit.setMaximumWidth(280)
+        self.cycle_combo_edit.editingFinished.connect(self._save_cycle_combo)
+        cycle_combo_row.addWidget(combo_lbl)
+        cycle_combo_row.addWidget(self.cycle_combo_edit, 1)
+
+        cycle_help = QLabel(
+            "Qt shortcuts only fire while the GUI has focus — for "
+            "system-wide bindings, point your desktop's keyboard "
+            "settings at a custom shell command (a CLI wrapper is "
+            "on the roadmap). Restart the GUI after changing the "
+            "combo to apply."
+        )
+        cycle_help.setWordWrap(True)
+        cycle_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        layout.addWidget(card("Shortcuts", cycle_row, cycle_combo_row, cycle_help))
+
         # Notifications card -------------------------------------------
         # Two distinct toggles:
         #   - Minimize-to-tray toast: GUI-side (closeEvent in main
@@ -393,6 +435,16 @@ class SettingsTab(QWidget):
     def _toggle_start_minimized(self, checked: bool) -> None:
         self._settings["start_minimized"] = checked
         save_settings(self._settings)
+
+    def _toggle_cycle_shortcut(self, checked: bool) -> None:
+        self._settings["default_sink_cycle_enabled"] = checked
+        save_settings(self._settings)
+
+    def _save_cycle_combo(self) -> None:
+        combo = self.cycle_combo_edit.text().strip()
+        if combo:
+            self._settings["default_sink_cycle_combo"] = combo
+            save_settings(self._settings)
 
 
     def _change_theme(self, index: int) -> None:
