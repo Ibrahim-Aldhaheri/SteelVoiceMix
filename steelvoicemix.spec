@@ -16,10 +16,10 @@ Requires:       pipewire
 Requires:       pulseaudio-utils
 Requires:       pipewire-utils
 # wmctrl powers the Auto Game-EQ Add Binding dialog's 'open
-# windowed apps' suggestion list. X11-only and entirely optional;
-# Recommends so dnf installs it when available but doesn't fail
-# the whole transaction when it isn't.
-Recommends:     wmctrl
+# windowed apps' suggestion list. Hard Requires so it's actually
+# pulled in on every install/upgrade — Recommends doesn't get
+# re-evaluated on upgrades, which left existing users without it.
+Requires:       wmctrl
 Requires:       libnotify
 Requires:       hidapi
 
