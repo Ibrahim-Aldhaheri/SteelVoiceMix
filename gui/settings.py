@@ -102,6 +102,12 @@ DEFAULTS: dict[str, Any] = {
     # Appearance: 'auto' follows the system colour scheme; 'light'
     # / 'dark' override with our packaged palettes. See gui/theme.py.
     "theme_mode": "auto",
+    # UI language. 'system' follows the OS locale; explicit codes
+    # ('en', 'ar', etc.) override. Translation coverage is partial
+    # — strings without a translation fall back to English, which
+    # means a user picking 'ar' sees a mix until the .qm catches
+    # up. Tracked in gui/translations/<code>.ts.
+    "ui_language": "system",
     # Auto-switch the Game-channel EQ when a known game launches.
     # When True, the GameWatcher polls SteelGame's sink-inputs and:
     #   1. Looks up `game_eq_bindings[detected_name]` (manual override).

@@ -152,7 +152,40 @@ class SettingsTab(QWidget):
             "font-size: 10px; color: palette(placeholder-text);"
         )
 
-        layout.addWidget(card("Appearance", theme_row, theme_help))
+        # Language selector -------------------------------------------
+        # Translation coverage is partial; strings without a
+        # translation fall back to English. RTL languages (Arabic,
+        # Hebrew, etc.) flip the layoutDirection automatically when
+        # selected.
+        from ..i18n import SUPPORTED_LANGUAGES
+        lang_row = QHBoxLayout()
+        lang_lbl = QLabel("Language")
+        lang_lbl.setFixedWidth(80)
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItem("System default", "system")
+        for code, label in SUPPORTED_LANGUAGES:
+            self.lang_combo.addItem(label, code)
+        current_lang = self._settings.get("ui_language", "system")
+        for i in range(self.lang_combo.count()):
+            if self.lang_combo.itemData(i) == current_lang:
+                self.lang_combo.setCurrentIndex(i)
+                break
+        self.lang_combo.currentIndexChanged.connect(self._change_language)
+        lang_row.addWidget(lang_lbl)
+        lang_row.addWidget(self.lang_combo, 1)
+        lang_help = QLabel(
+            "Translation coverage is partial — strings without a "
+            "translation fall back to English. Restart the GUI for "
+            "the language change to take full effect."
+        )
+        lang_help.setWordWrap(True)
+        lang_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        layout.addWidget(card(
+            "Appearance", theme_row, theme_help, lang_row, lang_help,
+        ))
 
         # Startup card -------------------------------------------------
         autostart_row, self.autostart_toggle = labelled_toggle(
@@ -521,6 +554,17 @@ class SettingsTab(QWidget):
         self._settings["theme_mode"] = mode
         save_settings(self._settings)
         apply_theme(mode)
+
+    def _change_language(self, _index: int) -> None:
+        """Save the picked language and flip the layoutDirection
+        immediately. Full string-translation refresh requires a GUI
+        restart since most strings cache their text at construct
+        time — surfaced in the help text below the combo."""
+        code = self.lang_combo.currentData() or "system"
+        self._settings["ui_language"] = code
+        save_settings(self._settings)
+        from ..i18n import apply_layout_direction
+        apply_layout_direction(QApplication.instance(), code)
 
     def _copy_to_clipboard(self, text: str, label: str) -> None:
         cb = QApplication.clipboard()

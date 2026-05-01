@@ -201,12 +201,12 @@ class MixerGUI(QMainWindow):
         self.stack = QStackedWidget()
 
         for label, widget in (
-            ("🏠   Home", self.home_tab),
-            ("🔊   Sinks", self.sinks_tab),
-            ("🎛   Equalizer", self.eq_tab),
-            ("🎬   Surround", self.surround_tab),
-            ("🎙   Microphone", self.mic_tab),
-            ("⚙   Settings", self.settings_tab),
+            (self.tr("🏠   Home"), self.home_tab),
+            (self.tr("🔊   Sinks"), self.sinks_tab),
+            (self.tr("🎛   Equalizer"), self.eq_tab),
+            (self.tr("🎬   Surround"), self.surround_tab),
+            (self.tr("🎙   Microphone"), self.mic_tab),
+            (self.tr("⚙   Settings"), self.settings_tab),
         ):
             item = QListWidgetItem(label)
             self.nav.addItem(item)
