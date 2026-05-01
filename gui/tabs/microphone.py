@@ -91,14 +91,28 @@ _INSTALL_RNNOISE_HINT = (
 # card. `build_cmd` is the multi-line shell snippet shown in the
 # "How to install" modal — None if no build path beyond dnf.
 _BUILD_RNNOISE = """\
-# Install build deps
-sudo dnf install rnnoise-devel cmake gcc-c++ ladspa-devel git -y
+# Install build deps. werman's CMakeLists pulls JUCE which wants
+# X11/Xrandr, gtk3, webkit2gtk, alsa, libcurl — even though we only
+# need the LADSPA target. The full set keeps the configure step
+# happy on a fresh Fedora install.
+sudo dnf install -y \\
+    cmake gcc-c++ ladspa-devel git rnnoise-devel \\
+    libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel \\
+    libcurl-devel alsa-lib-devel \\
+    webkit2gtk4.0-devel gtk3-devel mesa-libGL-devel
 
-# Clone, build, install
+# Clone + build only the LADSPA target so we skip JUCE's VST/AU/LV2
+# plumbing. The JUCE deps above are still needed because juceaide
+# (a build helper used everywhere) pulls them in even when only
+# the LADSPA target is selected.
 git clone https://github.com/werman/noise-suppression-for-voice.git
 cd noise-suppression-for-voice
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake -B build -DCMAKE_BUILD_TYPE=Release \\
+    -DBUILD_VST_PLUGIN=OFF -DBUILD_VST3_PLUGIN=OFF \\
+    -DBUILD_AU_PLUGIN=OFF -DBUILD_LV2_PLUGIN=OFF
+cmake --build build -j --target rnnoise_ladspa
+
+# Install the built .so to the system LADSPA path
 sudo install -Dm755 build/ladspa/librnnoise_ladspa.so \\
     /usr/lib64/ladspa/librnnoise_ladspa.so
 
