@@ -1,0 +1,74 @@
+name: Dev Beta Release
+
+# On every push to dev, tag HEAD with the beta version from the spec
+# and publish a GitHub prerelease. COPR's webhook re-fires on the
+# tag push and rebuilds — no manual `copr-cli build-package` needed.
+#
+# Skips when the spec's version hasn't changed since the previous
+# release (avoids creating duplicate tags for typo-fix commits).
+
+on:
+  push:
+    branches:
+      - dev
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from steelvoicemix-dev.spec
+        id: version
+        run: |
+          VERSION=$(grep '^Version:' steelvoicemix-dev.spec | awk '{print $2}')
+          if [ -z "$VERSION" ]; then
+            echo "Could not parse Version: from steelvoicemix-dev.spec" >&2
+            exit 1
+          fi
+          # Tags can't contain ~ (RPM pre-release separator). Convert to
+          # a hyphen so v0.3.2~beta1 becomes v0.3.2-beta1 — the spec
+          # keeps the ~ for proper RPM vercmp ordering.
+          TAG="v${VERSION//\~/-}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if tag already exists
+        id: tag_check
+        run: |
+          if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.version.outputs.tag }} already exists — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag
+        if: steps.tag_check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" \
+              -m "Dev beta ${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create GitHub prerelease
+        if: steps.tag_check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Best-effort changelog: most recent commit subject. Anything
+          # richer would mean a separate CHANGELOG mechanism.
+          NOTES=$(git log -1 --pretty=format:'%s%n%n%b' HEAD)
+          gh release create "${{ steps.version.outputs.tag }}" \
+              --prerelease \
+              --title "Dev ${{ steps.version.outputs.version }}" \
+              --notes "$NOTES"
