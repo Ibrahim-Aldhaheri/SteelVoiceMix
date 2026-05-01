@@ -183,10 +183,11 @@ impl SinkManager {
             Some(handle) => {
                 self.mic_chain = Some(handle);
                 info!(
-                    "Mic chain online (gate={}, nr={}, ai_nc={})",
+                    "Mic chain online (gate={}, nr={}, ai_nc={}, vol_stab={})",
                     self.mic_state.noise_gate.enabled,
                     self.mic_state.noise_reduction.enabled,
                     self.mic_state.ai_noise_cancellation.enabled,
+                    self.mic_state.volume_stabilizer.enabled,
                 );
                 self.promote_steelmic_default()
             }

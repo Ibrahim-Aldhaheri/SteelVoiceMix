@@ -139,7 +139,7 @@ _PLUGIN_REQUIREMENTS: dict[str, tuple[tuple[str, ...], str, "str | None"]] = {
         _BUILD_RNNOISE,
     ),
     "volume_stabilizer": (
-        ("dyson_compress_1403.so", "swh_plugins.so"),
+        ("sc4m_1916.so", "swh_plugins.so"),
         f"sudo dnf install {_INSTALL_DNF}",
         f"sudo dnf install {_INSTALL_DNF}",
     ),

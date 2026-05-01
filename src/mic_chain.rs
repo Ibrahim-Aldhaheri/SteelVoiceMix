@@ -259,29 +259,39 @@ fn render_conf(spec: &MicChainSpec) -> String {
         last_out = Some("mic_rnnoise:Output");
     }
 
-    // Volume Stabilizer — Dyson compressor (mono, single Input/Output
-    // ports). Smooths volume swings without colouring tone. Strength
-    // 0..=100 drives the compression ratio; threshold + release stay
-    // at sensible voice defaults so the slider doesn't expose
-    // pro-audio-only knobs.
+    // Volume Stabilizer — Steve Harris's SC4 mono compressor
+    // (sc4m_1916). The Dyson compressor we tried first was so gentle
+    // that users couldn't hear it doing anything, even at max
+    // strength. SC4 is the canonical LADSPA voice compressor:
+    // threshold + ratio + makeup, RMS detection, audible at moderate
+    // settings.
+    //
+    // Strength 0..=100 drives both the threshold (more compression
+    // for the same input) and the ratio (harder squashing). Attack
+    // / release / knee stay at voice-friendly defaults.
+    //
+    //   strength=0   → ratio=1:1 (passthrough), threshold=0 dB
+    //   strength=50  → ratio=4:1, threshold=-15 dB, audible levelling
+    //   strength=100 → ratio=8:1, threshold=-30 dB, broadcast-style
     if s.volume_stabilizer.enabled {
-        // Dyson's "Compression ratio" lives in [0, 1] where 0 is
-        // passthrough and 1 is heavy. strength=50 → ratio=0.5 is a
-        // reasonable middle ground for voice; we cap at 0.85 so
-        // strength=100 doesn't flatten the signal entirely.
-        let comp_ratio = (f32::from(s.volume_stabilizer.strength).clamp(0.0, 100.0))
-            * 0.0085;
+        let strength = f32::from(s.volume_stabilizer.strength).clamp(0.0, 100.0);
+        let threshold_db = -strength * 0.30;
+        let ratio = 1.0 + strength * 0.07;
+        let makeup_db = strength * 0.06;
         nodes.push(format!(
             r#"                    {{
                         type   = ladspa
                         name   = mic_stabilizer
-                        plugin = "dyson_compress_1403"
-                        label  = dysonCompress
+                        plugin = "sc4m_1916"
+                        label  = sc4m
                         control = {{
-                            "Peak limit (dB)" = -3.0
-                            "Release time (s)" = 0.10
-                            "Fast compression ratio" = 0.50
-                            "Compression ratio" = {comp_ratio:.4}
+                            "RMS/peak" = 0.0
+                            "Attack time (ms)" = 5.0
+                            "Release time (ms)" = 50.0
+                            "Threshold level (dB)" = {threshold_db:.2}
+                            "Ratio (1:n)" = {ratio:.2}
+                            "Knee radius (dB)" = 4.0
+                            "Makeup gain (dB)" = {makeup_db:.2}
                         }}
                     }}"#,
         ));
