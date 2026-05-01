@@ -48,6 +48,14 @@ _FUZZY_THRESHOLD = 0.62
 # list sink-inputs is cheap (~5 ms typical).
 _POLL_INTERVAL_MS = 2000
 
+# How many consecutive empty-games ticks we tolerate before firing the
+# exit (and thus a chain respawn back to the user's snapshot). Games
+# briefly drop their sink-input during loading screens, cutscenes,
+# 3D-positional updates, and audio-focus changes; without this grace
+# period each transient blip cycles enter→exit→enter and the EQ chain
+# respawns every cycle, audibly glitching the sound.
+_EXIT_GRACE_TICKS = 2
+
 # Sink whose audio we'd ideally apply the Game EQ to. We *prefer*
 # clients on SteelGame, but the watcher does NOT filter to it —
 # many users keep their default sink as the headset and never
@@ -320,6 +328,11 @@ class GameProfileManager(QObject):
         self._active_preset: str | None = None
         self._current_games: dict[str, bool] = {}
         self._last_seen: dict[str, bool] = {}
+        # Counts consecutive watcher ticks where no candidate-game
+        # client was seen. Used to gate _exit so a transient empty
+        # tick (loading screen, cutscene, audio refocus) doesn't
+        # respawn the EQ chain unnecessarily.
+        self._consecutive_empty_ticks: int = 0
 
     def latest_seen(self) -> dict[str, bool]:
         """Snapshot of the most recent watcher tick. Used by the
@@ -362,9 +375,21 @@ class GameProfileManager(QObject):
         state, computed from `_current_games` + the toggle."""
         auto_on = self._settings.get("auto_game_eq_enabled", False)
         games = self._current_games
+        # Track consecutive empty-games ticks so we can grace-period
+        # the exit. A single empty tick (game's sink-input disappeared
+        # for half a second during a cutscene) shouldn't trigger a
+        # chain respawn — that's the audible "jamming" the user
+        # reported when game audio shifts position. Reset to 0 on
+        # any tick where we DID see games.
+        if games:
+            self._consecutive_empty_ticks = 0
+        else:
+            self._consecutive_empty_ticks += 1
         log.info(
-            "Auto game-EQ reconcile: auto_on=%s games=%s active_preset=%r",
+            "Auto game-EQ reconcile: auto_on=%s games=%s active_preset=%r "
+            "empty_ticks=%d",
             auto_on, list(games.keys()), self._active_preset,
+            self._consecutive_empty_ticks,
         )
         if not auto_on:
             if self._active_preset is not None:
@@ -381,7 +406,15 @@ class GameProfileManager(QObject):
             elif target != self._active_preset:
                 self._switch(games)
         else:
-            if self._active_preset is not None:
+            # Grace period: only declare the games gone after
+            # _EXIT_GRACE_TICKS consecutive empty ticks. Until then,
+            # the active preset stays put — sink-input blips during
+            # loading screens / cutscenes don't cycle enter→exit→enter
+            # and the EQ chain doesn't respawn on every blip.
+            if (
+                self._active_preset is not None
+                and self._consecutive_empty_ticks >= _EXIT_GRACE_TICKS
+            ):
                 self._exit()
 
     # ---------------------------------------------------- transitions
