@@ -37,7 +37,7 @@
 # stable release.
 
 Name:           steelvoicemix
-Version:        0.4.1~beta1
+Version:        0.4.1~beta2
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta / dev channel)
 
@@ -100,6 +100,10 @@ install -d %{buildroot}%{_datadir}/%{name}/gui/data/hrir
 install -Dm644 gui/data/hrir/EAC_Default.wav \
     %{buildroot}%{_datadir}/%{name}/gui/data/hrir/EAC_Default.wav
 
+# CLI wrapper — `steelvoicemix-cli sink cycle` exposed for global
+# keyboard-shortcut binding via the user's DE settings.
+install -Dm755 steelvoicemix-cli.py %{buildroot}%{_bindir}/steelvoicemix-cli
+
 # GUI launcher — force XCB so overlay positioning works under Wayland
 cat > %{buildroot}%{_bindir}/steelvoicemix-gui << 'EOF'
 #!/bin/bash
@@ -142,6 +146,7 @@ udevadm control --reload-rules 2>/dev/null || :
 %doc README.md
 %{_bindir}/steelvoicemix
 %{_bindir}/steelvoicemix-gui
+%{_bindir}/steelvoicemix-cli
 %{_datadir}/%{name}/
 %{_userunitdir}/steelvoicemix.service
 %{_userunitdir}/steelvoicemix-gui.service

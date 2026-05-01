@@ -7,6 +7,7 @@ import subprocess
 import urllib.parse
 import webbrowser
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -204,19 +205,42 @@ class SettingsTab(QWidget):
         cycle_combo_row.addWidget(combo_lbl)
         cycle_combo_row.addWidget(self.cycle_combo_edit, 1)
 
+        # Exclude-from-cycle multi-select. Some users want certain
+        # sinks (typically SteelChat) skipped — Discord stays put on
+        # SteelChat regardless of the system default, so cycling
+        # there mid-game is a footgun.
+        from PySide6.QtWidgets import QCheckBox
+        excludes = self._settings.get("default_sink_cycle_exclude") or []
+        excludes_set = set(excludes)
+        exclude_row = QHBoxLayout()
+        exclude_lbl = QLabel("Exclude")
+        exclude_lbl.setFixedWidth(80)
+        exclude_row.addWidget(exclude_lbl)
+        self._cycle_exclude_checkboxes: dict[str, QCheckBox] = {}
+        for sink in ("SteelGame", "SteelChat", "SteelMedia", "SteelHDMI"):
+            cb = QCheckBox(sink.removeprefix("Steel"))
+            cb.setChecked(sink in excludes_set)
+            cb.toggled.connect(self._save_cycle_excludes)
+            exclude_row.addWidget(cb)
+            self._cycle_exclude_checkboxes[sink] = cb
+        exclude_row.addStretch(1)
+
         cycle_help = QLabel(
             "Qt shortcuts only fire while the GUI has focus — for "
             "system-wide bindings, point your desktop's keyboard "
-            "settings at a custom shell command (a CLI wrapper is "
-            "on the roadmap). Restart the GUI after changing the "
-            "combo to apply."
+            "settings at <code>steelvoicemix-cli sink cycle</code>. "
+            "Restart the GUI after changing the combo to apply."
         )
         cycle_help.setWordWrap(True)
+        cycle_help.setTextFormat(Qt.RichText)
         cycle_help.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
         )
 
-        layout.addWidget(card("Shortcuts", cycle_row, cycle_combo_row, cycle_help))
+        layout.addWidget(card(
+            "Shortcuts",
+            cycle_row, cycle_combo_row, exclude_row, cycle_help,
+        ))
 
         # Notifications card -------------------------------------------
         # Two distinct toggles:
@@ -445,6 +469,14 @@ class SettingsTab(QWidget):
         if combo:
             self._settings["default_sink_cycle_combo"] = combo
             save_settings(self._settings)
+
+    def _save_cycle_excludes(self) -> None:
+        excludes = [
+            sink for sink, cb in self._cycle_exclude_checkboxes.items()
+            if cb.isChecked()
+        ]
+        self._settings["default_sink_cycle_exclude"] = excludes
+        save_settings(self._settings)
 
 
     def _change_theme(self, index: int) -> None:

@@ -75,6 +75,10 @@ install -d %{buildroot}%{_datadir}/%{name}/gui/data/hrir
 install -Dm644 gui/data/hrir/EAC_Default.wav \
     %{buildroot}%{_datadir}/%{name}/gui/data/hrir/EAC_Default.wav
 
+# CLI wrapper — exposes `steelvoicemix-cli sink cycle` for users
+# who want to bind a global keyboard shortcut via their DE.
+install -Dm755 steelvoicemix-cli.py %{buildroot}%{_bindir}/steelvoicemix-cli
+
 # GUI launcher — force XCB so overlay positioning works under Wayland
 cat > %{buildroot}%{_bindir}/steelvoicemix-gui << 'EOF'
 #!/bin/bash
@@ -117,6 +121,7 @@ udevadm control --reload-rules 2>/dev/null || :
 %doc README.md
 %{_bindir}/steelvoicemix
 %{_bindir}/steelvoicemix-gui
+%{_bindir}/steelvoicemix-cli
 %{_datadir}/%{name}/
 %{_userunitdir}/steelvoicemix.service
 %{_userunitdir}/steelvoicemix-gui.service

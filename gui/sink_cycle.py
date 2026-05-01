@@ -68,15 +68,26 @@ def _current_default() -> str:
     return ""
 
 
-def cycle_default_sink() -> tuple[str, str]:
+def cycle_default_sink(exclude: "list[str] | tuple[str, ...] | None" = None) -> tuple[str, str]:
     """Advance the system default to the next loaded SteelVoiceMix
-    sink in `_PREFERRED_ORDER`. Returns (previous, new) names so
-    the caller can surface a toast / status update. On any failure
-    returns ('', '') and logs a warning."""
+    sink in `_PREFERRED_ORDER`. `exclude` is an optional list of
+    sink names (e.g. 'SteelChat') to skip — used when the user
+    doesn't want a particular sink in the cycle rotation. Returns
+    (previous, new) names so the caller can surface a toast /
+    status update. On any failure returns ('', '') and logs a
+    warning."""
+    excluded = set(exclude or ())
     available = _list_sinks()
-    candidates = [s for s in _PREFERRED_ORDER if s in available]
+    candidates = [
+        s for s in _PREFERRED_ORDER
+        if s in available and s not in excluded
+    ]
     if not candidates:
-        log.warning("Cycle default sink: no SteelVoiceMix sinks loaded")
+        log.warning(
+            "Cycle default sink: no eligible SteelVoiceMix sinks "
+            "(loaded=%s, excluded=%s)",
+            available, sorted(excluded),
+        )
         return "", ""
     prev = _current_default()
     if prev in candidates:

@@ -108,10 +108,14 @@ class SinksTab(QWidget):
 
     def _on_cycle_clicked(self) -> None:
         """Click handler for the Cycle Default Sink button. Same
-        helper the optional keyboard shortcut uses. Updates the
-        inline status label so the user sees what changed."""
+        helper the optional keyboard shortcut uses. Reads the
+        per-user exclude list from settings so users can keep e.g.
+        SteelChat out of the rotation. Updates the inline status
+        label so the user sees what changed."""
         from ..sink_cycle import cycle_default_sink
-        prev, new = cycle_default_sink()
+        from ..settings import load as load_settings
+        excludes = load_settings().get("default_sink_cycle_exclude") or []
+        prev, new = cycle_default_sink(exclude=excludes)
         if not new:
             self.cycle_status.setText("⚠ No SteelVoiceMix sinks loaded.")
         elif new == prev:

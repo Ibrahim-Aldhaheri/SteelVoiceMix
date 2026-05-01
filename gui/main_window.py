@@ -476,7 +476,9 @@ class MixerGUI(QMainWindow):
 
     def _on_default_sink_shortcut(self) -> None:
         from .sink_cycle import cycle_default_sink
-        prev, new = cycle_default_sink()
+        prev, new = cycle_default_sink(
+            exclude=self.settings.get("default_sink_cycle_exclude") or [],
+        )
         if not new:
             self._show_tray_message(
                 "Cycle default sink failed",

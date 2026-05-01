@@ -103,6 +103,11 @@ DEFAULTS: dict[str, Any] = {
     # without conflicting with common app shortcuts.
     "default_sink_cycle_enabled": False,
     "default_sink_cycle_combo": "Ctrl+Shift+S",
+    # Sink names to skip when cycling (e.g. "SteelChat"). Stored
+    # as a list of canonical sink names — the cycle helper compares
+    # against `pactl list sinks short` output so the names must
+    # match exactly.
+    "default_sink_cycle_exclude": [],
 }
 
 # Star-tier capacity per channel. Five is enough to cover the main use
