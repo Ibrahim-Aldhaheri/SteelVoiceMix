@@ -152,6 +152,7 @@ class EqualizerTab(QWidget):
             "chat": _default_channel_bands(),
             "media": _default_channel_bands(),
             "hdmi": _default_channel_bands(),
+            "mic": _default_channel_bands(),
         }
         self._current_channel: str = "game"
         # Media and HDMI channels are only present in the channel combo
@@ -172,6 +173,7 @@ class EqualizerTab(QWidget):
             "chat": "",
             "media": "",
             "hdmi": "",
+            "mic": "",
         }
 
         # Slider commits are debounced. While the user drags, we just
@@ -785,7 +787,7 @@ class EqualizerTab(QWidget):
         """Initial Status snapshot delivered every channel's band data
         at once (Game / Chat / Media / HDMI). Cache them all and refresh
         the visible sliders."""
-        for ch in ("game", "chat", "media", "hdmi"):
+        for ch in ("game", "chat", "media", "hdmi", "mic"):
             if ch in state:
                 self._bands_by_channel[ch] = list(state[ch])
         self._render_sliders_for_channel(self._current_channel)
@@ -807,14 +809,17 @@ class EqualizerTab(QWidget):
     def _refresh_channel_combo(self) -> None:
         """Rebuild the channel-combo entries based on which sinks are
         currently loaded. Game + Chat always show; Media + HDMI show
-        only when their sinks are enabled. UserData carries the bare
-        channel key ('game', 'chat', 'media', 'hdmi') so internal
-        lookups don't have to parse the emoji prefix."""
+        only when their sinks are enabled. Mic is always present —
+        the mic chain runs whenever any mic feature OR EQ band is
+        active, and the daemon spawns it on demand. UserData carries
+        the bare channel key ('game', 'chat', 'media', 'hdmi', 'mic')
+        so internal lookups don't have to parse the emoji prefix."""
         labels = [("game", "🎮 Game"), ("chat", "💬 Chat")]
         if self._media_sink_enabled:
             labels.append(("media", "🎵 Media"))
         if self._hdmi_sink_enabled:
             labels.append(("hdmi", "📺 HDMI"))
+        labels.append(("mic", "🎙 Microphone"))
 
         was_blocked = self.channel_combo.blockSignals(True)
         try:

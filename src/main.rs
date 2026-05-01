@@ -370,6 +370,7 @@ fn handle_client(
                     EqChannel::Chat,
                     EqChannel::Media,
                     EqChannel::Hdmi,
+                    EqChannel::Mic,
                 ] {
                     broadcast_event(
                         &subscribers,

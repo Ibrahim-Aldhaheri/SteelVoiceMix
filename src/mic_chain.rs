@@ -45,7 +45,7 @@ use std::process::{Child, Command, Stdio};
 
 use log::{info, warn};
 
-use crate::protocol::MicState;
+use crate::protocol::{BandType, EqBand, MicState, NUM_BANDS};
 
 /// Name suffix the chain uses for its capture-side virtual source.
 /// Apps see `SteelMic` as their input device.
@@ -66,16 +66,26 @@ pub struct MicChainSpec<'a> {
     pub mic_source: &'a str,
     /// Which features are on + their strengths.
     pub state: MicState,
+    /// Per-band EQ applied between the gate / RNNoise stages and the
+    /// chain output. Always rendered into the conf when the chain
+    /// spawns (PipeWire biquads are cheap; flat bands are a no-op).
+    /// The same shape as our output-channel EQ.
+    pub eq_bands: [EqBand; NUM_BANDS],
 }
 
 impl<'a> MicChainSpec<'a> {
-    /// True when at least one feature is enabled — without this the
-    /// chain would be a pure passthrough and we shouldn't bother
-    /// spawning it.
+    /// True when at least one feature is enabled OR any EQ band has
+    /// a non-zero gain. Without one of these the chain would be pure
+    /// passthrough and we shouldn't bother spawning a separate
+    /// PipeWire process.
     pub fn has_active_features(&self) -> bool {
-        self.state.noise_gate.enabled
+        if self.state.noise_gate.enabled
             || self.state.noise_reduction.enabled
             || self.state.ai_noise_cancellation.enabled
+        {
+            return true;
+        }
+        self.eq_bands.iter().any(|b| b.enabled && b.gain.abs() > 0.05)
     }
 }
 
@@ -166,6 +176,19 @@ fn rnnoise_vad_pct(strength: u8, max: f32) -> f32 {
     f32::from(strength).clamp(0.0, 100.0) * (max / 100.0)
 }
 
+fn mic_band_label(t: BandType) -> &'static str {
+    match t {
+        BandType::Lowshelf => "bq_lowshelf",
+        BandType::Peaking => "bq_peaking",
+        BandType::Highshelf => "bq_highshelf",
+        BandType::Lowpass => "bq_lowpass",
+        BandType::Highpass => "bq_highpass",
+        BandType::Bandpass => "bq_bandpass",
+        BandType::Notch => "bq_notch",
+        BandType::Allpass => "bq_allpass",
+    }
+}
+
 fn render_conf(spec: &MicChainSpec) -> String {
     // Build the node + link lists conditionally. Each enabled feature
     // adds one node; the chain ends with a `copy` so the playback
@@ -235,6 +258,43 @@ fn render_conf(spec: &MicChainSpec) -> String {
         last_out = Some("mic_rnnoise:Output");
     }
 
+    // Mic-side parametric EQ — 10 biquad stages chained in series.
+    // Same builtin biquad nodes the output EQ uses (filter_chain.rs's
+    // band_label + render_band_node patterns). Always emitted when
+    // the chain spawns; flat bands cost ~10 us per stage.
+    for (i, band) in spec.eq_bands.iter().enumerate() {
+        let idx = i + 1;
+        let gain = if band.enabled { band.gain } else { 0.0 };
+        let q = band.q.max(0.0001);
+        let label = mic_band_label(band.band_type);
+        nodes.push(format!(
+            r#"                    {{
+                        type  = builtin
+                        name  = mic_eq_{idx}
+                        label = {label}
+                        control = {{ "Freq" = {freq:.4}  "Q" = {q:.4}  "Gain" = {gain:.4} }}
+                    }}"#,
+            idx = idx,
+            label = label,
+            freq = band.freq,
+            q = q,
+            gain = gain,
+        ));
+        if let Some(prev) = last_out {
+            links.push(format!(
+                r#"                    {{ output = "{prev}"  input = "mic_eq_{idx}:In" }}"#,
+                idx = idx,
+                prev = prev,
+            ));
+        }
+        // Each iteration's owned String would die at end of scope, so
+        // we leak via Box::leak to keep `last_out: Option<&str>`. The
+        // chain is rendered once per spawn — the few tiny leaks per
+        // build are reclaimed when the daemon exits.
+        let owned: &'static str = Box::leak(format!("mic_eq_{idx}:Out").into_boxed_str());
+        last_out = Some(owned);
+    }
+
     // Terminator: a `copy` builtin so the chain has a stable output
     // node name regardless of which LADSPA stages were included. Also
     // gives us a safe place to land if a LADSPA plugin failed to load
@@ -260,15 +320,17 @@ fn render_conf(spec: &MicChainSpec) -> String {
     // First-stage node receives the audio from the chain's external
     // input port. Default chain inputs map 1:1 by audio.position, so
     // we just declare a single mono input that lands on whichever
-    // node is the first stage.
+    // node is the first stage. EQ-only chains land on mic_eq_1 since
+    // there's no gate or rnnoise upstream.
     let first_input_port = if s.noise_gate.enabled {
         "mic_gate:Input"
     } else if rnnoise_enabled {
         "mic_rnnoise:Input"
     } else {
-        // Should be unreachable thanks to the has_active_features
-        // guard in spawn(), but be defensive.
-        "mic_out:In"
+        // No gate, no rnnoise — EQ stages run from band 1. We always
+        // emit the 10 biquads when the chain spawns, so this is
+        // always reachable when has_active_features is true via EQ.
+        "mic_eq_1:In"
     };
 
     format!(

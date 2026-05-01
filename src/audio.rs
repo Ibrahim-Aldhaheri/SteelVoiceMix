@@ -171,6 +171,7 @@ impl SinkManager {
         let spec = MicChainSpec {
             mic_source: &source,
             state: self.mic_state,
+            eq_bands: self.eq_state.mic,
         };
         if !spec.has_active_features() {
             if was_running {
@@ -487,6 +488,10 @@ impl SinkManager {
             EqChannel::Chat => (self.chat.as_mut(), CHAT_SINK),
             EqChannel::Media => (self.media.as_mut(), MEDIA_SINK),
             EqChannel::Hdmi => unreachable!(),
+            // Mic doesn't have a loopback in this manner; the
+            // mic-chain spawns its own SteelMic source. Caller
+            // shouldn't dispatch Mic into this code path.
+            EqChannel::Mic => return,
         };
         let Some(s) = slot else {
             return;
@@ -659,6 +664,15 @@ impl SinkManager {
         if !self.eq_enabled {
             return;
         }
+        // Mic isn't a sink-side filter chain — it lives inside
+        // mic_chain.rs. Re-run set_mic_state with the same MicState
+        // so the chain respawns with the new EQ bands picked up
+        // from self.eq_state.mic.
+        if matches!(channel, EqChannel::Mic) {
+            let saved = self.mic_state;
+            self.set_mic_state(saved);
+            return;
+        }
         let new_bands = self.eq_state.for_channel(channel);
         let routing = self.eq_routing(channel);
         let Some((slot, null_name, eq_name, eq_desc, target)) = routing else {
@@ -729,6 +743,16 @@ impl SinkManager {
                     "SteelVoiceMix HDMI EQ",
                     target,
                 ))
+            }
+            EqChannel::Mic => {
+                // Mic EQ runs inside the mic_chain process — not as a
+                // separate filter chain like Game/Chat/Media/Hdmi. The
+                // band update path goes through respawn_channel_chain's
+                // EqChannel::Mic branch, not eq_routing. Returning None
+                // here makes the standard chain-respawn path skip Mic;
+                // the daemon respawns the mic chain via set_mic_state
+                // instead.
+                None
             }
         }
     }
@@ -891,6 +915,7 @@ impl SinkManager {
                     EqChannel::Chat => self.chat.as_mut(),
                     EqChannel::Media => self.media.as_mut(),
                     EqChannel::Hdmi => self.hdmi.as_mut(),
+                    EqChannel::Mic => continue,
                 };
                 if let Some(s) = slot {
                     s.eq = None;

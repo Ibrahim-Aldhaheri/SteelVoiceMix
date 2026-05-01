@@ -19,6 +19,12 @@ pub enum EqChannel {
     Chat,
     Media,
     Hdmi,
+    /// Microphone capture path. Lives between the Gate/NR/AI-NC
+    /// stages and the SteelMic virtual source — see mic_chain.rs.
+    /// Distinct from the output channels because the bands run
+    /// inside the same PipeWire process the mic-feature stages do
+    /// (no separate filter chain, no extra null-sink).
+    Mic,
 }
 
 /// Number of EQ bands per channel. Common parametric-EQ preset JSONs
@@ -132,6 +138,8 @@ pub struct EqState {
     pub media: [EqBand; NUM_BANDS],
     #[serde(default = "default_channel_bands")]
     pub hdmi: [EqBand; NUM_BANDS],
+    #[serde(default = "default_channel_bands")]
+    pub mic: [EqBand; NUM_BANDS],
 }
 
 impl Default for EqState {
@@ -141,6 +149,7 @@ impl Default for EqState {
             chat: default_channel_bands(),
             media: default_channel_bands(),
             hdmi: default_channel_bands(),
+            mic: default_channel_bands(),
         }
     }
 }
@@ -152,6 +161,7 @@ impl EqState {
             EqChannel::Chat => self.chat,
             EqChannel::Media => self.media,
             EqChannel::Hdmi => self.hdmi,
+            EqChannel::Mic => self.mic,
         }
     }
 
@@ -161,6 +171,7 @@ impl EqState {
             EqChannel::Chat => &mut self.chat,
             EqChannel::Media => &mut self.media,
             EqChannel::Hdmi => &mut self.hdmi,
+            EqChannel::Mic => &mut self.mic,
         }
     }
 }

@@ -215,7 +215,7 @@ class DaemonClient:
             channel = event.get("channel", "")
             bands = event.get("bands")
             if (
-                channel in ("game", "chat", "media", "hdmi")
+                channel in ("game", "chat", "media", "hdmi", "mic")
                 and isinstance(bands, list)
                 and bands
             ):
@@ -248,7 +248,7 @@ class DaemonClient:
             eq_state = event.get("eq_state") or event.get("eq_gains")
             if isinstance(eq_state, dict):
                 state: dict[str, list[dict]] = {}
-                for ch in ("game", "chat", "media", "hdmi"):
+                for ch in ("game", "chat", "media", "hdmi", "mic"):
                     raw = eq_state.get(ch)
                     if isinstance(raw, list) and raw:
                         state[ch] = _normalize_bands(raw)
