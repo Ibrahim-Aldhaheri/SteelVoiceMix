@@ -57,10 +57,13 @@ Requires:       libnotify
 Requires:       hidapi
 
 Recommends:     python3-pyside6
-# Same rationale as the stable spec — Microphone tab features need
-# these to be present out of the box.
-Requires:       noise-suppression-for-voice
-Requires:       swh-plugins
+# Mic features. ladspa-swh-plugins is in main Fedora repos so we
+# hard-Require it (Noise Gate). librnnoise_ladspa.so for the
+# AI/NR features comes from werman/noise-suppression-for-voice
+# which isn't in Fedora — Recommend so install doesn't fail; the
+# GUI's LADSPA probe disables the relevant toggles when missing.
+Requires:       ladspa-swh-plugins
+Recommends:     noise-suppression-for-voice
 
 %description
 Linux ChatMix implementation for the SteelSeries Arctis Nova Pro Wireless.

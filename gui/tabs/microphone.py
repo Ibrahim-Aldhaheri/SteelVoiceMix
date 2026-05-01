@@ -60,13 +60,25 @@ _LADSPA_DIRS = (
     "/usr/local/lib64/ladspa",
 )
 
-# Each feature's plugin file → providing package. Used by the
+# Each feature's plugin file → install hint. Used by the
 # availability check at startup to disable toggles whose plugin
-# isn't installed, plus surface a clear "install <pkg>" hint.
+# isn't installed.
+#
+# For ladspa-swh-plugins we can give a `dnf install` line because
+# it's in main Fedora repos. For librnnoise_ladspa.so the source
+# is werman/noise-suppression-for-voice on GitHub — not packaged
+# in Fedora, so the hint points users at the project URL with a
+# build-from-source pointer.
+_INSTALL_DNF = "ladspa-swh-plugins"
+_INSTALL_RNNOISE_HINT = (
+    "Not in Fedora repos. Build from "
+    "https://github.com/werman/noise-suppression-for-voice "
+    "or grab a COPR that ships librnnoise_ladspa.so."
+)
 _PLUGIN_REQUIREMENTS: dict[str, tuple[str, str]] = {
-    "noise_gate": ("swh_plugins.so", "swh-plugins"),
-    "noise_reduction": ("librnnoise_ladspa.so", "noise-suppression-for-voice"),
-    "ai_noise_cancellation": ("librnnoise_ladspa.so", "noise-suppression-for-voice"),
+    "noise_gate": ("swh_plugins.so", f"sudo dnf install {_INSTALL_DNF}"),
+    "noise_reduction": ("librnnoise_ladspa.so", _INSTALL_RNNOISE_HINT),
+    "ai_noise_cancellation": ("librnnoise_ladspa.so", _INSTALL_RNNOISE_HINT),
 }
 
 
@@ -357,7 +369,7 @@ class MicrophoneTab(QWidget):
         # tooltip pointing at the providing package, plus a
         # red-tinted hint in the card body itself so the user
         # doesn't have to hover to understand why.
-        plugin_filename, package_name = _PLUGIN_REQUIREMENTS.get(
+        plugin_filename, install_hint = _PLUGIN_REQUIREMENTS.get(
             key, ("", "")
         )
         plugin_present = (
@@ -367,18 +379,16 @@ class MicrophoneTab(QWidget):
         if not plugin_present:
             toggle.setEnabled(False)
             slider.setEnabled(False)
-            tooltip = (
-                f"Missing LADSPA plugin: {plugin_filename}. "
-                f"Install with: sudo dnf install {package_name}"
+            toggle.setToolTip(
+                f"Missing LADSPA plugin: {plugin_filename}. {install_hint}"
             )
-            toggle.setToolTip(tooltip)
             missing_lbl = QLabel(
-                f"⚠ Missing dependency — install <b>{package_name}</b> "
-                f"to enable this feature.<br>"
-                f"<code>sudo dnf install {package_name}</code>"
+                f"⚠ Missing LADSPA plugin <code>{plugin_filename}</code>. "
+                f"{install_hint}"
             )
             missing_lbl.setWordWrap(True)
             missing_lbl.setTextFormat(Qt.RichText)
+            missing_lbl.setOpenExternalLinks(True)
             missing_lbl.setStyleSheet(
                 "font-size: 10px; color: #FF9800; padding-top: 4px;"
             )
