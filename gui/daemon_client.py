@@ -54,6 +54,9 @@ _MIC_FEATURE_KEYS = (
     "ai_noise_cancellation",
     "volume_stabilizer",
 )
+# Valid VolumeStabilizerKind enum values from the daemon. Default
+# to "broadcast" — matches the Rust Default impl.
+_VOLUME_STABILIZER_KINDS = ("broadcast", "soft")
 
 
 def _normalize_mic_state(raw: dict) -> dict:
@@ -71,6 +74,13 @@ def _normalize_mic_state(raw: dict) -> dict:
             }
         else:
             out[key] = {"enabled": False, "strength": 0}
+    # Volume Stabilizer's kind is at the MicState top level (not
+    # inside a per-feature dict). Pass through if valid; default to
+    # broadcast otherwise.
+    kind = (raw.get("volume_stabilizer_kind") if isinstance(raw, dict) else "")
+    out["volume_stabilizer_kind"] = (
+        kind if kind in _VOLUME_STABILIZER_KINDS else "broadcast"
+    )
     return out
 
 

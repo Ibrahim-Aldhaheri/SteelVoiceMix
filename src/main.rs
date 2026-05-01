@@ -488,12 +488,17 @@ fn handle_client(
                     strength,
                 );
             }
-            ClientCommand::SetMicVolumeStabilizer { enabled, strength } => {
+            ClientCommand::SetMicVolumeStabilizer { enabled, strength, kind } => {
                 handle_mic_feature_update(
                     &sinks,
                     &state,
                     &subscribers,
-                    |s| s.volume_stabilizer = MicFeature { enabled, strength },
+                    |s| {
+                        s.volume_stabilizer = MicFeature { enabled, strength };
+                        if let Some(k) = kind {
+                            s.volume_stabilizer_kind = k;
+                        }
+                    },
                     "volume-stabilizer",
                     enabled,
                     strength,

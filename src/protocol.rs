@@ -116,6 +116,21 @@ pub struct MicFeature {
 /// is the VAD-threshold mapping (NR is mild, AI NC aggressive). If
 /// both are enabled, AI NC's stage takes precedence to avoid running
 /// RNNoise twice in sequence.
+/// Which LADSPA plugin powers the Volume Stabilizer feature.
+/// Both ship in ladspa-swh-plugins (Steve Harris, GPL), so neither
+/// needs a separate dependency. The choice is purely tonal:
+///   - Broadcast (SC4 mono): canonical voice compressor, audibly
+///     levels loud / quiet swings. Default.
+///   - Soft (Dyson): older, much gentler — barely audible at any
+///     setting. Kept for users who want a transparent option.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum VolumeStabilizerKind {
+    #[default]
+    Broadcast,
+    Soft,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct MicState {
     #[serde(default)]
@@ -125,13 +140,13 @@ pub struct MicState {
     #[serde(default)]
     pub ai_noise_cancellation: MicFeature,
     /// Volume Stabilizer — smooths level swings between quiet
-    /// whispers and loud bursts via the LADSPA `dyson_compress_1403`
-    /// (mono compressor from swh-plugins / ladspa-swh-plugins).
-    /// Strength 0..=100 drives the compression ratio; threshold +
-    /// release stay at sensible voice defaults baked into the
-    /// chain spec.
+    /// whispers and loud bursts. Plugin is picked by
+    /// `volume_stabilizer_kind`; strength 0..=100 drives whichever
+    /// parameter best maps to "more compression" for that plugin.
     #[serde(default)]
     pub volume_stabilizer: MicFeature,
+    #[serde(default)]
+    pub volume_stabilizer_kind: VolumeStabilizerKind,
 }
 
 /// Per-channel band arrays bundled into one persistent struct. Media
@@ -274,9 +289,16 @@ pub enum ClientCommand {
     #[serde(rename = "set-mic-ai-nc")]
     SetMicAiNoiseCancellation { enabled: bool, strength: u8 },
     /// Toggle / parameterise the Volume Stabilizer. Strength 0..=100
-    /// maps to the dyson_compress compression ratio.
+    /// maps to the chosen plugin's "more compression" parameter.
+    /// `kind` selects which LADSPA plugin powers the stage; if
+    /// omitted, the daemon keeps the previously-stored kind.
     #[serde(rename = "set-mic-volume-stabilizer")]
-    SetMicVolumeStabilizer { enabled: bool, strength: u8 },
+    SetMicVolumeStabilizer {
+        enabled: bool,
+        strength: u8,
+        #[serde(default)]
+        kind: Option<VolumeStabilizerKind>,
+    },
     /// Set headset hardware sidetone level. 0..=128 normalised — the
     /// daemon maps to the device's 4-step internal setting and saves
     /// to EEPROM so it persists across power cycles.
@@ -725,6 +747,7 @@ mod tests {
                     strength: 70,
                 },
                 volume_stabilizer: MicFeature::default(),
+                volume_stabilizer_kind: VolumeStabilizerKind::default(),
             },
         };
         let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();

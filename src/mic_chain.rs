@@ -45,7 +45,7 @@ use std::process::{Child, Command, Stdio};
 
 use log::{info, warn};
 
-use crate::protocol::{BandType, EqBand, MicState, NUM_BANDS};
+use crate::protocol::{BandType, EqBand, MicState, VolumeStabilizerKind, NUM_BANDS};
 
 /// Name suffix the chain uses for its capture-side virtual source.
 /// Apps see `SteelMic` as their input device.
@@ -259,27 +259,24 @@ fn render_conf(spec: &MicChainSpec) -> String {
         last_out = Some("mic_rnnoise:Output");
     }
 
-    // Volume Stabilizer — Steve Harris's SC4 mono compressor
-    // (sc4m_1916). The Dyson compressor we tried first was so gentle
-    // that users couldn't hear it doing anything, even at max
-    // strength. SC4 is the canonical LADSPA voice compressor:
-    // threshold + ratio + makeup, RMS detection, audible at moderate
-    // settings.
+    // Volume Stabilizer — pluggable LADSPA compressor selected by
+    // s.volume_stabilizer_kind. Both options ship in
+    // ladspa-swh-plugins (Steve Harris, GPL).
     //
-    // Strength 0..=100 drives both the threshold (more compression
-    // for the same input) and the ratio (harder squashing). Attack
-    // / release / knee stay at voice-friendly defaults.
+    //   Broadcast → SC4 mono (sc4m_1916). Audibly levels loud /
+    //   quiet swings via threshold + ratio + makeup gain. Default.
     //
-    //   strength=0   → ratio=1:1 (passthrough), threshold=0 dB
-    //   strength=50  → ratio=4:1, threshold=-15 dB, audible levelling
-    //   strength=100 → ratio=8:1, threshold=-30 dB, broadcast-style
+    //   Soft → Dyson (dyson_compress_1403). Older, gentler. Kept
+    //   for users who want a transparent option.
     if s.volume_stabilizer.enabled {
         let strength = f32::from(s.volume_stabilizer.strength).clamp(0.0, 100.0);
-        let threshold_db = -strength * 0.30;
-        let ratio = 1.0 + strength * 0.07;
-        let makeup_db = strength * 0.06;
-        nodes.push(format!(
-            r#"                    {{
+        let stage_node = match s.volume_stabilizer_kind {
+            VolumeStabilizerKind::Broadcast => {
+                let threshold_db = -strength * 0.30;
+                let ratio = 1.0 + strength * 0.07;
+                let makeup_db = strength * 0.06;
+                format!(
+                    r#"                    {{
                         type   = ladspa
                         name   = mic_stabilizer
                         plugin = "sc4m_1916"
@@ -294,7 +291,27 @@ fn render_conf(spec: &MicChainSpec) -> String {
                             "Makeup gain (dB)" = {makeup_db:.2}
                         }}
                     }}"#,
-        ));
+                )
+            }
+            VolumeStabilizerKind::Soft => {
+                let comp_ratio = strength * 0.0085;
+                format!(
+                    r#"                    {{
+                        type   = ladspa
+                        name   = mic_stabilizer
+                        plugin = "dyson_compress_1403"
+                        label  = dysonCompress
+                        control = {{
+                            "Peak limit (dB)" = -3.0
+                            "Release time (s)" = 0.10
+                            "Fast compression ratio" = 0.50
+                            "Compression ratio" = {comp_ratio:.4}
+                        }}
+                    }}"#,
+                )
+            }
+        };
+        nodes.push(stage_node);
         if let Some(prev) = last_out {
             links.push(format!(
                 r#"                    {{ output = "{prev}"  input = "mic_stabilizer:Input" }}"#,

@@ -29,6 +29,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QClipboard
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -186,6 +187,10 @@ class MicrophoneTab(QWidget):
             key: {"enabled": False, "strength": 50}
             for key, _cmd in _FEATURES
         }
+        # Volume Stabilizer plugin choice. Sent on every set-mic-
+        # volume-stabilizer command so the daemon can switch plugins
+        # mid-stream. Default matches the daemon's Rust Default impl.
+        self._volume_stabilizer_kind: str = "broadcast"
 
         # Per-feature debounce timers. Each slider drag updates a
         # pending strength value; the timer fires 250 ms after the
@@ -261,15 +266,42 @@ class MicrophoneTab(QWidget):
             "dog barks, road noise) but can clip quieter speech at high "
             "strength. If both NR and AI NC are on, only AI NC runs.",
         )
+        # Track the parent layout's card count so we can grab the
+        # Volume Stabilizer's QFrame#card afterwards and inject the
+        # plugin-choice combo into its inner layout.
+        vs_card_index_before = layout.count()
         self.vs_toggle, self.vs_slider, self.vs_value = self._add_feature_card(
             layout,
             "volume_stabilizer",
             "Volume Stabilizer",
             "Smooths volume swings between quiet whispers and loud "
             "bursts so apps don't get a wildly fluctuating mic "
-            "volume. Provided by swh-plugins' dyson_compress. "
-            "Higher strength = more aggressive levelling.",
+            "volume. Pick the mode that suits your voice — Broadcast "
+            "is audible levelling (Steve Harris SC4), Soft is gentle "
+            "transparency (Dyson). Both ship in ladspa-swh-plugins.",
         )
+        # Inject the plugin-choice combo into the card. The card is
+        # the QWidget that _add_feature_card just appended; reach
+        # into its layout and add a row.
+        vs_card_widget = layout.itemAt(vs_card_index_before).widget()
+        vs_card_layout = vs_card_widget.layout() if vs_card_widget else None
+        if vs_card_layout is not None:
+            kind_row = QHBoxLayout()
+            kind_lbl = QLabel("Mode")
+            kind_lbl.setFixedWidth(80)
+            self.vs_kind_combo = QComboBox()
+            self.vs_kind_combo.addItem("Broadcast — audible levelling", "broadcast")
+            self.vs_kind_combo.addItem("Soft — transparent", "soft")
+            self.vs_kind_combo.setMaximumWidth(420)
+            self.vs_kind_combo.currentIndexChanged.connect(
+                self._on_vs_kind_changed
+            )
+            kind_row.addWidget(kind_lbl)
+            kind_row.addWidget(self.vs_kind_combo, 1)
+            # Add the row near the top — right after the Enabled
+            # toggle row so it reads top-to-bottom: Enabled → Mode →
+            # Strength → description.
+            vs_card_layout.insertLayout(2, kind_row)
 
         # Sidetone slider — 4 hardware levels (Off / Low / Medium /
         # High). We expose a 0..3 slider that maps to the centre of
@@ -381,6 +413,21 @@ class MicrophoneTab(QWidget):
                 slider.blockSignals(was_blocked)
             value_lbl.setText(str(strength))
             slider.setEnabled(enabled)
+        # Sync the Volume Stabilizer kind combo too — daemon includes
+        # it at the MicState top level (not inside a per-feature dict).
+        kind = state.get("volume_stabilizer_kind", "broadcast")
+        if kind not in ("broadcast", "soft"):
+            kind = "broadcast"
+        self._volume_stabilizer_kind = kind
+        if hasattr(self, "vs_kind_combo"):
+            for i in range(self.vs_kind_combo.count()):
+                if self.vs_kind_combo.itemData(i) == kind:
+                    was_blocked = self.vs_kind_combo.blockSignals(True)
+                    try:
+                        self.vs_kind_combo.setCurrentIndex(i)
+                    finally:
+                        self.vs_kind_combo.blockSignals(was_blocked)
+                    break
 
     # --------------------------------------------------------- internals
 
@@ -508,10 +555,30 @@ class MicrophoneTab(QWidget):
         _, slider, _ = self._widgets_for(key)
         slider.setEnabled(checked)
         # Send the full feature state — daemon's command takes both.
+        kwargs = {
+            "enabled": checked,
+            "strength": self._state[key]["strength"],
+        }
+        if key == "volume_stabilizer":
+            kwargs["kind"] = self._volume_stabilizer_kind
+        self._daemon.send_command(self._command_for(key), **kwargs)
+
+    def _on_vs_kind_changed(self, _index: int) -> None:
+        """User picked Broadcast / Soft from the Mode combo. Update
+        local state + send a fresh set-mic-volume-stabilizer with
+        the new kind so the daemon respawns the chain with the
+        chosen plugin."""
+        kind = self.vs_kind_combo.currentData()
+        if kind not in ("broadcast", "soft"):
+            return
+        self._volume_stabilizer_kind = kind
+        # Always send — even if the feature is disabled, the daemon
+        # records the kind so a later toggle-on uses it.
         self._daemon.send_command(
-            self._command_for(key),
-            enabled=checked,
-            strength=self._state[key]["strength"],
+            "set-mic-volume-stabilizer",
+            enabled=self._state["volume_stabilizer"]["enabled"],
+            strength=self._state["volume_stabilizer"]["strength"],
+            kind=kind,
         )
 
     def _on_slider_changed(self, key: str, value: int, label: QLabel) -> None:
@@ -531,11 +598,13 @@ class MicrophoneTab(QWidget):
         strength = self._pending_strength.pop(key, None)
         if strength is None:
             return
-        self._daemon.send_command(
-            self._command_for(key),
-            enabled=self._state[key]["enabled"],
-            strength=int(strength),
-        )
+        kwargs = {
+            "enabled": self._state[key]["enabled"],
+            "strength": int(strength),
+        }
+        if key == "volume_stabilizer":
+            kwargs["kind"] = self._volume_stabilizer_kind
+        self._daemon.send_command(self._command_for(key), **kwargs)
 
     # ------------------------------------------------------- sidetone
 
