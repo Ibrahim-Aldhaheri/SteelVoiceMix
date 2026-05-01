@@ -829,39 +829,53 @@ class EqualizerTab(QWidget):
         return out
 
     def _add_binding(self) -> None:
-        # Combine three sources so the user has one dropdown to pick
-        # from regardless of whether the target app is currently
-        # making audio:
-        #   1. Audio clients PipeWire is reporting right now (best —
-        #      proven names that match what the daemon will see).
-        #   2. Open windowed applications via wmctrl, if available
-        #      (catches Steam Big Picture, launchers, native games
-        #      that opened their window before producing audio).
-        #   3. Free-text input — the combo is editable so users can
-        #      pre-bind anything they expect to run later, even
-        #      something not currently visible at all.
+        # Custom dialog (not QInputDialog.getItem) — the editable=True
+        # variant of getItem hides the dropdown arrow on some Qt
+        # themes and the field reads as a plain text-edit, which the
+        # user reported as 'no dropdown'. Building one ourselves lets
+        # us show a real combo with explicit dropdown UI.
         active = self._collect_binding_candidates()
-        prompt = (
-            "Pick a running app or game from the list — or type a "
-            "custom name. Bindings match against PipeWire's "
+        from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtWidgets import (
+            QComboBox as _QComboBox,
+            QDialog as _QDialog,
+            QDialogButtonBox as _QDialogButtonBox,
+            QLabel as _QLabel,
+            QVBoxLayout as _QVBoxLayout,
+        )
+        dlg = _QDialog(self)
+        dlg.setWindowTitle("Bind app to preset")
+        dlg.setMinimumWidth(420)
+        dlg_layout = _QVBoxLayout(dlg)
+        prompt_lbl = _QLabel(
+            "Pick a running app or type a custom name (the field is "
+            "editable). Bindings match against PipeWire's "
             "application.name when audio starts."
+            if active else
+            "No running apps detected — type a custom name below. "
+            "It'll match when the app eventually produces audio."
         )
-        if not active:
-            prompt = (
-                "No running apps detected. Type a custom name below — "
-                "it'll match when the app produces audio later."
-            )
-        name, ok = QInputDialog.getItem(
-            self,
-            "Bind app to preset",
-            prompt,
-            active,
-            0,
-            True,  # editable: user can type anything
+        prompt_lbl.setWordWrap(True)
+        dlg_layout.addWidget(prompt_lbl)
+        combo = _QComboBox()
+        combo.setEditable(True)
+        combo.addItems(active)
+        # Setting the line-edit's placeholder makes the empty-list
+        # case obviously a free-text entry.
+        if not active and combo.lineEdit() is not None:
+            combo.lineEdit().setPlaceholderText("e.g. Hunt: Showdown")
+        dlg_layout.addWidget(combo)
+        buttons = _QDialogButtonBox(
+            _QDialogButtonBox.Ok | _QDialogButtonBox.Cancel
         )
-        if not ok or not name or not name.strip():
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        dlg_layout.addWidget(buttons)
+        if dlg.exec() != _QDialog.Accepted:
             return
-        name = name.strip()
+        name = combo.currentText().strip()
+        if not name:
+            return
         preset_names = [p["name"] for p in list_presets("game")]
         if not preset_names:
             QMessageBox.warning(

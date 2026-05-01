@@ -14,7 +14,30 @@ from typing import Any
 
 APP_NAME = "steelvoicemix"
 DISPLAY_NAME = "SteelVoiceMix"
-APP_VERSION = "0.4.1~beta2"
+def _derive_app_version() -> str:
+    """Read the package version from RPM at runtime so the GUI's
+    'About' dialog and User-Agent header match what's actually
+    installed. Falls back to the hardcoded constant when the
+    binary isn't an RPM (manual install, source checkout, etc)."""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["rpm", "-q", "--qf", "%{VERSION}", APP_NAME],
+            capture_output=True, text=True, timeout=2,
+        )
+        v = r.stdout.strip()
+        if r.returncode == 0 and v and not v.startswith("package"):
+            return v
+    except Exception:
+        pass
+    return _APP_VERSION_FALLBACK
+
+
+# Bumped manually on each beta cut; runtime derives from RPM if
+# available so this constant only matters in source-checkout /
+# manual-install scenarios.
+_APP_VERSION_FALLBACK = "0.4.1~beta5"
+APP_VERSION = _derive_app_version()
 
 CONFIG_DIR = Path.home() / ".config" / APP_NAME
 SETTINGS_FILE = CONFIG_DIR / "settings.json"

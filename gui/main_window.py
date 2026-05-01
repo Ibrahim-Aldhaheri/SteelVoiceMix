@@ -456,11 +456,22 @@ class MixerGUI(QMainWindow):
             )
 
     def _install_default_sink_shortcut(self) -> None:
-        """Bind the configured key sequence to gui.sink_cycle. Only
-        active when settings['default_sink_cycle_enabled'] is True;
-        Qt fires the shortcut when the GUI window has keyboard
-        focus (system-wide hotkeys aren't a thing in Qt without
-        DE-specific D-Bus integration, which is out of scope)."""
+        """Bind the configured key sequence to gui.sink_cycle.
+        Context = ApplicationShortcut so the shortcut fires while
+        ANY of our windows has focus (main window, tray menu open,
+        etc.) — not just the main window. Genuine system-wide
+        hotkeys (firing while the game has focus) need
+        steelvoicemix-cli bound in the DE's keyboard settings."""
+        # Always tear down the previous shortcut first so re-installs
+        # on toggle or combo change don't leak.
+        old = getattr(self, "_default_sink_shortcut", None)
+        if old is not None:
+            try:
+                old.setEnabled(False)
+                old.deleteLater()
+            except Exception:
+                pass
+            self._default_sink_shortcut = None
         if not self.settings.get("default_sink_cycle_enabled", False):
             return
         combo = self.settings.get("default_sink_cycle_combo", "Ctrl+Shift+S")
@@ -470,9 +481,17 @@ class MixerGUI(QMainWindow):
         # Owned by self so the shortcut is GC-safe and lives as long
         # as the window does.
         self._default_sink_shortcut = QShortcut(seq, self)
+        self._default_sink_shortcut.setContext(Qt.ApplicationShortcut)
         self._default_sink_shortcut.activated.connect(
             self._on_default_sink_shortcut
         )
+
+    def reload_default_sink_shortcut(self) -> None:
+        """Public re-entry point used by SettingsTab when the user
+        toggles the feature on/off or changes the combo. Tears down
+        and rebuilds the QShortcut so the new state takes effect
+        without restarting the app."""
+        self._install_default_sink_shortcut()
 
     def _on_default_sink_shortcut(self) -> None:
         from .sink_cycle import cycle_default_sink

@@ -193,17 +193,27 @@ class SettingsTab(QWidget):
         )
         self.cycle_toggle.toggled.connect(self._toggle_cycle_shortcut)
 
-        from PySide6.QtWidgets import QLineEdit
+        from PySide6.QtGui import QKeySequence
+        from PySide6.QtWidgets import QKeySequenceEdit
         cycle_combo_row = QHBoxLayout()
         combo_lbl = QLabel("Key combo")
         combo_lbl.setFixedWidth(80)
-        self.cycle_combo_edit = QLineEdit(
-            self._settings.get("default_sink_cycle_combo", "Ctrl+Shift+S")
+        self.cycle_keyseq_edit = QKeySequenceEdit(
+            QKeySequence(
+                self._settings.get("default_sink_cycle_combo", "Ctrl+Shift+S")
+            )
         )
-        self.cycle_combo_edit.setMaximumWidth(280)
-        self.cycle_combo_edit.editingFinished.connect(self._save_cycle_combo)
+        self.cycle_keyseq_edit.setMaximumWidth(220)
+        self.register_btn = QPushButton("Register")
+        self.register_btn.setToolTip(
+            "Save the key combo currently shown in the field. After "
+            "registering, the shortcut takes effect immediately — no "
+            "GUI restart needed."
+        )
+        self.register_btn.clicked.connect(self._register_cycle_combo)
         cycle_combo_row.addWidget(combo_lbl)
-        cycle_combo_row.addWidget(self.cycle_combo_edit, 1)
+        cycle_combo_row.addWidget(self.cycle_keyseq_edit, 1)
+        cycle_combo_row.addWidget(self.register_btn)
 
         # Exclude-from-cycle multi-select. Some users want certain
         # sinks (typically SteelChat) skipped — Discord stays put on
@@ -463,12 +473,37 @@ class SettingsTab(QWidget):
     def _toggle_cycle_shortcut(self, checked: bool) -> None:
         self._settings["default_sink_cycle_enabled"] = checked
         save_settings(self._settings)
+        self._reload_shortcut_on_window()
 
-    def _save_cycle_combo(self) -> None:
-        combo = self.cycle_combo_edit.text().strip()
-        if combo:
-            self._settings["default_sink_cycle_combo"] = combo
-            save_settings(self._settings)
+    def _register_cycle_combo(self) -> None:
+        seq = self.cycle_keyseq_edit.keySequence()
+        combo = seq.toString()
+        if not combo:
+            QMessageBox.warning(
+                self,
+                "No key combo",
+                "Click the Key combo field and press the keys you want "
+                "to assign first, then click Register.",
+            )
+            return
+        self._settings["default_sink_cycle_combo"] = combo
+        save_settings(self._settings)
+        self._reload_shortcut_on_window()
+        QMessageBox.information(
+            self, "Shortcut registered",
+            f"Default-sink cycle is now bound to {combo}. The shortcut "
+            "fires while any SteelVoiceMix window has focus.",
+        )
+
+    def _reload_shortcut_on_window(self) -> None:
+        """Ask the main window to rebuild its QShortcut so the new
+        toggle / combo takes effect without a restart."""
+        win = self.window()
+        if hasattr(win, "reload_default_sink_shortcut"):
+            try:
+                win.reload_default_sink_shortcut()
+            except Exception:
+                pass
 
     def _save_cycle_excludes(self) -> None:
         excludes = [
