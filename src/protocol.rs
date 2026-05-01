@@ -110,7 +110,7 @@ pub struct MicFeature {
 /// is the VAD-threshold mapping (NR is mild, AI NC aggressive). If
 /// both are enabled, AI NC's stage takes precedence to avoid running
 /// RNNoise twice in sequence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MicState {
     #[serde(default)]
     pub noise_gate: MicFeature,
@@ -118,6 +118,27 @@ pub struct MicState {
     pub noise_reduction: MicFeature,
     #[serde(default)]
     pub ai_noise_cancellation: MicFeature,
+}
+
+impl Default for MicState {
+    /// The Arctis Nova Pro Wireless ships with a hot mic — it picks
+    /// up keyboard typing, fan noise, and ambient room sounds at
+    /// rest. Enable Noise Gate at strength 60 by default so the
+    /// out-of-the-box experience tames that without users having to
+    /// hunt through the Microphone tab.
+    /// Strength 60 maps to a -24 dB threshold (-60 + 60 * 0.6),
+    /// which is below normal speech (~-30 to -20 dB peaks) but
+    /// above typical desktop room noise (~-50 dB). Soft speakers
+    /// can dial it down; loud rooms can dial it up.
+    /// NR / AI-NC stay off by default — they need
+    /// librnnoise_ladspa.so which isn't in Fedora's main repos.
+    fn default() -> Self {
+        MicState {
+            noise_gate: MicFeature { enabled: true, strength: 60 },
+            noise_reduction: MicFeature::default(),
+            ai_noise_cancellation: MicFeature::default(),
+        }
+    }
 }
 
 /// Per-channel band arrays bundled into one persistent struct. Media
