@@ -143,7 +143,22 @@ class SettingsTab(QWidget):
         )
         self.autostart_toggle.setChecked(self._settings.get("autostart", True))
         self.autostart_toggle.toggled.connect(self._toggle_autostart)
-        layout.addWidget(card("Startup", autostart_row))
+
+        start_min_row, self.start_min_toggle = labelled_toggle(
+            "Start minimised to system tray",
+            tooltip=(
+                "When enabled, the app launches hidden in the tray "
+                "instead of opening its window. Click the tray icon "
+                "to bring the window up. Ignored on sessions without "
+                "a system tray (the app shows normally)."
+            ),
+        )
+        self.start_min_toggle.setChecked(
+            self._settings.get("start_minimized", False)
+        )
+        self.start_min_toggle.toggled.connect(self._toggle_start_minimized)
+
+        layout.addWidget(card("Startup", autostart_row, start_min_row))
 
         # Notifications card -------------------------------------------
         # Two distinct toggles:
@@ -336,6 +351,10 @@ class SettingsTab(QWidget):
         self._settings["notify_minimize_hint"] = checked
         save_settings(self._settings)
 
+    def _toggle_start_minimized(self, checked: bool) -> None:
+        self._settings["start_minimized"] = checked
+        save_settings(self._settings)
+
 
     def _change_theme(self, index: int) -> None:
         mode = ("auto", "light", "dark")[index] if 0 <= index <= 2 else "auto"
@@ -502,6 +521,7 @@ class SettingsTab(QWidget):
         for toggle, key, default in (
             (self.overlay_toggle, "overlay", True),
             (self.autostart_toggle, "autostart", True),
+            (self.start_min_toggle, "start_minimized", False),
             (self.minimize_toggle, "notify_minimize_hint", False),
         ):
             was_blocked = toggle.blockSignals(True)

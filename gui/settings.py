@@ -46,6 +46,11 @@ DEFAULTS: dict[str, Any] = {
     "schema": SCHEMA_VERSION,
     "overlay": True,
     "autostart": True,
+    # When true, the GUI starts hidden in the system tray instead
+    # of opening its main window. Useful with autostart so the app
+    # doesn't pop up at every login. Ignored if no system tray is
+    # available (the close-to-tray path already handles that case).
+    "start_minimized": False,
     "overlay_position": "top-right",
     "overlay_orientation": "horizontal",
     # name -> {"gui": {...PROFILE_GUI_KEYS subset...}, "sinks": {"media": bool, "hdmi": bool}}

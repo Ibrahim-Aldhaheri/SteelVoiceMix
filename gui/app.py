@@ -104,6 +104,15 @@ def main() -> None:
     window = MixerGUI()
     # Keep a reference so the server isn't GC'd while the app runs.
     app._single_instance_server = _install_single_instance_server(window)
-    window.show()
+    # Honour the start_minimized preference. Only respect it when a
+    # system tray is actually available — otherwise the user would
+    # have no way to bring the window back. The tray icon is built
+    # inside MixerGUI based on QSystemTrayIcon.isSystemTrayAvailable().
+    if window.settings.get("start_minimized", False) and window.has_tray:
+        # Don't call window.show(); the tray icon stays visible and
+        # the user clicks it to surface the window.
+        pass
+    else:
+        window.show()
 
     sys.exit(app.exec())
