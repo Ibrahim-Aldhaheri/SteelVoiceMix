@@ -347,11 +347,13 @@ ASM_PRESETS_RAW = (
 ASM_NAME_PREFIX = "[ASM] "
 
 # ASM uses `[Tag]` in the filename to scope a preset to a channel. We
-# only import the headphone-side tags (Game + Chat) — Mic tunings target
-# microphone capture-path filters that the daemon doesn't have yet.
+# Map ASM's preset-name tags to our channel keys. Mic landed once we
+# wired EqChannel::Mic into the mic chain (10 biquads after gate /
+# RNNoise / AI-NC).
 _ASM_TAG_TO_CHANNEL: dict[str, str] = {
     "Game": "game",
     "Chat": "chat",
+    "Mic": "mic",
 }
 
 # Sonar's filter-type names → our serde-lowercase variants. Anything

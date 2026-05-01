@@ -66,6 +66,9 @@ install -Dm644 gui/presets/asm/game/*.json \
 install -d %{buildroot}%{_datadir}/%{name}/gui/presets/asm/chat
 install -Dm644 gui/presets/asm/chat/*.json \
     %{buildroot}%{_datadir}/%{name}/gui/presets/asm/chat/
+install -d %{buildroot}%{_datadir}/%{name}/gui/presets/asm/mic
+install -Dm644 gui/presets/asm/mic/*.json \
+    %{buildroot}%{_datadir}/%{name}/gui/presets/asm/mic/
 
 # Bundled default HRIR (HeSuVi-format 14-channel WAV).
 install -d %{buildroot}%{_datadir}/%{name}/gui/data/hrir

@@ -12,9 +12,9 @@ What it does:
      rate limits).
   2. Walks the `src/arctis_sound_manager/gui/presets/` directory inside
      the tarball.
-  3. Converts each `[Game]` / `[Chat]` JSON to our EqBand shape via
-     `gui.eq_presets.convert_sonar_preset`. (`[Mic]` is skipped — the
-     daemon doesn't have a microphone capture chain yet.)
+  3. Converts each `[Game]` / `[Chat]` / `[Mic]` JSON to our EqBand
+     shape via `gui.eq_presets.convert_sonar_preset`. Mic landed once
+     the daemon got a microphone capture-path EQ chain.
   4. Writes the result to `gui/presets/asm/<channel>/<safe-name>.json`.
 
 Idempotent: re-running overwrites the existing bundled set with
