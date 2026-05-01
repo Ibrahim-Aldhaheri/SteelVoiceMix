@@ -196,7 +196,7 @@ fn render_conf(spec: &MicChainSpec) -> String {
             r#"                    {{
                         type   = ladspa
                         name   = mic_gate
-                        plugin = "swh_plugins/gate_1410"
+                        plugin = "gate_1410"
                         label  = gate
                         control = {{
                             "LF key filter (Hz)" = 100.0

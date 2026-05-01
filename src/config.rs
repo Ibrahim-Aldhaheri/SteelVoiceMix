@@ -29,7 +29,11 @@ pub struct DaemonState {
     pub auto_route_browsers: bool,
     /// When true, EQ filter chains are inserted on Game + Chat at
     /// startup. Toggling this re-runs the loopback-swap dance.
-    #[serde(default)]
+    /// Default ON — most users coming in from Sonar / EasyEffects
+    /// expect EQ-out-of-the-box; the GUI's preset combo lets them
+    /// pick a tuning right away. The chain at flat-bands is a
+    /// no-op cost-wise.
+    #[serde(default = "default_true")]
     pub eq_enabled: bool,
     /// Full per-band EQ state for both channels. Each channel carries
     /// 10 `EqBand`s (freq / Q / gain / type / enabled). Default = flat
@@ -83,13 +87,17 @@ fn default_notifications_enabled() -> bool {
     true
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Default for DaemonState {
     fn default() -> Self {
         DaemonState {
             media_sink_enabled: false,
             hdmi_sink_enabled: false,
             auto_route_browsers: false,
-            eq_enabled: false,
+            eq_enabled: true,
             eq_state: EqState::default(),
             surround_enabled: default_surround_enabled(),
             surround_hrir_path: None,

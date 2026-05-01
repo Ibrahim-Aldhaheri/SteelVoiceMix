@@ -75,10 +75,25 @@ _INSTALL_RNNOISE_HINT = (
     "https://github.com/werman/noise-suppression-for-voice "
     "or grab a COPR that ships librnnoise_ladspa.so."
 )
-_PLUGIN_REQUIREMENTS: dict[str, tuple[str, str]] = {
-    "noise_gate": ("swh_plugins.so", f"sudo dnf install {_INSTALL_DNF}"),
-    "noise_reduction": ("librnnoise_ladspa.so", _INSTALL_RNNOISE_HINT),
-    "ai_noise_cancellation": ("librnnoise_ladspa.so", _INSTALL_RNNOISE_HINT),
+# Per-feature LADSPA plugin file names. Each entry lists the
+# possible .so filenames that ship the plugin — Fedora's
+# ladspa-swh-plugins splits each plugin into its own .so
+# (gate_1410.so), while Debian/Ubuntu bundle them into one
+# (swh_plugins.so). We accept either; the probe walks the list
+# and reports installed if any of them resolve in LADSPA_PATH.
+_PLUGIN_REQUIREMENTS: dict[str, tuple[tuple[str, ...], str]] = {
+    "noise_gate": (
+        ("gate_1410.so", "swh_plugins.so"),
+        f"sudo dnf install {_INSTALL_DNF}",
+    ),
+    "noise_reduction": (
+        ("librnnoise_ladspa.so",),
+        _INSTALL_RNNOISE_HINT,
+    ),
+    "ai_noise_cancellation": (
+        ("librnnoise_ladspa.so",),
+        _INSTALL_RNNOISE_HINT,
+    ),
 }
 
 
@@ -91,10 +106,14 @@ def _ladspa_search_paths() -> tuple[str, ...]:
     return extra + _LADSPA_DIRS
 
 
-def _plugin_available(filename: str) -> bool:
+def _plugin_available(filenames) -> bool:
+    """True if any of the given LADSPA filenames is on disk."""
+    if isinstance(filenames, str):
+        filenames = (filenames,)
     for d in _ladspa_search_paths():
-        if (Path(d) / filename).is_file():
-            return True
+        for f in filenames:
+            if (Path(d) / f).is_file():
+                return True
     return False
 
 
@@ -369,21 +388,22 @@ class MicrophoneTab(QWidget):
         # tooltip pointing at the providing package, plus a
         # red-tinted hint in the card body itself so the user
         # doesn't have to hover to understand why.
-        plugin_filename, install_hint = _PLUGIN_REQUIREMENTS.get(
-            key, ("", "")
+        plugin_filenames, install_hint = _PLUGIN_REQUIREMENTS.get(
+            key, ((), "")
         )
         plugin_present = (
-            not plugin_filename or _plugin_available(plugin_filename)
+            not plugin_filenames or _plugin_available(plugin_filenames)
         )
         contents = [toggle_row, slider_row, desc]
         if not plugin_present:
             toggle.setEnabled(False)
             slider.setEnabled(False)
+            display_name = plugin_filenames[0] if plugin_filenames else ""
             toggle.setToolTip(
-                f"Missing LADSPA plugin: {plugin_filename}. {install_hint}"
+                f"Missing LADSPA plugin: {display_name}. {install_hint}"
             )
             missing_lbl = QLabel(
-                f"⚠ Missing LADSPA plugin <code>{plugin_filename}</code>. "
+                f"⚠ Missing LADSPA plugin <code>{display_name}</code>. "
                 f"{install_hint}"
             )
             missing_lbl.setWordWrap(True)
