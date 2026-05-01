@@ -918,19 +918,20 @@ class EqualizerTab(QWidget):
         """Daemon broadcast: bands for `channel` changed (perhaps because
         we just sent the change, perhaps from another client or a preset
         load). Update the local cache; if it's the channel currently on
-        screen, refresh sliders + labels too."""
+        screen, refresh sliders + labels too.
+
+        We deliberately do NOT reconcile the active-preset name here —
+        every band edit + every chain respawn echoes a broadcast back,
+        and re-walking the preset list each time can flip the combo to
+        a different preset that happens to match by float tolerance
+        (the 'pink noise played, EQ flipped to Podcast' bug). The
+        active-preset name is owned by whoever triggered the change:
+        _apply_preset, _maybe_fork_to_custom, _on_auto_applied, etc."""
         if channel not in self._bands_by_channel:
             return
         self._bands_by_channel[channel] = list(bands)
-        # Reconcile the active-preset cache so the combo doesn't keep
-        # showing the previous selection when bands actually changed
-        # (e.g. auto-game-EQ load, profile load, or daemon-side reset).
-        self._reconcile_active_preset(channel)
         if channel == self._current_channel:
             self._render_sliders_for_channel(channel)
-            # Sync the combo too — _refresh_preset_combo reads the
-            # active-preset cache we just updated.
-            self._refresh_preset_combo()
 
     def on_full_state(self, state: dict) -> None:
         """Initial Status snapshot delivered every channel's band data
