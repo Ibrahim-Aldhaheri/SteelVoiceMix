@@ -492,13 +492,16 @@ class SettingsTab(QWidget):
         ]
         body = "\n".join(diag_lines)
         QApplication.clipboard().setText(body)
-        # Open new-issue page with a placeholder title; body left
-        # empty so the user can paste a fresh clipboard easily.
+        # Open new-issue page with explicit placeholder text so the
+        # user knows what to replace.
         url = (
             "https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/issues/new?"
             + urllib.parse.urlencode({
-                "title": "[Issue] ",
-                "body": "<!-- Paste diagnostic from clipboard here -->",
+                "title": "-- put the subject here --",
+                "body": (
+                    "-- describe your issue here --\n\n"
+                    "<!-- Paste diagnostic from clipboard below -->\n"
+                ),
             })
         )
         try:

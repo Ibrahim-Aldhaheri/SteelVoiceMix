@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -313,6 +314,12 @@ class MicrophoneTab(QWidget):
         sidetone_lbl = QLabel("Sidetone")
         sidetone_lbl.setFixedWidth(80)
         sidetone_alpha = QLabel("ALPHA")
+        # Pin the badge to a tight intrinsic size so QHBoxLayout
+        # doesn't stretch it to fill leftover horizontal space.
+        sidetone_alpha.setSizePolicy(
+            QSizePolicy.Fixed, QSizePolicy.Fixed,
+        )
+        sidetone_alpha.setAlignment(Qt.AlignCenter)
         sidetone_alpha.setStyleSheet(
             "background: #FF9800; color: white; "
             "font-size: 9px; font-weight: bold; "
