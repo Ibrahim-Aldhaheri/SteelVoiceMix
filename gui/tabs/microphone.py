@@ -52,6 +52,7 @@ _FEATURES = (
     ("noise_gate", "set-mic-noise-gate"),
     ("noise_reduction", "set-mic-noise-reduction"),
     ("ai_noise_cancellation", "set-mic-ai-nc"),
+    ("volume_stabilizer", "set-mic-volume-stabilizer"),
 )
 
 # Standard LADSPA install paths on Linux. We probe these in order;
@@ -136,6 +137,11 @@ _PLUGIN_REQUIREMENTS: dict[str, tuple[tuple[str, ...], str, "str | None"]] = {
         ("librnnoise_ladspa.so",),
         _INSTALL_RNNOISE_HINT,
         _BUILD_RNNOISE,
+    ),
+    "volume_stabilizer": (
+        ("dyson_compress_1403.so", "swh_plugins.so"),
+        f"sudo dnf install {_INSTALL_DNF}",
+        f"sudo dnf install {_INSTALL_DNF}",
     ),
 }
 
@@ -254,6 +260,15 @@ class MicrophoneTab(QWidget):
             "Aggressive RNNoise — handles non-stationary noise (typing, "
             "dog barks, road noise) but can clip quieter speech at high "
             "strength. If both NR and AI NC are on, only AI NC runs.",
+        )
+        self.vs_toggle, self.vs_slider, self.vs_value = self._add_feature_card(
+            layout,
+            "volume_stabilizer",
+            "Volume Stabilizer",
+            "Smooths volume swings between quiet whispers and loud "
+            "bursts so apps don't get a wildly fluctuating mic "
+            "volume. Provided by swh-plugins' dyson_compress. "
+            "Higher strength = more aggressive levelling.",
         )
 
         # Sidetone slider — 4 hardware levels (Off / Low / Medium /
@@ -374,6 +389,7 @@ class MicrophoneTab(QWidget):
             "noise_gate": (self.gate_toggle, self.gate_slider, self.gate_value),
             "noise_reduction": (self.nr_toggle, self.nr_slider, self.nr_value),
             "ai_noise_cancellation": (self.ai_toggle, self.ai_slider, self.ai_value),
+            "volume_stabilizer": (self.vs_toggle, self.vs_slider, self.vs_value),
         }[key]
 
     def _command_for(self, key: str) -> str:

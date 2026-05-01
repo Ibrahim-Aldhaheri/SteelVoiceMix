@@ -82,6 +82,7 @@ impl<'a> MicChainSpec<'a> {
         if self.state.noise_gate.enabled
             || self.state.noise_reduction.enabled
             || self.state.ai_noise_cancellation.enabled
+            || self.state.volume_stabilizer.enabled
         {
             return true;
         }
@@ -258,6 +259,40 @@ fn render_conf(spec: &MicChainSpec) -> String {
         last_out = Some("mic_rnnoise:Output");
     }
 
+    // Volume Stabilizer — Dyson compressor (mono, single Input/Output
+    // ports). Smooths volume swings without colouring tone. Strength
+    // 0..=100 drives the compression ratio; threshold + release stay
+    // at sensible voice defaults so the slider doesn't expose
+    // pro-audio-only knobs.
+    if s.volume_stabilizer.enabled {
+        // Dyson's "Compression ratio" lives in [0, 1] where 0 is
+        // passthrough and 1 is heavy. strength=50 → ratio=0.5 is a
+        // reasonable middle ground for voice; we cap at 0.85 so
+        // strength=100 doesn't flatten the signal entirely.
+        let comp_ratio = (f32::from(s.volume_stabilizer.strength).clamp(0.0, 100.0))
+            * 0.0085;
+        nodes.push(format!(
+            r#"                    {{
+                        type   = ladspa
+                        name   = mic_stabilizer
+                        plugin = "dyson_compress_1403"
+                        label  = dysonCompress
+                        control = {{
+                            "Peak limit (dB)" = -3.0
+                            "Release time (s)" = 0.10
+                            "Fast compression ratio" = 0.50
+                            "Compression ratio" = {comp_ratio:.4}
+                        }}
+                    }}"#,
+        ));
+        if let Some(prev) = last_out {
+            links.push(format!(
+                r#"                    {{ output = "{prev}"  input = "mic_stabilizer:Input" }}"#,
+            ));
+        }
+        last_out = Some("mic_stabilizer:Output");
+    }
+
     // Mic-side parametric EQ — 10 biquad stages chained in series.
     // Same builtin biquad nodes the output EQ uses (filter_chain.rs's
     // band_label + render_band_node patterns). Always emitted when
@@ -318,18 +353,19 @@ fn render_conf(spec: &MicChainSpec) -> String {
     };
 
     // First-stage node receives the audio from the chain's external
-    // input port. Default chain inputs map 1:1 by audio.position, so
-    // we just declare a single mono input that lands on whichever
-    // node is the first stage. EQ-only chains land on mic_eq_1 since
-    // there's no gate or rnnoise upstream.
+    // input port. Walk the chain order (gate → rnnoise → stabilizer
+    // → eq) and pick whichever stage is the earliest enabled one.
     let first_input_port = if s.noise_gate.enabled {
         "mic_gate:Input"
     } else if rnnoise_enabled {
         "mic_rnnoise:Input"
+    } else if s.volume_stabilizer.enabled {
+        "mic_stabilizer:Input"
     } else {
-        // No gate, no rnnoise — EQ stages run from band 1. We always
-        // emit the 10 biquads when the chain spawns, so this is
-        // always reachable when has_active_features is true via EQ.
+        // No gate, no rnnoise, no stabilizer — EQ stages run from
+        // band 1. We always emit the 10 biquads when the chain
+        // spawns, so this is always reachable when
+        // has_active_features is true via EQ.
         "mic_eq_1:In"
     };
 

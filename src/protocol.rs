@@ -124,6 +124,14 @@ pub struct MicState {
     pub noise_reduction: MicFeature,
     #[serde(default)]
     pub ai_noise_cancellation: MicFeature,
+    /// Volume Stabilizer — smooths level swings between quiet
+    /// whispers and loud bursts via the LADSPA `dyson_compress_1403`
+    /// (mono compressor from swh-plugins / ladspa-swh-plugins).
+    /// Strength 0..=100 drives the compression ratio; threshold +
+    /// release stay at sensible voice defaults baked into the
+    /// chain spec.
+    #[serde(default)]
+    pub volume_stabilizer: MicFeature,
 }
 
 /// Per-channel band arrays bundled into one persistent struct. Media
@@ -265,6 +273,10 @@ pub enum ClientCommand {
     /// everything but speech, including some quieter speech.
     #[serde(rename = "set-mic-ai-nc")]
     SetMicAiNoiseCancellation { enabled: bool, strength: u8 },
+    /// Toggle / parameterise the Volume Stabilizer. Strength 0..=100
+    /// maps to the dyson_compress compression ratio.
+    #[serde(rename = "set-mic-volume-stabilizer")]
+    SetMicVolumeStabilizer { enabled: bool, strength: u8 },
     /// Set headset hardware sidetone level. 0..=128 normalised — the
     /// daemon maps to the device's 4-step internal setting and saves
     /// to EEPROM so it persists across power cycles.
@@ -712,6 +724,7 @@ mod tests {
                     enabled: true,
                     strength: 70,
                 },
+                volume_stabilizer: MicFeature::default(),
             },
         };
         let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();

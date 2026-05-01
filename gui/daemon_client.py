@@ -52,6 +52,7 @@ _MIC_FEATURE_KEYS = (
     "noise_gate",
     "noise_reduction",
     "ai_noise_cancellation",
+    "volume_stabilizer",
 )
 
 

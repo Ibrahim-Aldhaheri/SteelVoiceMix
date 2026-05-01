@@ -488,6 +488,17 @@ fn handle_client(
                     strength,
                 );
             }
+            ClientCommand::SetMicVolumeStabilizer { enabled, strength } => {
+                handle_mic_feature_update(
+                    &sinks,
+                    &state,
+                    &subscribers,
+                    |s| s.volume_stabilizer = MicFeature { enabled, strength },
+                    "volume-stabilizer",
+                    enabled,
+                    strength,
+                );
+            }
             ClientCommand::SetSidetone { level } => {
                 let clamped = level.min(128);
                 {
