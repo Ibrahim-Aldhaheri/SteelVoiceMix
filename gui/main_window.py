@@ -185,6 +185,7 @@ class MixerGUI(QMainWindow):
         )
         self.settings_tab = SettingsTab(
             self.settings, self.overlay, self.sinks_tab, self.daemon_client,
+            eq_tab=self.eq_tab, mic_tab=self.mic_tab,
         )
 
         # Sidebar nav: a vertical QListWidget on the left that drives a

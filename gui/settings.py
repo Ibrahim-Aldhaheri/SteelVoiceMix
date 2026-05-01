@@ -202,17 +202,37 @@ def save_profile(
     *,
     media_enabled: bool,
     hdmi_enabled: bool,
+    eq_state: dict[str, list[dict]] | None = None,
+    mic_state: dict | None = None,
 ) -> None:
-    """Snapshot the current GUI keys + the supplied daemon-side sink flags.
-    Overwrites any existing profile of the same name."""
+    """Snapshot the current GUI keys + supplied daemon-side state.
+    Overwrites any existing profile of the same name.
+
+    `eq_state`: per-channel band lists (game/chat/media/hdmi/mic),
+    each entry a 10-band list of {freq, q, gain, type, enabled}.
+    Snapshotted as-is so a later load just sends one set-eq-channel
+    per channel.
+    `mic_state`: full MicState dict (noise_gate / NR / AI-NC /
+    volume_stabilizer + volume_stabilizer_kind). Applied via per-
+    feature daemon commands on load."""
     name = name.strip()
     if not name:
         raise ValueError("profile name must not be empty")
     profiles = _profiles_dict(settings)
-    profiles[name] = {
+    entry: dict[str, Any] = {
         "gui": {k: settings.get(k, DEFAULTS.get(k)) for k in PROFILE_GUI_KEYS},
         "sinks": {"media": bool(media_enabled), "hdmi": bool(hdmi_enabled)},
     }
+    if eq_state:
+        # Deep-copy via dict / list comprehensions so future mutations
+        # to the live cache don't leak into the saved profile.
+        entry["eq"] = {
+            ch: [dict(b) for b in bands]
+            for ch, bands in eq_state.items()
+        }
+    if mic_state:
+        entry["mic"] = dict(mic_state)
+    profiles[name] = entry
     save(settings)
 
 

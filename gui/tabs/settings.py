@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import urllib.parse
+import webbrowser
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -51,16 +53,30 @@ log = logging.getLogger(__name__)
 
 
 class SettingsTab(QWidget):
-    def __init__(self, settings: dict, overlay, sinks_tab, daemon_client, parent=None):
+    def __init__(
+        self,
+        settings: dict,
+        overlay,
+        sinks_tab,
+        daemon_client,
+        eq_tab=None,
+        mic_tab=None,
+        parent=None,
+    ):
         """`overlay` is the DialOverlay instance. `sinks_tab` is the
         SinksTab — needed to apply Media/HDMI toggles when a profile
         loads. `daemon_client` is needed by the Reset button to issue
-        a daemon-side `reset-state` alongside the GUI's own wipe."""
+        a daemon-side `reset-state` alongside the GUI's own wipe.
+        `eq_tab` + `mic_tab` are read at profile-save time to snapshot
+        the live EQ + mic state, and used at load time to drive the
+        daemon commands that restore them."""
         super().__init__(parent)
         self._settings = settings
         self._overlay = overlay
         self._sinks_tab = sinks_tab
         self._daemon = daemon_client
+        self._eq_tab = eq_tab
+        self._mic_tab = mic_tab
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -285,6 +301,29 @@ class SettingsTab(QWidget):
         # card() and add our custom title row as the first child.
         layout.addWidget(card(None, alpha_title_row, alpha_btns, alpha_help))
 
+        # Help / Report issue card -----------------------------------
+        help_row = QHBoxLayout()
+        self.report_btn = QPushButton("📋  Copy diagnostic + open new issue")
+        self.report_btn.setToolTip(
+            "Captures the daemon's recent journal output, the GUI "
+            "version, and your settings.json (sanitised), copies it "
+            "to the clipboard, and opens the SteelVoiceMix 'New "
+            "Issue' page in your browser. Paste into the body."
+        )
+        self.report_btn.clicked.connect(self._on_report_issue)
+        help_row.addWidget(self.report_btn)
+        help_row.addStretch(1)
+        help_text = QLabel(
+            "Filing a bug report is a 2-step flow: this button does "
+            "step 1 (copy diagnostic) and opens step 2 (the issue "
+            "page) — paste the clipboard into the body."
+        )
+        help_text.setWordWrap(True)
+        help_text.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+        layout.addWidget(card("Report Issue", help_row, help_text))
+
         # Reset card --------------------------------------------------
         reset_row = QHBoxLayout()
         self.reset_btn = QPushButton("Reset to defaults…")
@@ -424,6 +463,120 @@ class SettingsTab(QWidget):
             self.profile_combo.addItem("(no saved profiles)")
             self.profile_combo.setEnabled(False)
 
+    # ---------------------------------------------------- bug report
+
+    def _on_report_issue(self) -> None:
+        """Bundle a diagnostic block (version + last 100 daemon
+        journal lines + sanitised settings.json), copy to the
+        clipboard, and open the GitHub New Issue page so the user
+        only has to paste."""
+        from ..settings import APP_VERSION  # avoid circular at import time
+        diag_lines: list[str] = [
+            "## Diagnostic",
+            "",
+            f"- SteelVoiceMix version: {APP_VERSION}",
+            f"- Python: {self._py_version()}",
+            f"- Distro: {self._distro_string()}",
+            "",
+            "### Daemon journal (last 100 lines)",
+            "",
+            "```",
+            self._journal_tail(),
+            "```",
+            "",
+            "### Settings",
+            "",
+            "```json",
+            self._sanitised_settings_json(),
+            "```",
+        ]
+        body = "\n".join(diag_lines)
+        QApplication.clipboard().setText(body)
+        # Open new-issue page with a placeholder title; body left
+        # empty so the user can paste a fresh clipboard easily.
+        url = (
+            "https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/issues/new?"
+            + urllib.parse.urlencode({
+                "title": "[Issue] ",
+                "body": "<!-- Paste diagnostic from clipboard here -->",
+            })
+        )
+        try:
+            webbrowser.open(url, new=2)
+        except Exception:
+            pass
+        QMessageBox.information(
+            self,
+            "Diagnostic copied",
+            "Diagnostic copied to clipboard. The browser is opening "
+            "the SteelVoiceMix issue tracker — paste the clipboard "
+            "into the issue body.",
+        )
+
+    def _py_version(self) -> str:
+        import sys
+        return sys.version.split()[0]
+
+    def _distro_string(self) -> str:
+        try:
+            with open("/etc/os-release") as f:
+                kv = dict(
+                    line.strip().split("=", 1)
+                    for line in f if "=" in line
+                )
+            name = kv.get("PRETTY_NAME", "?").strip('"')
+            return name
+        except Exception:
+            return "unknown"
+
+    def _journal_tail(self) -> str:
+        try:
+            r = subprocess.run(
+                [
+                    "journalctl", "--user", "-u", "steelvoicemix",
+                    "-n", "100", "--no-pager",
+                ],
+                capture_output=True, text=True, timeout=8,
+            )
+            return r.stdout if r.returncode == 0 else r.stderr
+        except Exception as e:
+            return f"(journalctl failed: {e})"
+
+    def _sanitised_settings_json(self) -> str:
+        import json
+        # Profiles can be large + are user-named — truncate to keys
+        # for the report.
+        sanitised = dict(self._settings)
+        if isinstance(sanitised.get("profiles"), dict):
+            sanitised["profiles"] = sorted(sanitised["profiles"].keys())
+        return json.dumps(sanitised, indent=2, default=str)
+
+    # ---------------------------------------------- profile state helpers
+
+    def _gather_eq_state(self) -> dict[str, list[dict]] | None:
+        """Snapshot the EQ tab's live per-channel band cache. Returns
+        None when the EQ tab isn't wired up (defensive — happens
+        only in tests or partial-init scenarios)."""
+        if self._eq_tab is None or not hasattr(self._eq_tab, "_bands_by_channel"):
+            return None
+        return {
+            ch: list(bands)
+            for ch, bands in self._eq_tab._bands_by_channel.items()
+        }
+
+    def _gather_mic_state(self) -> dict | None:
+        """Snapshot the MicrophoneTab's local mirror of MicState plus
+        the volume_stabilizer_kind combo selection."""
+        if self._mic_tab is None or not hasattr(self._mic_tab, "_state"):
+            return None
+        out: dict = {
+            key: dict(value) for key, value in self._mic_tab._state.items()
+        }
+        out["volume_stabilizer_kind"] = getattr(
+            self._mic_tab, "_volume_stabilizer_kind", "broadcast"
+        )
+        return out
+
     def _save_new_profile(self) -> None:
         name, ok = QInputDialog.getText(self, "Save profile", "Profile name:")
         if not ok or not name.strip():
@@ -434,6 +587,8 @@ class SettingsTab(QWidget):
                 name.strip(),
                 media_enabled=self._sinks_tab.media_enabled,
                 hdmi_enabled=self._sinks_tab.hdmi_enabled,
+                eq_state=self._gather_eq_state(),
+                mic_state=self._gather_mic_state(),
             )
         except ValueError as e:
             QMessageBox.warning(self, "Invalid profile name", str(e))
@@ -442,6 +597,44 @@ class SettingsTab(QWidget):
         idx = self.profile_combo.findText(name.strip())
         if idx >= 0:
             self.profile_combo.setCurrentIndex(idx)
+
+    def _apply_eq_from_profile(self, eq_section: dict) -> None:
+        """Send one set-eq-channel per channel for the bands carried
+        in the profile. Daemon respawns the matching filter chain
+        per channel so the user hears the change immediately."""
+        if not isinstance(eq_section, dict):
+            return
+        for ch in ("game", "chat", "media", "hdmi", "mic"):
+            bands = eq_section.get(ch)
+            if isinstance(bands, list) and bands:
+                self._daemon.send_command(
+                    "set-eq-channel", channel=ch, bands=bands,
+                )
+
+    def _apply_mic_from_profile(self, mic_section: dict) -> None:
+        """Send one daemon command per mic feature so the chain
+        respawns with the saved settings. Volume Stabilizer kind is
+        bundled into its set-mic-volume-stabilizer call."""
+        if not isinstance(mic_section, dict):
+            return
+        kind = mic_section.get("volume_stabilizer_kind", "broadcast")
+        commands = (
+            ("noise_gate", "set-mic-noise-gate"),
+            ("noise_reduction", "set-mic-noise-reduction"),
+            ("ai_noise_cancellation", "set-mic-ai-nc"),
+            ("volume_stabilizer", "set-mic-volume-stabilizer"),
+        )
+        for key, cmd in commands:
+            feat = mic_section.get(key)
+            if not isinstance(feat, dict):
+                continue
+            kwargs = {
+                "enabled": bool(feat.get("enabled", False)),
+                "strength": int(feat.get("strength", 0)),
+            }
+            if key == "volume_stabilizer":
+                kwargs["kind"] = kind
+            self._daemon.send_command(cmd, **kwargs)
 
     def _load_selected_profile(self) -> None:
         name = self.profile_combo.currentText()
@@ -478,6 +671,13 @@ class SettingsTab(QWidget):
             want_media=bool(sinks.get("media", False)),
             want_hdmi=bool(sinks.get("hdmi", False)),
         )
+
+        # Apply EQ + mic state if the profile carries them. The
+        # daemon broadcasts back EqBandsChanged / MicStateChanged
+        # events that the EQ + Mic tabs already listen to, so the
+        # GUI sliders snap into place without manual re-render.
+        self._apply_eq_from_profile(profile.get("eq", {}))
+        self._apply_mic_from_profile(profile.get("mic", {}))
 
     # ------------------------------------------------------------------ reset
 
