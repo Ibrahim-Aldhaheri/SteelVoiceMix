@@ -48,6 +48,7 @@ from .tabs.equalizer import EqualizerTab
 from .tabs.home import HomeTab
 from .tabs.microphone import MicrophoneTab
 from .game_eq import GameProfileManager, GameWatcher
+from .voice_test import VoiceTestService
 from .tabs.settings import SettingsTab
 from .tabs.sinks import SinksTab
 from .tabs.surround import SurroundTab
@@ -150,16 +151,25 @@ class MixerGUI(QMainWindow):
 
         # Tabs — instantiated as full widgets so they own their state and
         # handlers. The window only routes daemon events to them.
+        # Shared voice-test service — owns the pw-loopback subprocess
+        # so the Microphone tab AND the Equalizer tab (Mic channel)
+        # can both drive the same "Hear yourself" toggle in sync.
+        self.voice_test = VoiceTestService(self)
         self.home_tab = HomeTab(self.daemon_client)
         self.sinks_tab = SinksTab(self.daemon_client)
         self.surround_tab = SurroundTab(self.daemon_client)
-        self.mic_tab = MicrophoneTab(self.daemon_client, self.settings)
+        self.mic_tab = MicrophoneTab(
+            self.daemon_client, self.settings, self.voice_test,
+        )
         # EqualizerTab hosts the Auto Game-EQ card at the bottom and
         # needs the GameProfileManager to drive it. Manager needs
         # the EQ tab's per-channel bands cache for snapshots, so we
         # resolve the chicken-and-egg by building the EQ tab without
         # the manager first, then patching it in once both exist.
-        self.eq_tab = EqualizerTab(self.daemon_client, self.settings)
+        self.eq_tab = EqualizerTab(
+            self.daemon_client, self.settings,
+            voice_test=self.voice_test,
+        )
         self.game_eq_manager = GameProfileManager(
             self.daemon_client, self.settings, self.eq_tab._bands_by_channel
         )
@@ -454,11 +464,10 @@ class MixerGUI(QMainWindow):
         if getattr(self, "_cleanup_done", False):
             return
         self._cleanup_done = True
-        # Unload the mic-loopback if the voice test was left on so a
-        # restart of the app doesn't leave an orphaned module pinned
-        # in PipeWire.
+        # Stop the voice-test loopback if it was left on so a
+        # restart of the app doesn't leave an orphaned subprocess.
         try:
-            self.mic_tab._teardown_voice_test()
+            self.voice_test.stop()
         except Exception:
             pass
         # Stop the game watcher's poll loop so the QThread joins

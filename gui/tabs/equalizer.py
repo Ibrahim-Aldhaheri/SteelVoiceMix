@@ -123,6 +123,7 @@ class EqualizerTab(QWidget):
         daemon_client,
         settings: dict,
         game_eq_manager=None,
+        voice_test=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -135,6 +136,11 @@ class EqualizerTab(QWidget):
         # can read latest_seen() and the "currently detected" line
         # can subscribe to detected_changed.
         self._game_eq_manager = game_eq_manager
+        # Shared VoiceTestService — drives the Hear Yourself button
+        # that replaces the Test Audio card when the user is on the
+        # Mic channel. Owned by MixerGUI so the Microphone tab and
+        # this tab stay in sync.
+        self._voice_test = voice_test
         self._eq_enabled = False
         # Set when Auto Game-EQ has applied a preset to the Game
         # channel. While truthy, the Game-channel sliders + preset
@@ -433,14 +439,88 @@ class EqualizerTab(QWidget):
         test_help.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
         )
-        layout.addWidget(card("Test Audio", test_warn, test_row, test_help))
+        # Test Audio card — for ear-checking output-channel EQ. We
+        # cache the widget so _on_channel_changed can hide it when
+        # the user switches to Mic (where Test Audio doesn't make
+        # sense — a noise generator wouldn't go through the mic).
+        self.test_audio_card = card("Test Audio", test_warn, test_row, test_help)
+        layout.addWidget(self.test_audio_card)
+
+        # Hear Yourself card — only visible on the Mic channel.
+        # Shares the VoiceTestService with the Microphone tab so
+        # toggling either button toggles both.
+        self.voice_test_card = self._build_voice_test_card()
+        layout.addWidget(self.voice_test_card)
 
         # Auto Game-EQ card — lives on the EQ page (rather than
         # buried in Settings) so users find it where they manage
         # their EQ.
         layout.addWidget(self._build_auto_game_card())
 
+        # Apply initial channel-dependent visibility now that all
+        # the channel-conditional cards are constructed.
+        self._update_channel_specific_cards(self._current_channel)
+
         layout.addStretch(1)
+
+    # ---------------------------------------------- Hear Yourself card
+
+    def _build_voice_test_card(self) -> QWidget:
+        btn_row = QHBoxLayout()
+        self.voice_test_btn = QPushButton("🎧  Hear yourself (test mic)")
+        self.voice_test_btn.setCheckable(True)
+        self.voice_test_btn.setMaximumWidth(280)
+        self.voice_test_btn.toggled.connect(self._on_voice_test_toggled)
+        btn_row.addWidget(self.voice_test_btn)
+        btn_row.addStretch(1)
+
+        help_lbl = QLabel(
+            "Loops the processed SteelMic back through your headset "
+            "so you can A/B the EQ live. Same control as the "
+            "Microphone tab — toggling either button drives both."
+        )
+        help_lbl.setWordWrap(True)
+        help_lbl.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        if self._voice_test is not None:
+            self._voice_test.state_changed.connect(
+                self._on_voice_test_state_changed
+            )
+
+        return card("Listen", btn_row, help_lbl)
+
+    def _on_voice_test_toggled(self, checked: bool) -> None:
+        if self._voice_test is None:
+            return
+        if checked:
+            ok, err = self._voice_test.start()
+            if not ok:
+                QMessageBox.warning(self, "Voice-test failed", err)
+                self.voice_test_btn.setChecked(False)
+        else:
+            self._voice_test.stop()
+
+    def _on_voice_test_state_changed(self, running: bool) -> None:
+        was_blocked = self.voice_test_btn.blockSignals(True)
+        try:
+            self.voice_test_btn.setChecked(running)
+        finally:
+            self.voice_test_btn.blockSignals(was_blocked)
+        self.voice_test_btn.setText(
+            "🛑  Stop voice test" if running else "🎧  Hear yourself (test mic)"
+        )
+
+    def _update_channel_specific_cards(self, channel: str) -> None:
+        """Test Audio is for output-channel EQ tuning — hides on
+        Mic. Hear Yourself is only meaningful on Mic — hides
+        elsewhere."""
+        is_mic = (channel == "mic")
+        if hasattr(self, "test_audio_card"):
+            self.test_audio_card.setVisible(not is_mic)
+        if hasattr(self, "voice_test_card"):
+            self.voice_test_card.setVisible(is_mic)
 
     # --------------------------------------------------- auto game-EQ card
 
@@ -935,6 +1015,9 @@ class EqualizerTab(QWidget):
         # Preset list is channel-scoped — repopulate the dropdown so the
         # user only sees presets for the channel they're looking at.
         self._refresh_preset_combo()
+        # Show/hide the Test Audio + Hear Yourself cards based on
+        # the new channel.
+        self._update_channel_specific_cards(key)
 
     # ---------------------------------------------------------------- presets
 

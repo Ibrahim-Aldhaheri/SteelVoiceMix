@@ -161,13 +161,16 @@ def _plugin_available(filenames) -> bool:
 
 
 class MicrophoneTab(QWidget):
-    def __init__(self, daemon_client, settings: dict, parent=None):
+    def __init__(self, daemon_client, settings: dict, voice_test=None, parent=None):
         super().__init__(parent)
         self._daemon = daemon_client
         # Settings dict is shared with the rest of the GUI so the
         # one-time "default source promoted" marker persists across
         # launches alongside overlay/profile prefs.
         self._settings = settings
+        # Shared VoiceTestService — owned by MixerGUI so the EQ tab
+        # (Mic channel) and this tab can both drive the same loopback.
+        self._voice_test = voice_test
 
         # Local mirror of the daemon's MicState so we can issue
         # incremental updates (only the changed feature's command)
@@ -184,15 +187,13 @@ class MicrophoneTab(QWidget):
         self._pending_strength: dict[str, int] = {}
         self._commit_timers: dict[str, QTimer] = {}
 
-        # Voice-test loopback. We use pw-loopback (PipeWire-native)
-        # rather than `pactl load-module module-loopback` because the
-        # PA compat shim has a race on creation — the sink-input is
-        # already accepting audio before we can mute it, leading to
-        # a painful burst at full volume on the first ~100 ms. The
-        # PipeWire-native loopback stays silent until real audio
-        # arrives. We track the spawned subprocess.Popen handle so
-        # we can kill it on stop / app quit.
-        self._voice_test_proc: "subprocess.Popen | None" = None
+        # Voice-test state lives in the shared VoiceTestService now;
+        # we just listen for state_changed to keep the toggle in sync
+        # with whatever the EQ tab's button is doing.
+        if self._voice_test is not None:
+            self._voice_test.state_changed.connect(
+                self._on_voice_test_state_changed
+            )
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -255,27 +256,35 @@ class MicrophoneTab(QWidget):
             "strength. If both NR and AI NC are on, only AI NC runs.",
         )
 
-        # Sidetone toggle (moved here from Home — sidetone is a
-        # microphone-side concern). The Arctis Nova Pro Wireless has
-        # 4 hardware levels (off / low / medium / high) but the
-        # difference between low/medium/high is barely audible on
-        # this device, so we expose a single On/Off toggle that maps
-        # to off=0 / on=64 (medium). Users who want a specific level
-        # can still set it via the daemon command directly.
-        sidetone_row, self.sidetone_toggle = labelled_toggle(
-            "Sidetone (hear yourself in the headset)"
-        )
-        # Initialised from the daemon's broadcast — see
-        # on_sidetone_changed below.
-        self.sidetone_toggle.setEnabled(self._daemon is not None)
-        self.sidetone_toggle.toggled.connect(self._on_sidetone_toggled)
+        # Sidetone slider — 4 hardware levels (Off / Low / Medium /
+        # High). We expose a 0..3 slider that maps to the centre of
+        # each device-level range, so the slider stops align 1:1
+        # with what the firmware actually applies. No debounce
+        # needed (4 discrete stops, not 128 pixel positions).
+        sidetone_row = QHBoxLayout()
+        sidetone_lbl = QLabel("Sidetone")
+        sidetone_lbl.setFixedWidth(80)
+        self.sidetone_slider = QSlider(Qt.Horizontal)
+        self.sidetone_slider.setRange(0, 3)
+        self.sidetone_slider.setSingleStep(1)
+        self.sidetone_slider.setPageStep(1)
+        self.sidetone_slider.setTickInterval(1)
+        self.sidetone_slider.setTickPosition(QSlider.TicksBelow)
+        self.sidetone_slider.setMaximumWidth(280)
+        self.sidetone_slider.setEnabled(self._daemon is not None)
+        self.sidetone_slider.valueChanged.connect(self._on_sidetone_step_changed)
+        self.sidetone_value = QLabel("Off")
+        self.sidetone_value.setFixedWidth(72)
+        self.sidetone_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        sidetone_row.addWidget(sidetone_lbl)
+        sidetone_row.addWidget(self.sidetone_slider, 1)
+        sidetone_row.addWidget(self.sidetone_value)
 
         sidetone_help = QLabel(
-            "Hardware sidetone — when on, the headset feeds your raw "
-            "mic back into your ears at a fixed medium level. The "
-            "Arctis Nova Pro Wireless has 4 internal levels but the "
-            "difference between low / medium / high is barely audible, "
-            "so we collapse them into a single on/off."
+            "Hardware sidetone — how loudly the headset feeds your "
+            "raw mic back into your ears. The Arctis Nova Pro "
+            "Wireless has 4 internal levels (Off / Low / Medium / "
+            "High); the slider maps 1:1."
         )
         sidetone_help.setWordWrap(True)
         sidetone_help.setStyleSheet(
@@ -514,76 +523,79 @@ class MicrophoneTab(QWidget):
 
     # ------------------------------------------------------- sidetone
 
-    # When the user flips the toggle on, send this level — falls into
-    # the device's "medium" bucket (43..=85 → hardware level 2 in
-    # daemon's HID mapping). Off is just level=0.
-    _SIDETONE_ON_LEVEL = 64
+    # 4-step → daemon level. Each daemon level (0..=128) maps to a
+    # hardware bucket — 0 → off, 1..=42 → low, 43..=85 → medium,
+    # 86..=128 → high. We pick the centre of each bucket for clarity
+    # so the user gets the exact hardware level they expect.
+    _SIDETONE_LEVELS = (0, 21, 64, 107)
+    _SIDETONE_LABELS = ("Off", "Low", "Medium", "High")
+
+    def _level_to_step(self, level: int) -> int:
+        """Daemon level (0..128) → slider step (0..3)."""
+        if level <= 0:
+            return 0
+        if level <= 42:
+            return 1
+        if level <= 85:
+            return 2
+        return 3
 
     def on_sidetone_changed(self, level: int) -> None:
-        """Daemon broadcast: persisted sidetone level changed (status
-        snapshot on connect, or another GUI client set it). Map any
-        non-zero level to checked, zero to unchecked. Block signals
-        so the echo doesn't loop back as another set-sidetone
-        command."""
-        was_blocked = self.sidetone_toggle.blockSignals(True)
+        """Daemon broadcast: persisted sidetone level changed
+        (status snapshot on connect, or another GUI client set it).
+        Map the daemon level into the 4-step slider and update the
+        label. Block signals so the echo doesn't loop back as
+        another set-sidetone."""
+        step = self._level_to_step(level)
+        was_blocked = self.sidetone_slider.blockSignals(True)
         try:
-            self.sidetone_toggle.setChecked(level > 0)
+            self.sidetone_slider.setValue(step)
         finally:
-            self.sidetone_toggle.blockSignals(was_blocked)
+            self.sidetone_slider.blockSignals(was_blocked)
+        self.sidetone_value.setText(self._SIDETONE_LABELS[step])
 
-    def _on_sidetone_toggled(self, checked: bool) -> None:
+    def _on_sidetone_step_changed(self, step: int) -> None:
+        """User moved the slider — fire the daemon command + update
+        the label. No debounce needed at 4 steps."""
+        step = max(0, min(3, step))
+        self.sidetone_value.setText(self._SIDETONE_LABELS[step])
         if self._daemon is None:
             return
-        level = self._SIDETONE_ON_LEVEL if checked else 0
-        self._daemon.send_command("set-sidetone", level=level)
+        self._daemon.send_command(
+            "set-sidetone", level=self._SIDETONE_LEVELS[step]
+        )
 
     # ------------------------------------------------------- voice test
 
     def _on_voice_test_toggled(self, checked: bool) -> None:
-        """Toggle a pw-loopback subprocess from SteelMic to the
-        default sink. PipeWire's native loopback stays silent until
-        real audio arrives — no buffer-dump burst on creation,
-        unlike `pactl load-module module-loopback` which had a 100 ms+
-        race window where audio leaked at full volume."""
+        """Drive the shared VoiceTestService. Both this tab and the
+        EQ tab (Mic channel) call into the same service so toggling
+        either keeps both buttons in sync via state_changed."""
+        if self._voice_test is None:
+            return
         if checked:
-            if not shutil.which("pw-loopback"):
-                QMessageBox.warning(
-                    self,
-                    "pw-loopback not found",
-                    "Voice-test needs pw-loopback on PATH (part of the "
-                    "pipewire-utils package). Install it and try again.",
-                )
+            ok, err = self._voice_test.start()
+            if not ok:
+                QMessageBox.warning(self, "Voice-test failed", err)
+                # The service didn't start — flip the button back
+                # without re-firing toggled (signals re-emit on
+                # programmatic setChecked, but the connected slot
+                # bails out cleanly because is_running is False).
                 self.voice_test_btn.setChecked(False)
-                return
-            # Spawn the loopback as a managed subprocess. Capture
-            # side targets SteelMic (the processed mic source);
-            # playback side hits the system default sink. Latency
-            # 80 ms keeps the round-trip from feeling laggy.
-            try:
-                self._voice_test_proc = subprocess.Popen(
-                    [
-                        "pw-loopback",
-                        "--capture-props=node.target=SteelMic "
-                        "media.name=SteelVoiceMix-VoiceTest",
-                        "--playback-props=media.name=SteelVoiceMix-VoiceTest",
-                        "--latency", "80",
-                    ],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception as e:
-                QMessageBox.warning(
-                    self,
-                    "Voice-test failed",
-                    f"Could not start pw-loopback:\n{e}",
-                )
-                self.voice_test_btn.setChecked(False)
-                self._voice_test_proc = None
-                return
-            self.voice_test_btn.setText("🛑  Stop voice test")
         else:
-            self._teardown_voice_test()
-            self.voice_test_btn.setText("🎧  Hear yourself (test mic)")
+            self._voice_test.stop()
+
+    def _on_voice_test_state_changed(self, running: bool) -> None:
+        """The shared service flipped — sync our button's checked
+        state + label without re-triggering the toggled handler."""
+        was_blocked = self.voice_test_btn.blockSignals(True)
+        try:
+            self.voice_test_btn.setChecked(running)
+        finally:
+            self.voice_test_btn.blockSignals(was_blocked)
+        self.voice_test_btn.setText(
+            "🛑  Stop voice test" if running else "🎧  Hear yourself (test mic)"
+        )
 
     # ---------------------------------------------------- install modal
 
@@ -645,20 +657,6 @@ class MicrophoneTab(QWidget):
         original = btn.text()
         btn.setText("✓  Copied!")
         QTimer.singleShot(1500, lambda: btn.setText(original))
-
-    def _teardown_voice_test(self) -> None:
-        if self._voice_test_proc is None:
-            return
-        try:
-            self._voice_test_proc.terminate()
-            try:
-                self._voice_test_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._voice_test_proc.kill()
-                self._voice_test_proc.wait(timeout=1)
-        except Exception:
-            pass
-        self._voice_test_proc = None
 
     # ------------------------------------------------------- default-source
 
