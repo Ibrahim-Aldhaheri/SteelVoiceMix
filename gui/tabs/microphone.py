@@ -99,7 +99,7 @@ sudo dnf install -y \\
     cmake gcc-c++ ladspa-devel git rnnoise-devel \\
     libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel \\
     libcurl-devel alsa-lib-devel \\
-    webkit2gtk4.0-devel gtk3-devel mesa-libGL-devel
+    webkit2gtk4.1-devel gtk3-devel mesa-libGL-devel
 
 # Clone + build only the LADSPA target so we skip JUCE's VST/AU/LV2
 # plumbing. The JUCE deps above are still needed because juceaide
