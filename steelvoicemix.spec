@@ -26,13 +26,14 @@ Recommends:     python3-pyside6
 # don't read the README. Daemon still spawns the chain lazily; if a
 # user genuinely wants to drop the deps, they can `dnf remove
 # --noautoremove`.
-# Mic plugin dependencies. ladspa-swh-plugins is in main Fedora
-# repos. noise-suppression-for-voice we ship ourselves in the
-# same COPR (see noise-suppression-for-voice.spec) since Fedora
-# doesn't package it. Both are hard-Requires so the Microphone
-# tab features work out of the box.
+# ladspa-swh-plugins is in main Fedora repos so we hard-Require it
+# (Noise Gate). librnnoise_ladspa.so for the AI/NR features comes
+# from werman/noise-suppression-for-voice which isn't in any RPM
+# repo — Recommend so install doesn't fail; the GUI's LADSPA
+# probe disables those toggles when missing and points users at
+# the github project for a manual build.
 Requires:       ladspa-swh-plugins
-Requires:       noise-suppression-for-voice
+Recommends:     noise-suppression-for-voice
 
 %description
 Linux ChatMix implementation for the SteelSeries Arctis Nova Pro Wireless.
