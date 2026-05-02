@@ -167,6 +167,12 @@ context.modules = [
             capture.props = {{
                 node.name   = "effect_input.{name}"
                 media.class = Audio/Sink
+                # Pin the EQ chain's quantum so a low-latency client
+                # downstream can't drag it to 32 samples mid-stream.
+                # See PipeWire bug #4013 / EasyEffects #1567 for the
+                # underlying false-resync issue this defends against.
+                node.lock-quantum = true
+                node.latency      = 1024/48000
             }}
             playback.props = {{
                 node.name           = "effect_output.{name}"
@@ -193,6 +199,8 @@ context.modules = [
                 # the headset.
                 node.autoconnect    = false
                 node.dont-reconnect = true
+                node.lock-quantum   = true
+                node.latency        = 1024/48000
             }}
         }}
     }}

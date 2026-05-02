@@ -243,12 +243,21 @@ fn render_conf(hrir: &Path) -> String {
         ));
     }
     for (name, channel) in convolvers {
+        // blocksize=512 pins the FFT partition size so the convolver
+        // doesn't auto-replan its plan when the graph's quantum
+        // shifts (KDE volume slider / wine / Discord can all yank
+        // the global quantum down to 32, and a 14-instance convolver
+        // re-planning all at once is a major glitch source — see
+        // PipeWire bug #4013 and EasyEffects #1567 for the upstream
+        // discussion). 512 samples is ~10 ms convolution latency,
+        // imperceptible for games. tailsize is left default so the
+        // convolver uses the natural IR length from the HeSuVi WAV.
         nodes.push(format!(
             r#"                    {{
                         type  = builtin
                         name  = {name}
                         label = convolver
-                        config = {{ filename = "{hrir}" channel = {channel} }}
+                        config = {{ filename = "{hrir}" channel = {channel} blocksize = 512 }}
                     }}"#,
             hrir = hrir_str,
         ));
@@ -365,6 +374,14 @@ context.modules = [
                 media.class      = Audio/Sink
                 audio.channels   = 8
                 audio.position   = [ FL FR FC LFE RL RR SL SR ]
+                # node.lock-quantum pins this filter chain's buffer
+                # size so a downstream client (Discord, KDE volume
+                # OSD, OBS, wine) requesting low-latency capture
+                # can't drag the convolver's quantum down to 32 and
+                # trigger a 14-instance FFT re-plan storm. The
+                # graph still negotiates rate normally.
+                node.lock-quantum = true
+                node.latency      = 1024/48000
             }}
             playback.props = {{
                 node.name           = "effect_output.{name}"
@@ -373,6 +390,8 @@ context.modules = [
                 node.dont-reconnect = true
                 audio.channels      = 2
                 audio.position      = [ FL FR ]
+                node.lock-quantum   = true
+                node.latency        = 1024/48000
             }}
         }}
     }}
