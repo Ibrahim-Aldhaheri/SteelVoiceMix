@@ -98,12 +98,12 @@ class HomeTab(QWidget):
         chat_row.addWidget(chat_label)
         chat_row.addWidget(self.chat_bar)
 
-        self.dial_label = QLabel("⚖️  Balanced")
+        self.dial_label = QLabel(self.tr("⚖️  Balanced"))
         self.dial_label.setAlignment(Qt.AlignCenter)
         self.dial_label.setStyleSheet(
             "font-size: 14px; font-weight: bold; padding-top: 4px;"
         )
-        return card("ChatMix", game_row, chat_row, self.dial_label)
+        return card(self.tr("ChatMix"), game_row, chat_row, self.dial_label)
 
     def _build_headset_card(self) -> QWidget:
         battery_row = QHBoxLayout()
@@ -118,12 +118,12 @@ class HomeTab(QWidget):
         battery_row.addWidget(self.battery_label)
         battery_row.addWidget(self.battery_bar)
 
-        self.battery_status = QLabel("Headset disconnected")
+        self.battery_status = QLabel(self.tr("Headset disconnected"))
         self.battery_status.setAlignment(Qt.AlignCenter)
         self.battery_status.setStyleSheet(
             "font-size: 14px; font-weight: bold; padding-top: 4px;"
         )
-        return card("Headset", battery_row, self.battery_status)
+        return card(self.tr("Headset"), battery_row, self.battery_status)
 
     def _build_status_card(self) -> QWidget:
         # Active-features pill row — the user sees at a glance which
@@ -145,7 +145,7 @@ class HomeTab(QWidget):
             pill_row.addWidget(pill)
         pill_row.addStretch(1)
 
-        return card("Active Features", pill_row)
+        return card(self.tr("Active Features"), pill_row)
 
     # ---------------------------------------------------- daemon-event hooks
 
@@ -155,36 +155,36 @@ class HomeTab(QWidget):
 
         diff = game_vol - chat_vol
         if abs(diff) < 10:
-            label = "⚖️  Balanced"
+            label = self.tr("⚖️  Balanced")
         elif diff > 0:
-            label = f"🎮  Game +{diff}"
+            label = self.tr("🎮  Game +{}").format(diff)
         else:
-            label = f"💬  Chat +{-diff}"
+            label = self.tr("💬  Chat +{}").format(-diff)
         self.dial_label.setText(label)
 
     def on_disconnected(self) -> None:
         self.game_bar.setValue(0)
         self.chat_bar.setValue(0)
-        self.dial_label.setText("⚖️  —")
+        self.dial_label.setText(self.tr("⚖️  —"))
 
     def on_battery(self, level: int, status: str) -> None:
         self.battery_bar.setValue(level)
         if status == "charging":
             self.battery_bar.setFormat(f"⚡ {level}%")
             chunk = "#4CAF50"
-            text = "Charging"
+            text = self.tr("Charging")
         elif status == "offline":
-            self.battery_bar.setFormat("Offline")
+            self.battery_bar.setFormat(self.tr("Offline"))
             self.battery_bar.setValue(0)
             chunk = "#FF9800"
-            text = "Headset offline"
+            text = self.tr("Headset offline")
         else:
             self.battery_bar.setFormat(f"{level}%")
             chunk = "#4CAF50" if level > 50 else "#FF9800" if level > 20 else "#f44336"
             text = (
-                "Battery good" if level > 50
-                else "Battery low" if level > 20
-                else "Battery critical"
+                self.tr("Battery good") if level > 50
+                else self.tr("Battery low") if level > 20
+                else self.tr("Battery critical")
             )
         self._set_battery_chunk(chunk)
         self.battery_status.setText(text)

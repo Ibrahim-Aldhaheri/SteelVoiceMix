@@ -131,7 +131,7 @@ class SettingsTab(QWidget):
         # Implementation lives in gui/theme.py — swapping QPalette
         # propagates everywhere the QSS uses palette(...) refs.
         theme_row = QHBoxLayout()
-        theme_lbl = QLabel("Theme")
+        theme_lbl = QLabel(self.tr("Theme"))
         theme_lbl.setFixedWidth(80)
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Auto (system)", "Light", "Dark"])
@@ -159,10 +159,10 @@ class SettingsTab(QWidget):
         # selected.
         from ..i18n import SUPPORTED_LANGUAGES
         lang_row = QHBoxLayout()
-        lang_lbl = QLabel("Language")
+        lang_lbl = QLabel(self.tr("Language"))
         lang_lbl.setFixedWidth(80)
         self.lang_combo = QComboBox()
-        self.lang_combo.addItem("System default", "system")
+        self.lang_combo.addItem(self.tr("System default"), "system")
         for code, label in SUPPORTED_LANGUAGES:
             self.lang_combo.addItem(label, code)
         current_lang = self._settings.get("ui_language", "system")
@@ -184,12 +184,12 @@ class SettingsTab(QWidget):
         )
 
         layout.addWidget(card(
-            "Appearance", theme_row, theme_help, lang_row, lang_help,
+            self.tr("Appearance"), theme_row, theme_help, lang_row, lang_help,
         ))
 
         # Startup card -------------------------------------------------
         autostart_row, self.autostart_toggle = labelled_toggle(
-            "Start with system"
+            self.tr("Start with system")
         )
         self.autostart_toggle.setChecked(self._settings.get("autostart", True))
         self.autostart_toggle.toggled.connect(self._toggle_autostart)
@@ -208,7 +208,7 @@ class SettingsTab(QWidget):
         )
         self.start_min_toggle.toggled.connect(self._toggle_start_minimized)
 
-        layout.addWidget(card("Startup", autostart_row, start_min_row))
+        layout.addWidget(card(self.tr("Startup"), autostart_row, start_min_row))
 
         # Shortcut card -----------------------------------------------
         # Optional QShortcut to cycle the system default sink between
@@ -281,7 +281,7 @@ class SettingsTab(QWidget):
         )
 
         layout.addWidget(card(
-            "Shortcuts",
+            self.tr("Shortcuts"),
             cycle_row, cycle_combo_row, exclude_row, cycle_help,
         ))
 
@@ -321,7 +321,7 @@ class SettingsTab(QWidget):
         self.daemon_notif_toggle.setChecked(True)
         self.daemon_notif_toggle.toggled.connect(self._toggle_daemon_notifs)
 
-        layout.addWidget(card("Notifications", minimize_row, daemon_notif_row))
+        layout.addWidget(card(self.tr("Notifications"), minimize_row, daemon_notif_row))
 
         # Profiles card ------------------------------------------------
         profile_row = QHBoxLayout()
@@ -352,7 +352,7 @@ class SettingsTab(QWidget):
         profile_help.setWordWrap(True)
 
         layout.addWidget(
-            card("Audio Profiles", profile_row, profile_btns, profile_help)
+            card(self.tr("Audio Profiles"), profile_row, profile_btns, profile_help)
         )
 
         # Alpha channel card -------------------------------------------
@@ -431,11 +431,11 @@ class SettingsTab(QWidget):
         help_text.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
         )
-        layout.addWidget(card("Report Issue", help_row, help_text))
+        layout.addWidget(card(self.tr("Report Issue"), help_row, help_text))
 
         # Reset card --------------------------------------------------
         reset_row = QHBoxLayout()
-        self.reset_btn = QPushButton("Reset to defaults…")
+        self.reset_btn = QPushButton(self.tr("Reset to defaults…"))
         self.reset_btn.setToolTip(
             "Reset every preference (overlay, sinks, EQ, surround, "
             "notification toggles) to its default value. Saved audio "
@@ -457,7 +457,7 @@ class SettingsTab(QWidget):
             "font-size: 10px; color: palette(placeholder-text);"
         )
 
-        layout.addWidget(card("Reset", reset_row, reset_help))
+        layout.addWidget(card(self.tr("Reset"), reset_row, reset_help))
 
         layout.addStretch(1)
 

@@ -27,7 +27,7 @@ class SinksTab(QWidget):
 
         # Virtual sinks card -------------------------------------------
         media_row = QHBoxLayout()
-        media_lbl = QLabel("🎵  Media")
+        media_lbl = QLabel(self.tr("🎵  Media"))
         media_lbl.setFixedWidth(80)
         self.media_btn = QPushButton("Add Media")
         self.media_btn.clicked.connect(self._toggle_media)
@@ -38,7 +38,7 @@ class SinksTab(QWidget):
         # a real TV/AVR yet. Functionality wires up; the badge tells
         # users to expect rough edges until it's hardware-verified.
         hdmi_row = QHBoxLayout()
-        hdmi_lbl = QLabel("📺  HDMI")
+        hdmi_lbl = QLabel(self.tr("📺  HDMI"))
         hdmi_lbl.setFixedWidth(80)
         hdmi_alpha = alpha_badge(
             tooltip=(
@@ -62,7 +62,7 @@ class SinksTab(QWidget):
         )
         sinks_help.setWordWrap(True)
 
-        layout.addWidget(card("Virtual Sinks", media_row, hdmi_row, sinks_help))
+        layout.addWidget(card(self.tr("Virtual Sinks"), media_row, hdmi_row, sinks_help))
 
         # Auto-routing card --------------------------------------------
         # Marked ALPHA — author hasn't pushed on it and treats it as
@@ -80,7 +80,7 @@ class SinksTab(QWidget):
         )
         self.auto_route_toggle.toggled.connect(self._toggle_auto_route)
 
-        layout.addWidget(card("Auto-Routing", auto_row))
+        layout.addWidget(card(self.tr("Auto-Routing"), auto_row))
 
         layout.addStretch(1)
 

@@ -226,7 +226,7 @@ class EqualizerTab(QWidget):
         # combo loads that channel's stored values. Emoji icons match
         # the Home-tab convention (🎮 / 💬).
         ch_row = QHBoxLayout()
-        ch_row.addWidget(QLabel("Channel"))
+        ch_row.addWidget(QLabel(self.tr("Channel")))
         self.channel_combo = NoWheelComboBox()
         self.channel_combo.setMinimumWidth(140)
         self.channel_combo.currentTextChanged.connect(self._on_channel_changed)
@@ -253,7 +253,7 @@ class EqualizerTab(QWidget):
         self.auto_lock_banner.hide()
 
         layout.addWidget(card(
-            "Equalizer", enable_row, ch_row, self.auto_lock_banner,
+            self.tr("Equalizer"), enable_row, ch_row, self.auto_lock_banner,
         ))
 
         # Preset row: searchable dropdown filtered by the current channel,
@@ -307,7 +307,7 @@ class EqualizerTab(QWidget):
         preset_btn_row.addWidget(self.preset_delete_btn)
         preset_btn_row.addStretch(1)
 
-        layout.addWidget(card("Preset", preset_picker_row, preset_btn_row))
+        layout.addWidget(card(self.tr("Preset"), preset_picker_row, preset_btn_row))
         # Populate the combo for the initial channel before any signals fire.
         self._refresh_preset_combo()
 
@@ -327,7 +327,7 @@ class EqualizerTab(QWidget):
         )
         self.favourites_card_layout.addLayout(self.favourites_buttons_row)
         self.favourites_card_layout.addWidget(self.favourites_empty_hint)
-        layout.addWidget(card("Favourites", self.favourites_card_layout))
+        layout.addWidget(card(self.tr("Favourites"), self.favourites_card_layout))
         self._refresh_favourites_card()
 
         # 10 vertical sliders, one per band. The musical name + frequency
@@ -407,7 +407,7 @@ class EqualizerTab(QWidget):
             "font-size: 10px; color: palette(placeholder-text);"
         )
         eq_help.setWordWrap(True)
-        layout.addWidget(card("Bands", bands_row, eq_help))
+        layout.addWidget(card(self.tr("Bands"), bands_row, eq_help))
 
         # Test-audio card ----------------------------------------------
         test_row = QHBoxLayout()
@@ -448,7 +448,7 @@ class EqualizerTab(QWidget):
         # cache the widget so _on_channel_changed can hide it when
         # the user switches to Mic (where Test Audio doesn't make
         # sense — a noise generator wouldn't go through the mic).
-        self.test_audio_card = card("Test Audio", test_warn, test_row, test_help)
+        self.test_audio_card = card(self.tr("Test Audio"), test_warn, test_row, test_help)
         layout.addWidget(self.test_audio_card)
 
         # Hear Yourself card — only visible on the Mic channel.
@@ -494,7 +494,7 @@ class EqualizerTab(QWidget):
                 self._on_voice_test_state_changed
             )
 
-        return card("Listen", btn_row, help_lbl)
+        return card(self.tr("Listen"), btn_row, help_lbl)
 
     def _on_voice_test_toggled(self, checked: bool) -> None:
         if self._voice_test is None:
@@ -604,7 +604,7 @@ class EqualizerTab(QWidget):
         )
 
         return card(
-            "Auto Game-EQ",
+            self.tr("Auto Game-EQ"),
             auto_row,
             self.detected_label,
             self.bindings_table,
@@ -1037,12 +1037,15 @@ class EqualizerTab(QWidget):
         active, and the daemon spawns it on demand. UserData carries
         the bare channel key ('game', 'chat', 'media', 'hdmi', 'mic')
         so internal lookups don't have to parse the emoji prefix."""
-        labels = [("game", "🎮 Game"), ("chat", "💬 Chat")]
+        labels = [
+            ("game", self.tr("🎮 Game")),
+            ("chat", self.tr("💬 Chat")),
+        ]
         if self._media_sink_enabled:
-            labels.append(("media", "🎵 Media"))
+            labels.append(("media", self.tr("🎵 Media")))
         if self._hdmi_sink_enabled:
-            labels.append(("hdmi", "📺 HDMI"))
-        labels.append(("mic", "🎙 Microphone"))
+            labels.append(("hdmi", self.tr("📺 HDMI")))
+        labels.append(("mic", self.tr("🎙 Microphone")))
 
         was_blocked = self.channel_combo.blockSignals(True)
         try:

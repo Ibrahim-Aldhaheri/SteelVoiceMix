@@ -143,7 +143,7 @@ class MixerGUI(QMainWindow):
         title.setStyleSheet("font-size: 14px; font-weight: bold;")
         header.addWidget(title)
         header.addStretch(1)
-        self.status_label = QLabel("🔍  Connecting…")
+        self.status_label = QLabel(self.tr("🔍  Connecting…"))
         self.status_label.setObjectName("status-pill")
         self.status_label.setProperty("state", "")
         self.status_label.setAlignment(Qt.AlignCenter)
@@ -234,15 +234,15 @@ class MixerGUI(QMainWindow):
         # Persistent footer — update status + check-now + about, always visible.
         footer = QHBoxLayout()
         footer.setSpacing(8)
-        self.update_label = QLabel("Up to date")
+        self.update_label = QLabel(self.tr("Up to date"))
         self.update_label.setStyleSheet(
             "color: palette(placeholder-text); font-size: 10px;"
         )
-        update_btn = QPushButton("Check for updates")
+        update_btn = QPushButton(self.tr("Check for updates"))
         update_btn.setFlat(True)
         update_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
         update_btn.clicked.connect(self._force_update_check)
-        self.about_btn = QPushButton("About…")
+        self.about_btn = QPushButton(self.tr("About…"))
         self.about_btn.setFlat(True)
         self.about_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
         self.about_btn.clicked.connect(self._show_about)
@@ -608,7 +608,7 @@ class MixerGUI(QMainWindow):
         )
 
     def _on_no_update(self) -> None:
-        self.update_label.setText("Up to date")
+        self.update_label.setText(self.tr("Up to date"))
         self.update_label.setStyleSheet(
             "color: palette(placeholder-text); font-size: 10px;"
         )
