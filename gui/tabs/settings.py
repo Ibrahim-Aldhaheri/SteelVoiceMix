@@ -556,19 +556,48 @@ class SettingsTab(QWidget):
         apply_theme(mode)
 
     def _change_language(self, _index: int) -> None:
-        """Save the picked language, swap the QTranslator, and flip
-        the layoutDirection immediately. Full string-translation
-        refresh requires a GUI restart since most strings cache their
-        text at construct time — surfaced in the help text below the
-        combo. The translator swap matters for any string created
-        after the change (e.g. a freshly opened dialog)."""
+        """Save the picked language, swap the QTranslator, flip the
+        layoutDirection, and offer to restart the GUI so all already-
+        constructed widget text re-translates. Qt's installTranslator
+        only affects strings looked up *after* the swap — existing
+        widgets keep their cached text until they're rebuilt or the
+        process restarts. A restart is the only fully reliable path."""
         code = self.lang_combo.currentData() or "system"
+        previous = self._settings.get("ui_language", "system")
         self._settings["ui_language"] = code
         save_settings(self._settings)
         from ..i18n import apply_layout_direction, reset_translator
         app = QApplication.instance()
         reset_translator(app, code)
         apply_layout_direction(app, code)
+        # Skip the prompt when the language didn't actually change —
+        # the dropdown also fires currentIndexChanged on initial set.
+        if code == previous:
+            return
+        choice = QMessageBox.question(
+            self,
+            self.tr("Restart required"),
+            self.tr(
+                "Language changes only fully apply after a restart of "
+                "the GUI. Restart now?"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if choice == QMessageBox.Yes:
+            self._restart_gui()
+
+    def _restart_gui(self) -> None:
+        """Re-exec the running GUI process. We only restart the GUI
+        layer — the Rust daemon stays up so audio doesn't blip."""
+        import os
+        import sys
+        try:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception:
+            # Fallback: just quit; the user can relaunch from the
+            # tray or the menu.
+            QApplication.instance().quit()
 
     def _copy_to_clipboard(self, text: str, label: str) -> None:
         cb = QApplication.clipboard()

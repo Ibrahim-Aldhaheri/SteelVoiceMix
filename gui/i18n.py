@@ -26,10 +26,13 @@ _RTL_LANGUAGES (Arabic, Hebrew, Farsi, Urdu).
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import QLocale, Qt, QTranslator
 from PySide6.QtWidgets import QApplication
+
+log = logging.getLogger(__name__)
 
 _TRANSLATIONS_DIR = Path(__file__).parent / "translations"
 
@@ -66,7 +69,12 @@ def setup_translator(
     code installs no translator (caller can rely on the source
     strings) instead of silently falling back to the system locale."""
     code = _resolve_language(ui_language)
+    log.info(
+        "i18n: ui_language=%r resolved=%r translations_dir=%s",
+        ui_language, code, _TRANSLATIONS_DIR,
+    )
     if code == "en":
+        log.info("i18n: English source language — no translator needed")
         return None
     translator = QTranslator(app)
     candidates = [f"steelvoicemix_{code}"]
@@ -78,9 +86,20 @@ def setup_translator(
     if ui_language == "system":
         candidates.append(f"steelvoicemix_{QLocale.system().name()}")
     for candidate in candidates:
-        if translator.load(candidate, str(_TRANSLATIONS_DIR)):
+        loaded = translator.load(candidate, str(_TRANSLATIONS_DIR))
+        log.info("i18n: load(%r, %s) → %s", candidate, _TRANSLATIONS_DIR, loaded)
+        if loaded:
             app.installTranslator(translator)
             return translator
+    # Help the user diagnose missing .qm: enumerate what IS in the dir.
+    try:
+        present = sorted(p.name for p in _TRANSLATIONS_DIR.glob("*.qm"))
+        log.warning(
+            "i18n: no translation matched %r — .qm files present: %s",
+            candidates, present or "<none>",
+        )
+    except Exception:
+        pass
     return None
 
 
