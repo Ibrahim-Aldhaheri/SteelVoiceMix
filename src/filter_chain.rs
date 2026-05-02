@@ -171,8 +171,14 @@ context.modules = [
                 # downstream can't drag it to 32 samples mid-stream.
                 # See PipeWire bug #4013 / EasyEffects #1567 for the
                 # underlying false-resync issue this defends against.
-                node.lock-quantum = true
-                node.latency      = 1024/48000
+                node.lock-quantum    = true
+                node.latency         = 1024/48000
+                # Keep the chain alive across silence — game alt-tab
+                # / browser-tab-switch to a paused video / any
+                # silence-then-audio transition costs ~1 ms wake-up
+                # latency on a suspended node, audible as a brief
+                # glitch.
+                node.suspend-on-idle = false
             }}
             playback.props = {{
                 node.name           = "effect_output.{name}"
@@ -197,10 +203,11 @@ context.modules = [
                 # chain output ...). PipeWire detects the cycle and breaks
                 # it by silencing one edge, so SteelGame audio never reaches
                 # the headset.
-                node.autoconnect    = false
-                node.dont-reconnect = true
-                node.lock-quantum   = true
-                node.latency        = 1024/48000
+                node.autoconnect     = false
+                node.dont-reconnect  = true
+                node.lock-quantum    = true
+                node.latency         = 1024/48000
+                node.suspend-on-idle = false
             }}
         }}
     }}

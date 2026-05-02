@@ -380,18 +380,28 @@ context.modules = [
                 # can't drag the convolver's quantum down to 32 and
                 # trigger a 14-instance FFT re-plan storm. The
                 # graph still negotiates rate normally.
-                node.lock-quantum = true
-                node.latency      = 1024/48000
+                node.lock-quantum    = true
+                node.latency         = 1024/48000
+                # node.suspend-on-idle = false keeps the chain alive
+                # while no audio is flowing. PipeWire's default
+                # behavior suspends idle nodes; on resume (game
+                # refocus, browser tab switching back to a video,
+                # any silence-then-audio transition) the node wake-
+                # up costs ~1 ms and is audible as a brief glitch.
+                # Cost of staying alive: a few KB of RAM and zero
+                # CPU on a chain with no input. Worth it.
+                node.suspend-on-idle = false
             }}
             playback.props = {{
-                node.name           = "effect_output.{name}"
-                node.passive        = true
-                node.autoconnect    = false
-                node.dont-reconnect = true
-                audio.channels      = 2
-                audio.position      = [ FL FR ]
-                node.lock-quantum   = true
-                node.latency        = 1024/48000
+                node.name            = "effect_output.{name}"
+                node.passive         = true
+                node.autoconnect     = false
+                node.dont-reconnect  = true
+                audio.channels       = 2
+                audio.position       = [ FL FR ]
+                node.lock-quantum    = true
+                node.latency         = 1024/48000
+                node.suspend-on-idle = false
             }}
         }}
     }}
