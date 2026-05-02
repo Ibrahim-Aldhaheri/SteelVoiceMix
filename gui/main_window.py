@@ -292,6 +292,12 @@ class MixerGUI(QMainWindow):
         self.signals.auto_route_browsers_changed.connect(
             self.sinks_tab.on_auto_route_changed
         )
+        self.signals.channel_boost_changed.connect(
+            self.sinks_tab.on_channel_boost_changed
+        )
+        self.signals.volume_boost_state.connect(
+            self.sinks_tab.on_volume_boost_state
+        )
 
         self.signals.eq_enabled_changed.connect(self.eq_tab.on_enabled_changed)
         self.signals.eq_enabled_changed.connect(self.home_tab.on_eq_enabled)

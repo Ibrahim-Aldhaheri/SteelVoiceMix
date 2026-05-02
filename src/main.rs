@@ -23,7 +23,7 @@ use filter_chain::{FilterChainHandle, FilterChainSpec};
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
 use protocol::{
     default_channel_bands, ClientCommand, DaemonEvent, EqChannel, EqState, MicFeature,
-    MicState,
+    MicState, VolumeBoost,
 };
 use routing::{spawn_router, RouterState};
 
@@ -59,6 +59,7 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         mic_state: st.mic_state,
         sidetone_level: st.sidetone_level,
         notifications_enabled: st.notifications_enabled,
+        volume_boost: st.volume_boost,
     }
 }
 
@@ -120,6 +121,7 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         mic_default_applied: true,
         sidetone_level: st.sidetone_level,
         notifications_enabled: st.notifications_enabled,
+        volume_boost: st.volume_boost,
     });
 }
 
@@ -504,6 +506,60 @@ fn handle_client(
                     strength,
                 );
             }
+            ClientCommand::SetChannelBoost {
+                channel,
+                enabled,
+                multiplier_pct,
+            } => {
+                if matches!(channel, EqChannel::Mic) {
+                    warn!("set-channel-boost rejected: mic channel has no sink-volume control");
+                    continue;
+                }
+                let pct = multiplier_pct.clamp(100, 200);
+                let new_boost = VolumeBoost {
+                    enabled,
+                    multiplier_pct: pct,
+                };
+                let (current_game, current_chat) = {
+                    let mut st = state.lock().unwrap();
+                    if let Some(slot) = st.volume_boost.for_channel_mut(channel) {
+                        *slot = new_boost;
+                    }
+                    (st.game_vol, st.chat_vol)
+                };
+                persist_sink_state(&state);
+                // Apply right away — without this, Game/Chat would only
+                // pick up the new multiplier on the next dial event, and
+                // Media/HDMI would never apply at all (their volumes are
+                // set once at sink-load time).
+                match channel {
+                    EqChannel::Game => {
+                        SinkManager::set_volume(audio::GAME_SINK, new_boost.apply(current_game));
+                    }
+                    EqChannel::Chat => {
+                        SinkManager::set_volume(audio::CHAT_SINK, new_boost.apply(current_chat));
+                    }
+                    EqChannel::Media => {
+                        // Media sink has no chatmix-derived volume — base is 100%.
+                        SinkManager::set_volume(audio::MEDIA_SINK, new_boost.apply(100));
+                    }
+                    EqChannel::Hdmi => {
+                        SinkManager::set_volume(audio::HDMI_SINK, new_boost.apply(100));
+                    }
+                    EqChannel::Mic => unreachable!(),
+                }
+                info!(
+                    "GUI requested: set-channel-boost → channel={:?} enabled={} pct={}",
+                    channel, enabled, pct
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::ChannelBoostChanged {
+                        channel,
+                        boost: new_boost,
+                    },
+                );
+            }
             ClientCommand::SetSidetone { level } => {
                 let clamped = level.min(128);
                 {
@@ -692,6 +748,7 @@ fn main() {
     let mic_state = persisted.mic_state;
     let sidetone_level = persisted.sidetone_level;
     let notifications_enabled = persisted.notifications_enabled;
+    let volume_boost = persisted.volume_boost;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -736,6 +793,7 @@ fn main() {
         mic_state,
         sidetone_level,
         notifications_enabled,
+        volume_boost,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));

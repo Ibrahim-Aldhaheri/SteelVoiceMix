@@ -152,6 +152,73 @@ pub struct MicState {
 /// Per-channel band arrays bundled into one persistent struct. Media
 /// and Hdmi default to flat just like Game/Chat — even if the user
 /// never enables those sinks, the state survives so toggling EQ on
+/// Per-channel volume multiplier applied at the sink-volume call
+/// site. When enabled, the daemon multiplies the chatmix-derived
+/// volume by `multiplier_pct / 100` before passing to pactl. Range
+/// 100..=200 (clamped). Above 100 is digital amplification — the
+/// GUI surfaces a warning above 150 because clipping risk grows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VolumeBoost {
+    pub enabled: bool,
+    pub multiplier_pct: u8,
+}
+
+impl Default for VolumeBoost {
+    fn default() -> Self {
+        VolumeBoost { enabled: false, multiplier_pct: 100 }
+    }
+}
+
+impl VolumeBoost {
+    /// Apply the boost to a 0..=100 input volume. Clamps the
+    /// output to 0..=200 (PipeWire's accepted range). When the
+    /// boost is disabled, returns the input unchanged.
+    pub fn apply(&self, volume: u8) -> u8 {
+        if !self.enabled {
+            return volume;
+        }
+        let pct = self.multiplier_pct.clamp(100, 200) as u32;
+        let scaled = (volume as u32 * pct) / 100;
+        scaled.min(200) as u8
+    }
+}
+
+/// Per-channel volume-boost state. Same channel set as EqState —
+/// Game / Chat / Media / Hdmi.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct VolumeBoostState {
+    #[serde(default)]
+    pub game: VolumeBoost,
+    #[serde(default)]
+    pub chat: VolumeBoost,
+    #[serde(default)]
+    pub media: VolumeBoost,
+    #[serde(default)]
+    pub hdmi: VolumeBoost,
+}
+
+impl VolumeBoostState {
+    pub fn for_channel(&self, channel: EqChannel) -> VolumeBoost {
+        match channel {
+            EqChannel::Game => self.game,
+            EqChannel::Chat => self.chat,
+            EqChannel::Media => self.media,
+            EqChannel::Hdmi => self.hdmi,
+            EqChannel::Mic => VolumeBoost::default(),
+        }
+    }
+
+    pub fn for_channel_mut(&mut self, channel: EqChannel) -> Option<&mut VolumeBoost> {
+        match channel {
+            EqChannel::Game => Some(&mut self.game),
+            EqChannel::Chat => Some(&mut self.chat),
+            EqChannel::Media => Some(&mut self.media),
+            EqChannel::Hdmi => Some(&mut self.hdmi),
+            EqChannel::Mic => None,
+        }
+    }
+}
+
 /// later doesn't lose tuning they made before.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct EqState {
@@ -299,6 +366,18 @@ pub enum ClientCommand {
         #[serde(default)]
         kind: Option<VolumeStabilizerKind>,
     },
+    /// Toggle / parameterise per-channel volume boost. Multiplier
+    /// is 100..=200 (percent) — values above 100 amplify the digital
+    /// signal. When `enabled` is false the multiplier is ignored
+    /// and the daemon falls back to the chatmix-derived volume.
+    /// Channel must be one of game / chat / media / hdmi (mic is
+    /// rejected — its volume isn't sink-managed).
+    #[serde(rename = "set-channel-boost")]
+    SetChannelBoost {
+        channel: EqChannel,
+        enabled: bool,
+        multiplier_pct: u8,
+    },
     /// Set headset hardware sidetone level. 0..=128 normalised — the
     /// daemon maps to the device's 4-step internal setting and saves
     /// to EEPROM so it persists across power cycles.
@@ -351,6 +430,7 @@ pub enum DaemonEvent {
         mic_state: MicState,
         sidetone_level: u8,
         notifications_enabled: bool,
+        volume_boost: VolumeBoostState,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -395,6 +475,15 @@ pub enum DaemonEvent {
     /// re-applies the snapshot.
     #[serde(rename = "mic-state-changed")]
     MicStateChanged { state: MicState },
+
+    /// Fired when a channel's volume boost changes — toggle, slider,
+    /// or daemon-side reset. GUI uses the snapshot to update its
+    /// per-channel boost row in the Sinks tab.
+    #[serde(rename = "channel-boost-changed")]
+    ChannelBoostChanged {
+        channel: EqChannel,
+        boost: VolumeBoost,
+    },
 
     /// Fired when sidetone level changes (GUI command, persisted
     /// state restore, etc.). Carries the level the daemon stored,
@@ -492,6 +581,7 @@ mod tests {
             mic_state: MicState::default(),
             sidetone_level: 0,
             notifications_enabled: true,
+            volume_boost: VolumeBoostState::default(),
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -803,6 +893,67 @@ mod tests {
         let json: Value = from_str(&to_string(&path_ev).unwrap()).unwrap();
         assert_eq!(json["event"], "surround-hrir-changed");
         assert_eq!(json["path"], "/x/f.wav");
+    }
+
+    #[test]
+    fn volume_boost_apply_is_passthrough_when_disabled() {
+        let b = VolumeBoost { enabled: false, multiplier_pct: 200 };
+        // Disabled → input unchanged regardless of multiplier.
+        assert_eq!(b.apply(0), 0);
+        assert_eq!(b.apply(50), 50);
+        assert_eq!(b.apply(100), 100);
+    }
+
+    #[test]
+    fn volume_boost_apply_scales_and_clamps_when_enabled() {
+        let b = VolumeBoost { enabled: true, multiplier_pct: 150 };
+        assert_eq!(b.apply(0), 0);
+        assert_eq!(b.apply(40), 60);
+        assert_eq!(b.apply(100), 150);
+        // 100 * 200 / 100 = 200 (PipeWire's max).
+        let max = VolumeBoost { enabled: true, multiplier_pct: 200 };
+        assert_eq!(max.apply(100), 200);
+        // 80 * 200 / 100 = 160 — under the cap.
+        assert_eq!(max.apply(80), 160);
+        // 150 * 200 / 100 = 300 → clamped to 200.
+        assert_eq!(max.apply(150), 200);
+    }
+
+    #[test]
+    fn volume_boost_apply_clamps_invalid_multiplier_below_100() {
+        // GUI sends 100..=200, but defend against an out-of-range
+        // input by clamping to 100% (passthrough at the low end).
+        let b = VolumeBoost { enabled: true, multiplier_pct: 50 };
+        assert_eq!(b.apply(80), 80);
+    }
+
+    #[test]
+    fn set_channel_boost_command_parses() {
+        let cmd: ClientCommand = from_str(
+            r#"{"cmd":"set-channel-boost","channel":"game","enabled":true,"multiplier_pct":150}"#,
+        )
+        .unwrap();
+        match cmd {
+            ClientCommand::SetChannelBoost { channel, enabled, multiplier_pct } => {
+                assert_eq!(channel, EqChannel::Game);
+                assert!(enabled);
+                assert_eq!(multiplier_pct, 150);
+            }
+            other => panic!("expected SetChannelBoost, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn channel_boost_changed_event_shape() {
+        let ev = DaemonEvent::ChannelBoostChanged {
+            channel: EqChannel::Chat,
+            boost: VolumeBoost { enabled: true, multiplier_pct: 130 },
+        };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "channel-boost-changed");
+        assert_eq!(json["channel"], "chat");
+        assert_eq!(json["boost"]["enabled"], true);
+        assert_eq!(json["boost"]["multiplier_pct"], 130);
     }
 
     #[test]

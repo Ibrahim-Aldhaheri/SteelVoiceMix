@@ -11,7 +11,7 @@ use log::{debug, info, warn};
 use crate::audio::{SinkManager, CHAT_SINK, GAME_SINK};
 use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
-use crate::protocol::{DaemonEvent, EqState, MicState};
+use crate::protocol::{DaemonEvent, EqChannel, EqState, MicState, VolumeBoostState};
 
 pub type SharedSinks = Arc<Mutex<SinkManager>>;
 
@@ -71,6 +71,10 @@ pub struct MixerState {
     pub mic_state: MicState,
     pub sidetone_level: u8,
     pub notifications_enabled: bool,
+    /// Per-channel digital volume multiplier applied at the
+    /// pactl set-sink-volume call site. Scales the chatmix-derived
+    /// game/chat volume and the fixed 100% volume on Media/HDMI.
+    pub volume_boost: VolumeBoostState,
 }
 
 impl MixerState {
@@ -86,6 +90,7 @@ impl MixerState {
         mic_state: MicState,
         sidetone_level: u8,
         notifications_enabled: bool,
+        volume_boost: VolumeBoostState,
     ) -> Self {
         MixerState {
             connected: false,
@@ -102,6 +107,7 @@ impl MixerState {
             mic_state,
             sidetone_level,
             notifications_enabled,
+            volume_boost,
         }
     }
 }
@@ -282,8 +288,15 @@ impl Mixer {
         }
 
         let (init_game, init_chat) = self.resolve_initial_dial(&dev);
-        SinkManager::set_volume(GAME_SINK, init_game);
-        SinkManager::set_volume(CHAT_SINK, init_chat);
+        let (game_boost, chat_boost) = {
+            let st = self.state.lock().unwrap();
+            (
+                st.volume_boost.for_channel(EqChannel::Game),
+                st.volume_boost.for_channel(EqChannel::Chat),
+            )
+        };
+        SinkManager::set_volume(GAME_SINK, game_boost.apply(init_game));
+        SinkManager::set_volume(CHAT_SINK, chat_boost.apply(init_chat));
 
         {
             let mut st = self.state.lock().unwrap();
@@ -378,8 +391,15 @@ impl Mixer {
                 Ok(Some(msg)) => match NovaDevice::parse_event(&msg) {
                     HidEvent::ChatMix { game_vol, chat_vol } => {
                         debug!("dial: game={game_vol}% chat={chat_vol}%");
-                        SinkManager::set_volume(GAME_SINK, game_vol);
-                        SinkManager::set_volume(CHAT_SINK, chat_vol);
+                        let (game_boost, chat_boost) = {
+                            let st = self.state.lock().unwrap();
+                            (
+                                st.volume_boost.for_channel(EqChannel::Game),
+                                st.volume_boost.for_channel(EqChannel::Chat),
+                            )
+                        };
+                        SinkManager::set_volume(GAME_SINK, game_boost.apply(game_vol));
+                        SinkManager::set_volume(CHAT_SINK, chat_boost.apply(chat_vol));
                         {
                             let mut st = self.state.lock().unwrap();
                             st.game_vol = game_vol;

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{EqState, MicState};
+use crate::protocol::{EqState, MicState, VolumeBoostState};
 
 /// What the daemon remembers across restarts. Most fields default to
 /// "off" so a fresh install doesn't surprise users with extra output
@@ -82,6 +82,11 @@ pub struct DaemonState {
     /// the legacy --no-notify CLI flag's "off-only" semantics).
     #[serde(default = "default_notifications_enabled")]
     pub notifications_enabled: bool,
+    /// Per-channel digital volume boost. Disabled by default on every
+    /// channel. When enabled, the daemon multiplies the chatmix-derived
+    /// volume by `multiplier_pct / 100` before passing to pactl.
+    #[serde(default)]
+    pub volume_boost: VolumeBoostState,
 }
 
 fn default_surround_enabled() -> bool {
@@ -114,6 +119,7 @@ impl Default for DaemonState {
             mic_default_applied: true,
             sidetone_level: default_sidetone_level(),
             notifications_enabled: default_notifications_enabled(),
+            volume_boost: VolumeBoostState::default(),
         }
     }
 }
