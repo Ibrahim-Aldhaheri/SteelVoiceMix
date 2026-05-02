@@ -58,20 +58,49 @@ def setup_translator(
     """Install a QTranslator for the chosen language. `ui_language`
     is the saved setting; 'system' uses QLocale.system(), anything
     else is a literal code. Returns the translator (kept alive by
-    the caller) or None if nothing matched."""
-    translator = QTranslator(app)
+    the caller) or None if nothing matched.
+
+    English (the source language) is intentionally a no-op — we
+    don't ship steelvoicemix_en.qm because all source strings are
+    already English. Likewise an explicit pick of an unavailable
+    code installs no translator (caller can rely on the source
+    strings) instead of silently falling back to the system locale."""
     code = _resolve_language(ui_language)
-    candidates = (
-        f"steelvoicemix_{code}",
-        # Fall back to full locale (e.g. 'fr_FR') when only a
-        # regional variant has been compiled.
-        f"steelvoicemix_{QLocale.system().name()}",
-    )
+    if code == "en":
+        return None
+    translator = QTranslator(app)
+    candidates = [f"steelvoicemix_{code}"]
+    # Only consult the full system locale (e.g. 'ar_SA') as a
+    # fallback when the user actually asked for the system language.
+    # If they explicitly picked, say, 'en' or 'fr', we must NOT
+    # re-introduce the system locale here — that's how an English
+    # pick on an Arabic system kept loading Arabic.
+    if ui_language == "system":
+        candidates.append(f"steelvoicemix_{QLocale.system().name()}")
     for candidate in candidates:
         if translator.load(candidate, str(_TRANSLATIONS_DIR)):
             app.installTranslator(translator)
             return translator
     return None
+
+
+def reset_translator(
+    app: QApplication, ui_language: str,
+) -> QTranslator | None:
+    """Uninstall whatever translator is currently active on `app` and
+    install one for `ui_language`. Used by the Settings → Language
+    dropdown so a switch from Arabic to English actually drops the
+    Arabic translator instead of layering English on top.
+
+    Stores the live translator on `app._translator` so subsequent
+    calls can find and remove it (matches the convention in app.py
+    on first launch)."""
+    existing = getattr(app, "_translator", None)
+    if isinstance(existing, QTranslator):
+        app.removeTranslator(existing)
+    new_translator = setup_translator(app, ui_language)
+    app._translator = new_translator
+    return new_translator
 
 
 def apply_layout_direction(

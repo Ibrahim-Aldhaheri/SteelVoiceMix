@@ -74,6 +74,16 @@ class _ChannelBoostRow:
         self.slider.valueChanged.connect(self._on_slider)
         self.layout.addWidget(self.slider, 1)
 
+        # Debounce slider drags so a continuous drag doesn't fire a
+        # set-channel-boost (and a pactl subprocess) per pixel — that
+        # made the slider feel laggy. 80ms is short enough to feel
+        # responsive but long enough to coalesce a fast drag into one
+        # tail-end command.
+        self._commit_timer = QTimer()
+        self._commit_timer.setSingleShot(True)
+        self._commit_timer.setInterval(80)
+        self._commit_timer.timeout.connect(self._commit_slider)
+
         self.readout = QLabel("100%")
         self.readout.setFixedWidth(48)
         self.readout.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -139,17 +149,21 @@ class _ChannelBoostRow:
         self._update_warning(enabled=self.toggle.isChecked(), pct=int(value))
         if self._suppress:
             return
-        # Only push to the daemon when the toggle is on — otherwise we'd
-        # spam set-channel-boost with enabled=false and the daemon would
-        # quietly accept multiplier-only changes. Storing the slider
-        # locally and committing on toggle is cleaner.
+        # Only push when the toggle is on — otherwise we'd spam
+        # set-channel-boost with enabled=false. Debounce so a drag
+        # coalesces to one final pactl spawn instead of dozens.
         if self.toggle.isChecked():
-            self._daemon.send_command(
-                "set-channel-boost",
-                channel=self.channel,
-                enabled=True,
-                multiplier_pct=int(value),
-            )
+            self._commit_timer.start()
+
+    def _commit_slider(self) -> None:
+        if not self.toggle.isChecked():
+            return
+        self._daemon.send_command(
+            "set-channel-boost",
+            channel=self.channel,
+            enabled=True,
+            multiplier_pct=int(self.slider.value()),
+        )
 
     def _update_warning(self, *, enabled: bool, pct: int) -> None:
         self.warn.setVisible(bool(enabled) and pct > _BOOST_WARN_THRESHOLD)

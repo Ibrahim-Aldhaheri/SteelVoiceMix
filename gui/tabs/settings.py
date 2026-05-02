@@ -556,15 +556,19 @@ class SettingsTab(QWidget):
         apply_theme(mode)
 
     def _change_language(self, _index: int) -> None:
-        """Save the picked language and flip the layoutDirection
-        immediately. Full string-translation refresh requires a GUI
-        restart since most strings cache their text at construct
-        time — surfaced in the help text below the combo."""
+        """Save the picked language, swap the QTranslator, and flip
+        the layoutDirection immediately. Full string-translation
+        refresh requires a GUI restart since most strings cache their
+        text at construct time — surfaced in the help text below the
+        combo. The translator swap matters for any string created
+        after the change (e.g. a freshly opened dialog)."""
         code = self.lang_combo.currentData() or "system"
         self._settings["ui_language"] = code
         save_settings(self._settings)
-        from ..i18n import apply_layout_direction
-        apply_layout_direction(QApplication.instance(), code)
+        from ..i18n import apply_layout_direction, reset_translator
+        app = QApplication.instance()
+        reset_translator(app, code)
+        apply_layout_direction(app, code)
 
     def _copy_to_clipboard(self, text: str, label: str) -> None:
         cb = QApplication.clipboard()
