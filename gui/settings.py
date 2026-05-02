@@ -36,7 +36,7 @@ def _derive_app_version() -> str:
 # Bumped manually on each beta cut; runtime derives from RPM if
 # available so this constant only matters in source-checkout /
 # manual-install scenarios.
-_APP_VERSION_FALLBACK = "0.4.1~beta16"
+_APP_VERSION_FALLBACK = "0.4.1~beta17"
 APP_VERSION = _derive_app_version()
 
 CONFIG_DIR = Path.home() / ".config" / APP_NAME
@@ -123,6 +123,21 @@ DEFAULTS: dict[str, Any] = {
     # Migrated automatically from the legacy dict shape on first
     # load by `gui/settings.py:load()`.
     "game_eq_bindings": [],
+    # Persisted state of the Auto Game-EQ orchestrator. Without
+    # these, suspending the PC right after closing a game (before
+    # the watcher's 4-second exit grace fires) lost the snapshot
+    # that was supposed to restore the user's pre-game EQ — the
+    # daemon kept the game preset on disk and there was nothing to
+    # override it with after resume / GUI restart.
+    #
+    #   auto_game_eq_active_preset: name of the preset currently
+    #     applied via auto-switch, or "" if no auto preset is
+    #     engaged. Set on _enter / _switch, cleared on _exit.
+    #   auto_game_eq_snapshot_bands: list[band-dict], the user's
+    #     pre-game Game-channel EQ. Saved at _enter, consumed at
+    #     _exit. Empty list means "no snapshot stored".
+    "auto_game_eq_active_preset": "",
+    "auto_game_eq_snapshot_bands": [],
     # Default-sink cycle shortcut. When enabled, the configured
     # key combo cycles the system default sink between the loaded
     # SteelVoiceMix virtual sinks (Game / Chat / Media / HDMI).
