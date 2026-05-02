@@ -520,12 +520,49 @@ fn handle_client(
                     enabled,
                     multiplier_pct: pct,
                 };
-                let (current_game, current_chat) = {
+                // Snapshot management — store the dial-at-the-moment
+                // when boost transitions OFF→ON, restore it when boost
+                // transitions ON→OFF. Slider drags while the toggle is
+                // already on don't touch the snapshot. The restore is
+                // baked into st.game_vol / st.chat_vol so the
+                // immediate-apply call below sees the snapshot, and
+                // any subsequent broadcast carries the restored value.
+                let (
+                    current_game,
+                    current_chat,
+                    restored_chatmix,
+                ) = {
                     let mut st = state.lock().unwrap();
+                    let was_enabled = st.volume_boost.for_channel(channel).enabled;
                     if let Some(slot) = st.volume_boost.for_channel_mut(channel) {
                         *slot = new_boost;
                     }
-                    (st.game_vol, st.chat_vol)
+                    let mut restored = false;
+                    match (was_enabled, enabled, channel) {
+                        (false, true, EqChannel::Game) => {
+                            st.pre_boost_game_vol = Some(st.game_vol);
+                        }
+                        (false, true, EqChannel::Chat) => {
+                            st.pre_boost_chat_vol = Some(st.chat_vol);
+                        }
+                        (true, false, EqChannel::Game) => {
+                            if let Some(snap) = st.pre_boost_game_vol.take() {
+                                st.game_vol = snap;
+                                restored = true;
+                            }
+                        }
+                        (true, false, EqChannel::Chat) => {
+                            if let Some(snap) = st.pre_boost_chat_vol.take() {
+                                st.chat_vol = snap;
+                                restored = true;
+                            }
+                        }
+                        // Slider change while already on (or already
+                        // off, or Media/HDMI which have no snapshot)
+                        // — leave snapshot state untouched.
+                        _ => {}
+                    }
+                    (st.game_vol, st.chat_vol, restored)
                 };
                 persist_sink_state(&state);
                 // Apply right away — without this, Game/Chat would only
@@ -549,8 +586,8 @@ fn handle_client(
                     EqChannel::Mic => unreachable!(),
                 }
                 info!(
-                    "GUI requested: set-channel-boost → channel={:?} enabled={} pct={}",
-                    channel, enabled, pct
+                    "GUI requested: set-channel-boost → channel={:?} enabled={} pct={} restored={}",
+                    channel, enabled, pct, restored_chatmix
                 );
                 broadcast_event(
                     &subscribers,
@@ -559,6 +596,20 @@ fn handle_client(
                         boost: new_boost,
                     },
                 );
+                // Replay a fresh chatmix event when we restored a
+                // snapshot so the GUI overlay (and any other
+                // chatmix-following client) reflects the new
+                // effective balance instead of the now-stale dial
+                // reading the user adjusted during the boost.
+                if restored_chatmix {
+                    broadcast_event(
+                        &subscribers,
+                        DaemonEvent::ChatMix {
+                            game: current_game,
+                            chat: current_chat,
+                        },
+                    );
+                }
             }
             ClientCommand::SetSidetone { level } => {
                 let clamped = level.min(128);

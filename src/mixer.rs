@@ -75,6 +75,17 @@ pub struct MixerState {
     /// pactl set-sink-volume call site. Scales the chatmix-derived
     /// game/chat volume and the fixed 100% volume on Media/HDMI.
     pub volume_boost: VolumeBoostState,
+    /// Snapshot of the chatmix dial value at the moment a channel's
+    /// boost was last toggled ON, used to restore the user's pre-
+    /// boost balance when the boost is later turned OFF. Without
+    /// this, lowering the dial during boost (to compensate for the
+    /// extra loudness) and then disabling boost would leave the sink
+    /// stuck at the now-too-low dial reading. Transient — never
+    /// persisted across daemon restarts. None means "not currently
+    /// holding a snapshot for this channel"; some(v) means "boost is
+    /// currently on for this channel and the dial-at-enable was v".
+    pub pre_boost_game_vol: Option<u8>,
+    pub pre_boost_chat_vol: Option<u8>,
 }
 
 impl MixerState {
@@ -108,6 +119,8 @@ impl MixerState {
             sidetone_level,
             notifications_enabled,
             volume_boost,
+            pre_boost_game_vol: None,
+            pre_boost_chat_vol: None,
         }
     }
 }
