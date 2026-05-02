@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use log::{debug, info, warn};
 
 use crate::audio::{SinkManager, CHAT_SINK, GAME_SINK};
+use crate::config;
 use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
 use crate::protocol::{DaemonEvent, EqChannel, EqState, MicState, VolumeBoostState};
@@ -24,6 +25,33 @@ pub fn broadcast_event(
 ) {
     let mut subs = subscribers.lock().unwrap();
     subs.retain(|tx| tx.send(event.clone()).is_ok());
+}
+
+/// Persist the dial-tracking part of MixerState to disk. Called from
+/// the dial-event handler so the latest game/chat split survives a
+/// daemon restart instead of resetting to 100/100. Cheap (one small
+/// JSON write) and the dial fires at most a few events per session,
+/// so per-event writes are fine. We pull every other field from the
+/// current state so this stays consistent with main.rs's
+/// persist_sink_state helper for non-dial commands.
+fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
+    let st = state.lock().unwrap();
+    config::save(&config::DaemonState {
+        media_sink_enabled: st.media_sink_enabled,
+        hdmi_sink_enabled: st.hdmi_sink_enabled,
+        auto_route_browsers: st.auto_route_browsers,
+        eq_enabled: st.eq_enabled,
+        eq_state: st.eq_state,
+        surround_enabled: st.surround_enabled,
+        surround_hrir_path: st.surround_hrir_path.clone(),
+        mic_state: st.mic_state,
+        mic_default_applied: true,
+        sidetone_level: st.sidetone_level,
+        notifications_enabled: st.notifications_enabled,
+        volume_boost: st.volume_boost,
+        game_vol: st.game_vol,
+        chat_vol: st.chat_vol,
+    });
 }
 
 const RECONNECT_BASE: Duration = Duration::from_secs(3);
@@ -102,11 +130,13 @@ impl MixerState {
         sidetone_level: u8,
         notifications_enabled: bool,
         volume_boost: VolumeBoostState,
+        game_vol: u8,
+        chat_vol: u8,
     ) -> Self {
         MixerState {
             connected: false,
-            game_vol: 100,
-            chat_vol: 100,
+            game_vol,
+            chat_vol,
             battery: None,
             media_sink_enabled,
             hdmi_sink_enabled,
@@ -418,6 +448,10 @@ impl Mixer {
                             st.game_vol = game_vol;
                             st.chat_vol = chat_vol;
                         }
+                        // Persist so a future daemon restart doesn't reset
+                        // the split to defaults when the firmware doesn't
+                        // answer get_chatmix.
+                        persist_dial_state(&self.state);
                         // Broadcast to GUI/overlay first — the OLED draw
                         // can stall on firmware that rejects feature
                         // reports, and we don't want GUI updates waiting

@@ -122,6 +122,8 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         sidetone_level: st.sidetone_level,
         notifications_enabled: st.notifications_enabled,
         volume_boost: st.volume_boost,
+        game_vol: st.game_vol,
+        chat_vol: st.chat_vol,
     });
 }
 
@@ -800,6 +802,8 @@ fn main() {
     let sidetone_level = persisted.sidetone_level;
     let notifications_enabled = persisted.notifications_enabled;
     let volume_boost = persisted.volume_boost;
+    let persisted_game_vol = persisted.game_vol;
+    let persisted_chat_vol = persisted.chat_vol;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -845,6 +849,8 @@ fn main() {
         sidetone_level,
         notifications_enabled,
         volume_boost,
+        persisted_game_vol,
+        persisted_chat_vol,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));

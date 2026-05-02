@@ -87,6 +87,22 @@ pub struct DaemonState {
     /// volume by `multiplier_pct / 100` before passing to pactl.
     #[serde(default)]
     pub volume_boost: VolumeBoostState,
+    /// Last-known chatmix dial position. Persisted so a daemon restart
+    /// (systemd, crash, suspend-then-failed-resume) doesn't reset the
+    /// sinks to 100%/100% just because the wireless firmware's
+    /// dial-query reply is hit-or-miss. Wired up via:
+    ///   - written on every HidEvent::ChatMix event in the mixer,
+    ///   - re-read on startup and used as MixerState's initial value
+    ///     (fallback for resolve_initial_dial when get_chatmix is silent).
+    /// Defaults to 50/50 — a balanced split — for first-run installs.
+    #[serde(default = "default_chatmix_half")]
+    pub game_vol: u8,
+    #[serde(default = "default_chatmix_half")]
+    pub chat_vol: u8,
+}
+
+fn default_chatmix_half() -> u8 {
+    50
 }
 
 fn default_surround_enabled() -> bool {
@@ -120,6 +136,8 @@ impl Default for DaemonState {
             sidetone_level: default_sidetone_level(),
             notifications_enabled: default_notifications_enabled(),
             volume_boost: VolumeBoostState::default(),
+            game_vol: default_chatmix_half(),
+            chat_vol: default_chatmix_half(),
         }
     }
 }
