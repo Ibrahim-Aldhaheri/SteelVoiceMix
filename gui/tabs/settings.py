@@ -158,9 +158,21 @@ class SettingsTab(QWidget):
         # Hebrew, etc.) flip the layoutDirection automatically when
         # selected.
         from ..i18n import SUPPORTED_LANGUAGES
+        from ..widgets import alpha_badge as _badge
         lang_row = QHBoxLayout()
         lang_lbl = QLabel(self.tr("Language"))
         lang_lbl.setFixedWidth(80)
+        # BETA marker: only English + Arabic exist, and Arabic
+        # coverage is partial — many strings still fall back to
+        # English. Visually marking the row matches the user's
+        # mental model so they don't think the gaps are bugs.
+        lang_beta = _badge(
+            self.tr("BETA"),
+            tooltip=self.tr(
+                "Beta — translations are partial. Untranslated "
+                "strings fall back to English."
+            ),
+        )
         self.lang_combo = QComboBox()
         self.lang_combo.addItem(self.tr("System default"), "system")
         for code, label in SUPPORTED_LANGUAGES:
@@ -172,11 +184,14 @@ class SettingsTab(QWidget):
                 break
         self.lang_combo.currentIndexChanged.connect(self._change_language)
         lang_row.addWidget(lang_lbl)
+        lang_row.addWidget(lang_beta, 0, Qt.AlignVCenter)
         lang_row.addWidget(self.lang_combo, 1)
         lang_help = QLabel(
-            "Translation coverage is partial — strings without a "
-            "translation fall back to English. Restart the GUI for "
-            "the language change to take full effect."
+            self.tr(
+                "Translation coverage is partial — strings without a "
+                "translation fall back to English. Restart the GUI for "
+                "the language change to take full effect."
+            )
         )
         lang_help.setWordWrap(True)
         lang_help.setStyleSheet(

@@ -91,7 +91,10 @@ class _ChannelBoostRow:
 
         # Warning indicator — only visible when slider is past the
         # threshold AND the boost is enabled.
-        self.warn = QLabel("⚠ clipping risk")
+        from PySide6.QtCore import QCoreApplication
+        self.warn = QLabel(
+            QCoreApplication.translate("SinksTab", "⚠ clipping risk")
+        )
         self.warn.setStyleSheet("color: #FF9800; font-size: 10px; font-weight: bold;")
         self.warn.setVisible(False)
         self.layout.addWidget(self.warn, 0, Qt.AlignVCenter)
@@ -184,7 +187,7 @@ class SinksTab(QWidget):
         media_row = QHBoxLayout()
         media_lbl = QLabel(self.tr("🎵  Media"))
         media_lbl.setFixedWidth(80)
-        self.media_btn = QPushButton("Add Media")
+        self.media_btn = QPushButton(self.tr("Add Media"))
         self.media_btn.clicked.connect(self._toggle_media)
         media_row.addWidget(media_lbl)
         media_row.addWidget(self.media_btn, 1)
@@ -201,16 +204,18 @@ class SinksTab(QWidget):
                 "HDMI sink (TV / AVR)."
             )
         )
-        self.hdmi_btn = QPushButton("Add HDMI")
+        self.hdmi_btn = QPushButton(self.tr("Add HDMI"))
         self.hdmi_btn.clicked.connect(self._toggle_hdmi)
         hdmi_row.addWidget(hdmi_lbl)
         hdmi_row.addWidget(hdmi_alpha, 0)
         hdmi_row.addWidget(self.hdmi_btn, 1)
 
         sinks_help = QLabel(
-            "Media and HDMI sinks bypass the ChatMix dial — useful for "
-            "music, browsers, or routing audio to a TV/AVR independently "
-            "of the headset."
+            self.tr(
+                "Media and HDMI sinks bypass the ChatMix dial — useful for "
+                "music, browsers, or routing audio to a TV/AVR independently "
+                "of the headset."
+            )
         )
         sinks_help.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
@@ -248,14 +253,20 @@ class SinksTab(QWidget):
             "hdmi": _ChannelBoostRow("hdmi", self.tr("📺  HDMI"), daemon_client),
         }
         boost_help = QLabel(
-            "Digital amplification applied at the sink — use when an app "
-            "is too quiet even at the system maximum. Headroom above 150% "
-            "can introduce clipping; back off if loud passages distort."
+            self.tr(
+                "Digital amplification applied at the sink — use when an app "
+                "is too quiet even at the system maximum. Headroom above 150% "
+                "can introduce clipping; back off if loud passages distort."
+            )
         )
         boost_help.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
         )
         boost_help.setWordWrap(True)
+        # Refresh the boost-row text via tr() — using class-level
+        # gettext-style strings here so the section labels stay in
+        # one .ts context. (The labels passed into _ChannelBoostRow
+        # already came from self.tr() above.)
         layout.addWidget(
             card(
                 self.tr("Volume Boost"),
@@ -284,7 +295,9 @@ class SinksTab(QWidget):
 
     def on_media_changed(self, enabled: bool) -> None:
         self._media_enabled = enabled
-        self.media_btn.setText("Remove Media" if enabled else "Add Media")
+        self.media_btn.setText(
+            self.tr("Remove Media") if enabled else self.tr("Add Media")
+        )
         self.media_btn.setToolTip(
             "Destroy the SteelMedia virtual sink"
             if enabled
@@ -294,7 +307,9 @@ class SinksTab(QWidget):
 
     def on_hdmi_changed(self, enabled: bool) -> None:
         self._hdmi_enabled = enabled
-        self.hdmi_btn.setText("Remove HDMI" if enabled else "Add HDMI")
+        self.hdmi_btn.setText(
+            self.tr("Remove HDMI") if enabled else self.tr("Add HDMI")
+        )
         self.hdmi_btn.setToolTip(
             "Destroy the SteelHDMI virtual sink"
             if enabled

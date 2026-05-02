@@ -98,13 +98,15 @@ class SurroundTab(QWidget):
         self.enable_toggle.setEnabled(False)
         self.enable_toggle.toggled.connect(self._on_toggled)
 
-        self.status_label = QLabel("Pick an HRIR file to enable surround.")
+        self.status_label = QLabel(
+            self.tr("Pick an HRIR file to enable surround.")
+        )
         self.status_label.setWordWrap(True)
         self.status_label.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
         )
 
-        layout.addWidget(card("Enable", toggle_row, self.status_label))
+        layout.addWidget(card(self.tr("Enable"), toggle_row, self.status_label))
 
         layout.addStretch(1)
 

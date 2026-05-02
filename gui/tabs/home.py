@@ -85,14 +85,14 @@ class HomeTab(QWidget):
 
     def _build_chatmix_card(self) -> QWidget:
         game_row = QHBoxLayout()
-        game_label = QLabel("🎮  Game")
+        game_label = QLabel(self.tr("🎮  Game"))
         game_label.setFixedWidth(80)
         self.game_bar = make_bar("#4CAF50")
         game_row.addWidget(game_label)
         game_row.addWidget(self.game_bar)
 
         chat_row = QHBoxLayout()
-        chat_label = QLabel("💬  Chat")
+        chat_label = QLabel(self.tr("💬  Chat"))
         chat_label.setFixedWidth(80)
         self.chat_bar = make_bar("#2196F3")
         chat_row.addWidget(chat_label)
@@ -107,7 +107,7 @@ class HomeTab(QWidget):
 
     def _build_headset_card(self) -> QWidget:
         battery_row = QHBoxLayout()
-        self.battery_label = QLabel("🔋  Battery")
+        self.battery_label = QLabel(self.tr("🔋  Battery"))
         self.battery_label.setFixedWidth(90)
         self.battery_bar = QProgressBar()
         self.battery_bar.setRange(0, 100)

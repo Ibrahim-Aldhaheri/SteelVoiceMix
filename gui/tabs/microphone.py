@@ -289,11 +289,13 @@ class MicrophoneTab(QWidget):
         vs_card_layout = vs_card_widget.layout() if vs_card_widget else None
         if vs_card_layout is not None:
             kind_row = QHBoxLayout()
-            kind_lbl = QLabel("Mode")
+            kind_lbl = QLabel(self.tr("Mode"))
             kind_lbl.setFixedWidth(80)
             self.vs_kind_combo = QComboBox()
-            self.vs_kind_combo.addItem("Broadcast — audible levelling", "broadcast")
-            self.vs_kind_combo.addItem("Soft — transparent", "soft")
+            self.vs_kind_combo.addItem(
+                self.tr("Broadcast — audible levelling"), "broadcast"
+            )
+            self.vs_kind_combo.addItem(self.tr("Soft — transparent"), "soft")
             self.vs_kind_combo.setMaximumWidth(420)
             self.vs_kind_combo.currentIndexChanged.connect(
                 self._on_vs_kind_changed
@@ -475,7 +477,7 @@ class MicrophoneTab(QWidget):
         toggle.toggled.connect(lambda checked, k=key: self._on_toggled(k, checked))
 
         slider_row = QHBoxLayout()
-        strength_lbl = QLabel("Strength")
+        strength_lbl = QLabel(self.tr("Strength"))
         strength_lbl.setFixedWidth(80)
         slider = NoWheelSlider(Qt.Horizontal)
         slider.setRange(0, 100)

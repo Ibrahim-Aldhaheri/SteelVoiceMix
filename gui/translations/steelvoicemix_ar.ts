@@ -137,6 +137,26 @@
         <source>Report Issue</source>
         <translation>الإبلاغ عن مشكلة</translation>
     </message>
+    <message>
+        <source>BETA</source>
+        <translation>تجريبي</translation>
+    </message>
+    <message>
+        <source>Beta — translations are partial. Untranslated strings fall back to English.</source>
+        <translation>تجريبي — الترجمات غير مكتملة. النصوص غير المترجمة تظهر بالإنجليزية.</translation>
+    </message>
+    <message>
+        <source>Translation coverage is partial — strings without a translation fall back to English. Restart the GUI for the language change to take full effect.</source>
+        <translation>تغطية الترجمة جزئية — النصوص غير المترجمة تظهر بالإنجليزية. أعد تشغيل الواجهة لتطبيق تغيير اللغة بالكامل.</translation>
+    </message>
+    <message>
+        <source>Restart required</source>
+        <translation>يلزم إعادة التشغيل</translation>
+    </message>
+    <message>
+        <source>Language changes only fully apply after a restart of the GUI. Restart now?</source>
+        <translation>لا تُطبَّق تغييرات اللغة بالكامل إلا بعد إعادة تشغيل الواجهة. هل تريد إعادة التشغيل الآن؟</translation>
+    </message>
 </context>
 <context>
     <name>MicrophoneTab</name>
@@ -261,6 +281,87 @@
     <message>
         <source>📺  HDMI</source>
         <translation>📺  HDMI</translation>
+    </message>
+    <message>
+        <source>Add Media</source>
+        <translation>إضافة الوسائط</translation>
+    </message>
+    <message>
+        <source>Remove Media</source>
+        <translation>إزالة الوسائط</translation>
+    </message>
+    <message>
+        <source>Add HDMI</source>
+        <translation>إضافة HDMI</translation>
+    </message>
+    <message>
+        <source>Remove HDMI</source>
+        <translation>إزالة HDMI</translation>
+    </message>
+    <message>
+        <source>Volume Boost</source>
+        <translation>تعزيز الصوت</translation>
+    </message>
+    <message>
+        <source>🎮  Game</source>
+        <translation>🎮  الألعاب</translation>
+    </message>
+    <message>
+        <source>💬  Chat</source>
+        <translation>💬  المحادثة</translation>
+    </message>
+    <message>
+        <source>⚠ clipping risk</source>
+        <translation>⚠ خطر التشويش</translation>
+    </message>
+    <message>
+        <source>Media and HDMI sinks bypass the ChatMix dial — useful for music, browsers, or routing audio to a TV/AVR independently of the headset.</source>
+        <translation>تتجاوز مخارج الوسائط و HDMI قرص ميكس المحادثة — مفيد للموسيقى والمتصفحات وتوجيه الصوت إلى تلفاز/مستقبل بشكل مستقل عن سماعة الرأس.</translation>
+    </message>
+    <message>
+        <source>Digital amplification applied at the sink — use when an app is too quiet even at the system maximum. Headroom above 150% can introduce clipping; back off if loud passages distort.</source>
+        <translation>تضخيم رقمي يُطبَّق على المخرج — استخدمه عندما يكون التطبيق هادئًا جدًا حتى عند أقصى مستوى للنظام. تجاوز 150% قد يسبب تشويشًا؛ خفّف إن سمعت تشوهًا في الأصوات العالية.</translation>
+    </message>
+</context>
+<context>
+    <name>HomeTab</name>
+    <message>
+        <source>🎮  Game</source>
+        <translation>🎮  الألعاب</translation>
+    </message>
+    <message>
+        <source>💬  Chat</source>
+        <translation>💬  المحادثة</translation>
+    </message>
+    <message>
+        <source>🔋  Battery</source>
+        <translation>🔋  البطارية</translation>
+    </message>
+</context>
+<context>
+    <name>SurroundTab</name>
+    <message>
+        <source>Pick an HRIR file to enable surround.</source>
+        <translation>اختر ملف HRIR لتفعيل الصوت المحيطي.</translation>
+    </message>
+    <message>
+        <source>Enable</source>
+        <translation>تفعيل</translation>
+    </message>
+</context>
+<context>
+    <name>MicrophoneTab</name>
+    <message>
+        <source>Mode</source>
+        <translation>الوضع</translation>
+    </message>
+    <message>
+        <source>Broadcast — audible levelling</source>
+        <translation>إذاعي — موازنة مسموعة</translation>
+    </message>
+    <message>
+        <source>Soft — transparent</source>
+        <translation>ناعم — شفّاف</translation>
     </message>
 </context>
 </TS>

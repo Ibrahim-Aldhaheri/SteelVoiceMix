@@ -36,7 +36,7 @@ def _derive_app_version() -> str:
 # Bumped manually on each beta cut; runtime derives from RPM if
 # available so this constant only matters in source-checkout /
 # manual-install scenarios.
-_APP_VERSION_FALLBACK = "0.4.1~beta15"
+_APP_VERSION_FALLBACK = "0.4.1~beta16"
 APP_VERSION = _derive_app_version()
 
 CONFIG_DIR = Path.home() / ".config" / APP_NAME
