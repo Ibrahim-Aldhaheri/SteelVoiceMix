@@ -157,6 +157,62 @@
         <source>Language changes only fully apply after a restart of the GUI. Restart now?</source>
         <translation>لا تُطبَّق تغييرات اللغة بالكامل إلا بعد إعادة تشغيل الواجهة. هل تريد إعادة التشغيل الآن؟</translation>
     </message>
+    <message>
+        <source>Position</source>
+        <translation>الموضع</translation>
+    </message>
+    <message>
+        <source>Style</source>
+        <translation>النمط</translation>
+    </message>
+    <message>
+        <source>Overlay</source>
+        <translation>الطبقة العلوية</translation>
+    </message>
+    <message>
+        <source>Key combo</source>
+        <translation>اختصار المفاتيح</translation>
+    </message>
+    <message>
+        <source>Register</source>
+        <translation>تسجيل</translation>
+    </message>
+    <message>
+        <source>Exclude</source>
+        <translation>استثناء</translation>
+    </message>
+    <message>
+        <source>Saved:</source>
+        <translation>المحفوظة:</translation>
+    </message>
+    <message>
+        <source>Load</source>
+        <translation>تحميل</translation>
+    </message>
+    <message>
+        <source>Save…</source>
+        <translation>حفظ…</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>حذف</translation>
+    </message>
+    <message>
+        <source>Alpha Channel</source>
+        <translation>قناة ألفا</translation>
+    </message>
+    <message>
+        <source>Invalid profile name</source>
+        <translation>اسم ملف الصوت غير صالح</translation>
+    </message>
+    <message>
+        <source>A profile snapshots overlay options + Media/HDMI sink toggles. Save the current setup, switch quickly, restore in one click.</source>
+        <translation>يحفظ ملف الصوت خيارات الطبقة + مفاتيح مخارج الوسائط/HDMI. احفظ الإعداد الحالي، بدّل بسرعة، واسترجع بنقرة واحدة.</translation>
+    </message>
+    <message>
+        <source>Save the key combo currently shown in the field. After registering, the shortcut takes effect immediately — no GUI restart needed.</source>
+        <translation>احفظ اختصار المفاتيح المعروض حاليًا في الحقل. بعد التسجيل يدخل الاختصار حيز التنفيذ فورًا — لا حاجة لإعادة تشغيل الواجهة.</translation>
+    </message>
 </context>
 <context>
     <name>MicrophoneTab</name>
@@ -207,6 +263,10 @@
     <message>
         <source>High</source>
         <translation>مرتفع</translation>
+    </message>
+    <message>
+        <source>Voice-test failed</source>
+        <translation>فشل اختبار الصوت</translation>
     </message>
 </context>
 <context>
@@ -262,6 +322,54 @@
     <message>
         <source>🎙 Microphone</source>
         <translation>🎙 الميكروفون</translation>
+    </message>
+    <message>
+        <source>Save…</source>
+        <translation>حفظ…</translation>
+    </message>
+    <message>
+        <source>Rename…</source>
+        <translation>إعادة تسمية…</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>حذف</translation>
+    </message>
+    <message>
+        <source>Currently detected: none</source>
+        <translation>الذي يتم رصده حاليًا: لا شيء</translation>
+    </message>
+    <message>
+        <source>Add binding…</source>
+        <translation>إضافة رابط…</translation>
+    </message>
+    <message>
+        <source>Remove selected</source>
+        <translation>إزالة المحدد</translation>
+    </message>
+    <message>
+        <source>Voice-test failed</source>
+        <translation>فشل اختبار الصوت</translation>
+    </message>
+    <message>
+        <source>Could not save preset</source>
+        <translation>تعذّر حفظ الإعداد المسبق</translation>
+    </message>
+    <message>
+        <source>Could not rename</source>
+        <translation>تعذّرت إعادة التسمية</translation>
+    </message>
+    <message>
+        <source>Rename preset</source>
+        <translation>إعادة تسمية الإعداد المسبق</translation>
+    </message>
+    <message>
+        <source>New name:</source>
+        <translation>الاسم الجديد:</translation>
+    </message>
+    <message>
+        <source>Auto-switch EQ when a known game launches</source>
+        <translation>تبديل موازن الصوت تلقائيًا عند تشغيل لعبة معروفة</translation>
     </message>
 </context>
 <context>
@@ -347,6 +455,50 @@
     <message>
         <source>Enable</source>
         <translation>تفعيل</translation>
+    </message>
+    <message>
+        <source>Use Default</source>
+        <translation>استخدم الافتراضي</translation>
+    </message>
+    <message>
+        <source>Browse…</source>
+        <translation>استعراض…</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>مسح</translation>
+    </message>
+    <message>
+        <source>(no HRIR file selected)</source>
+        <translation>(لم يتم اختيار ملف HRIR)</translation>
+    </message>
+    <message>
+        <source>Virtual Surround (7.1)</source>
+        <translation>الصوت المحيطي الافتراضي (7.1)</translation>
+    </message>
+    <message>
+        <source>HRIR File</source>
+        <translation>ملف HRIR</translation>
+    </message>
+    <message>
+        <source>Enable virtual surround</source>
+        <translation>تفعيل الصوت المحيطي الافتراضي</translation>
+    </message>
+    <message>
+        <source>Loads the SteelSurround 7.1 sink + HRIR convolver chain.</source>
+        <translation>يحمّل مخرج SteelSurround 7.1 + سلسلة معالجة HRIR.</translation>
+    </message>
+    <message>
+        <source>Apps see a SteelSurround 7.1 sink; PipeWire convolves each surround channel with your HRIR file and feeds the result to the headset as binaural stereo. Useful for 5.1 / 7.1 games and movies; stereo content is unaffected.</source>
+        <translation>التطبيقات ترى مخرج SteelSurround 7.1؛ يُطبّق PipeWire التحويل التلافيفي على كل قناة محيطية باستخدام ملف HRIR ويُرسل النتيجة إلى السماعة كصوت مجسم. مفيد لألعاب وأفلام 5.1/7.1؛ المحتوى الستيريو لا يتأثر.</translation>
+    </message>
+    <message>
+        <source>HeSuVi-format 14-channel WAV expected. The Use Default button fetches a generic reference HRIR from upstream (works fine for casual use); for tuned positioning try the HeSuVi GitHub release (Atmos / DTS Headphone / GoodHurt presets) or generate a personalised HRTF with Impulcifer.</source>
+        <translation>يُتوقَّع ملف WAV بصيغة HeSuVi بـ 14 قناة. زر "استخدم الافتراضي" يجلب HRIR مرجعي عام من المصدر (مناسب للاستخدام العادي)؛ للحصول على تموضع أفضل جرّب إصدار HeSuVi على GitHub (إعدادات Atmos / DTS Headphone / GoodHurt) أو ولّد HRTF شخصي باستخدام Impulcifer.</translation>
+    </message>
+    <message>
+        <source>Fetch a generic HeSuVi-format HRIR from upstream (EAC_Default.wav, ~165 KB) and use it. You can replace it with your own file via Browse at any time.</source>
+        <translation>اجلب ملف HRIR عام بصيغة HeSuVi من المصدر (EAC_Default.wav، ~165 ك.ب) واستخدمه. يمكنك استبداله بملفك الخاص عبر زر استعراض في أي وقت.</translation>
     </message>
 </context>
 <context>

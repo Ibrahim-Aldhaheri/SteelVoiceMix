@@ -691,7 +691,7 @@ class MicrophoneTab(QWidget):
         if checked:
             ok, err = self._voice_test.start()
             if not ok:
-                QMessageBox.warning(self, "Voice-test failed", err)
+                QMessageBox.warning(self, self.tr("Voice-test failed"), err)
                 # The service didn't start — flip the button back
                 # without re-firing toggled (signals re-emit on
                 # programmatic setChecked, but the connected slot

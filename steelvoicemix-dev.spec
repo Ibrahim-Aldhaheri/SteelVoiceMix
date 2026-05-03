@@ -37,7 +37,7 @@
 # stable release.
 
 Name:           steelvoicemix
-Version:        0.4.2~beta2
+Version:        0.4.2~beta3
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta / dev channel)
 

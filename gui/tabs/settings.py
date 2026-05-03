@@ -93,7 +93,7 @@ class SettingsTab(QWidget):
         self.overlay_toggle.toggled.connect(self._toggle_overlay)
 
         position_row = QHBoxLayout()
-        pos_lbl = QLabel("Position")
+        pos_lbl = QLabel(self.tr("Position"))
         pos_lbl.setFixedWidth(80)
         self.position_combo = QComboBox()
         self.position_combo.addItems(list(POSITION_DISPLAY.values()))
@@ -108,7 +108,7 @@ class SettingsTab(QWidget):
         position_row.addWidget(self.position_combo, 1)
 
         orient_row = QHBoxLayout()
-        ori_lbl = QLabel("Style")
+        ori_lbl = QLabel(self.tr("Style"))
         ori_lbl.setFixedWidth(80)
         self.orient_combo = QComboBox()
         self.orient_combo.addItems(["Horizontal", "Vertical"])
@@ -123,7 +123,7 @@ class SettingsTab(QWidget):
         orient_row.addWidget(ori_lbl)
         orient_row.addWidget(self.orient_combo, 1)
 
-        layout.addWidget(card("Overlay", overlay_row, position_row, orient_row))
+        layout.addWidget(card(self.tr("Overlay"), overlay_row, position_row, orient_row))
 
         # Appearance card ---------------------------------------------
         # Auto = follow the system colour scheme (Qt 6.5+ honours the
@@ -244,7 +244,7 @@ class SettingsTab(QWidget):
         from PySide6.QtGui import QKeySequence
         from PySide6.QtWidgets import QKeySequenceEdit
         cycle_combo_row = QHBoxLayout()
-        combo_lbl = QLabel("Key combo")
+        combo_lbl = QLabel(self.tr("Key combo"))
         combo_lbl.setFixedWidth(80)
         self.cycle_keyseq_edit = QKeySequenceEdit(
             QKeySequence(
@@ -252,11 +252,13 @@ class SettingsTab(QWidget):
             )
         )
         self.cycle_keyseq_edit.setMaximumWidth(220)
-        self.register_btn = QPushButton("Register")
+        self.register_btn = QPushButton(self.tr("Register"))
         self.register_btn.setToolTip(
-            "Save the key combo currently shown in the field. After "
-            "registering, the shortcut takes effect immediately — no "
-            "GUI restart needed."
+            self.tr(
+                "Save the key combo currently shown in the field. After "
+                "registering, the shortcut takes effect immediately — no "
+                "GUI restart needed."
+            )
         )
         self.register_btn.clicked.connect(self._register_cycle_combo)
         cycle_combo_row.addWidget(combo_lbl)
@@ -271,7 +273,7 @@ class SettingsTab(QWidget):
         excludes = self._settings.get("default_sink_cycle_exclude") or []
         excludes_set = set(excludes)
         exclude_row = QHBoxLayout()
-        exclude_lbl = QLabel("Exclude")
+        exclude_lbl = QLabel(self.tr("Exclude"))
         exclude_lbl.setFixedWidth(80)
         exclude_row.addWidget(exclude_lbl)
         self._cycle_exclude_checkboxes: dict[str, QCheckBox] = {}
@@ -340,26 +342,28 @@ class SettingsTab(QWidget):
 
         # Profiles card ------------------------------------------------
         profile_row = QHBoxLayout()
-        profile_row.addWidget(QLabel("Saved:"))
+        profile_row.addWidget(QLabel(self.tr("Saved:")))
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(140)
         self._refresh_profile_combo()
         profile_row.addWidget(self.profile_combo, 1)
 
         profile_btns = QHBoxLayout()
-        load_btn = QPushButton("Load")
+        load_btn = QPushButton(self.tr("Load"))
         load_btn.clicked.connect(self._load_selected_profile)
-        save_btn = QPushButton("Save…")
+        save_btn = QPushButton(self.tr("Save…"))
         save_btn.clicked.connect(self._save_new_profile)
-        del_btn = QPushButton("Delete")
+        del_btn = QPushButton(self.tr("Delete"))
         del_btn.clicked.connect(self._delete_selected_profile)
         profile_btns.addWidget(load_btn)
         profile_btns.addWidget(save_btn)
         profile_btns.addWidget(del_btn)
 
         profile_help = QLabel(
-            "A profile snapshots overlay options + Media/HDMI sink toggles. "
-            "Save the current setup, switch quickly, restore in one click."
+            self.tr(
+                "A profile snapshots overlay options + Media/HDMI sink toggles. "
+                "Save the current setup, switch quickly, restore in one click."
+            )
         )
         profile_help.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
@@ -380,7 +384,7 @@ class SettingsTab(QWidget):
         # tell at a glance this card is the experimental one — the
         # rest of the Settings tab is stable preferences.
         alpha_title_row = QHBoxLayout()
-        alpha_title = QLabel("Alpha Channel")
+        alpha_title = QLabel(self.tr("Alpha Channel"))
         alpha_title.setStyleSheet("font-size: 12px; font-weight: bold;")
         alpha_pill = QLabel("ALPHA")
         alpha_pill.setStyleSheet(
@@ -805,7 +809,7 @@ class SettingsTab(QWidget):
                 mic_state=self._gather_mic_state(),
             )
         except ValueError as e:
-            QMessageBox.warning(self, "Invalid profile name", str(e))
+            QMessageBox.warning(self, self.tr("Invalid profile name"), str(e))
             return
         self._refresh_profile_combo()
         idx = self.profile_combo.findText(name.strip())

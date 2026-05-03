@@ -294,12 +294,12 @@ class EqualizerTab(QWidget):
         # require explicit confirmation: saving the current state,
         # renaming a user preset, deleting a user preset.
         preset_btn_row = QHBoxLayout()
-        self.preset_save_btn = QPushButton("Save…")
+        self.preset_save_btn = QPushButton(self.tr("Save…"))
         self.preset_save_btn.clicked.connect(self._on_preset_save)
-        self.preset_rename_btn = QPushButton("Rename…")
+        self.preset_rename_btn = QPushButton(self.tr("Rename…"))
         self.preset_rename_btn.clicked.connect(self._on_preset_rename)
         self.preset_rename_btn.setEnabled(False)
-        self.preset_delete_btn = QPushButton("Delete")
+        self.preset_delete_btn = QPushButton(self.tr("Delete"))
         self.preset_delete_btn.clicked.connect(self._on_preset_delete)
         self.preset_delete_btn.setEnabled(False)
         preset_btn_row.addWidget(self.preset_save_btn)
@@ -502,7 +502,7 @@ class EqualizerTab(QWidget):
         if checked:
             ok, err = self._voice_test.start()
             if not ok:
-                QMessageBox.warning(self, "Voice-test failed", err)
+                QMessageBox.warning(self, self.tr("Voice-test failed"), err)
                 self.voice_test_btn.setChecked(False)
         else:
             self._voice_test.stop()
@@ -535,7 +535,7 @@ class EqualizerTab(QWidget):
         directly to the GameProfileManager for runtime state and to
         settings.json for persistence."""
         auto_row, self.auto_game_toggle = labelled_toggle(
-            "Auto-switch EQ when a known game launches",
+            self.tr("Auto-switch EQ when a known game launches"),
             badge="ALPHA",
         )
         self.auto_game_toggle.setChecked(
@@ -543,7 +543,7 @@ class EqualizerTab(QWidget):
         )
         self.auto_game_toggle.toggled.connect(self._toggle_auto_game)
 
-        self.detected_label = QLabel("Currently detected: none")
+        self.detected_label = QLabel(self.tr("Currently detected: none"))
         self.detected_label.setWordWrap(True)
         self.detected_label.setStyleSheet(
             "font-size: 10px; padding: 4px 0; "
@@ -579,9 +579,9 @@ class EqualizerTab(QWidget):
         self._refresh_bindings_table()
 
         bindings_btns = QHBoxLayout()
-        add_btn = QPushButton("Add binding…")
+        add_btn = QPushButton(self.tr("Add binding…"))
         add_btn.clicked.connect(self._add_binding)
-        del_btn = QPushButton("Remove selected")
+        del_btn = QPushButton(self.tr("Remove selected"))
         del_btn.clicked.connect(self._remove_binding)
         bindings_btns.addWidget(add_btn)
         bindings_btns.addWidget(del_btn)
@@ -696,7 +696,7 @@ class EqualizerTab(QWidget):
         self, name: str, preset, on_steel_game: bool
     ) -> None:
         if not name:
-            self.detected_label.setText("Currently detected: none")
+            self.detected_label.setText(self.tr("Currently detected: none"))
             self.detected_label.setStyleSheet(
                 "font-size: 10px; padding: 4px 0; "
                 "color: palette(placeholder-text);"
@@ -1379,7 +1379,7 @@ class EqualizerTab(QWidget):
                 self._bands_by_channel[self._current_channel],
             )
         except ValueError as e:
-            QMessageBox.warning(self, "Could not save preset", str(e))
+            QMessageBox.warning(self, self.tr("Could not save preset"), str(e))
             return
         self._active_preset_by_channel[self._current_channel] = name.strip()
         self._refresh_preset_combo()
@@ -1390,8 +1390,8 @@ class EqualizerTab(QWidget):
             return
         new_name, ok = QInputDialog.getText(
             self,
-            "Rename preset",
-            "New name:",
+            self.tr("Rename preset"),
+            self.tr("New name:"),
             text=old_name,
         )
         if not ok or not new_name.strip() or new_name.strip() == old_name:
@@ -1399,7 +1399,7 @@ class EqualizerTab(QWidget):
         try:
             rename_user_preset(old_name, new_name.strip(), self._current_channel)
         except ValueError as e:
-            QMessageBox.warning(self, "Could not rename", str(e))
+            QMessageBox.warning(self, self.tr("Could not rename"), str(e))
             return
         # Keep the favourites list in sync with the new name so the star
         # row at the top of the dropdown stays consistent.

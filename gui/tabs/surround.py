@@ -44,56 +44,62 @@ class SurroundTab(QWidget):
 
         # Intro card ----------------------------------------------------
         intro = QLabel(
-            "Apps see a SteelSurround 7.1 sink; PipeWire convolves "
-            "each surround channel with your HRIR file and feeds the "
-            "result to the headset as binaural stereo. Useful for "
-            "5.1 / 7.1 games and movies; stereo content is unaffected."
+            self.tr(
+                "Apps see a SteelSurround 7.1 sink; PipeWire convolves "
+                "each surround channel with your HRIR file and feeds the "
+                "result to the headset as binaural stereo. Useful for "
+                "5.1 / 7.1 games and movies; stereo content is unaffected."
+            )
         )
         intro.setWordWrap(True)
         intro.setStyleSheet("font-size: 11px;")
-        layout.addWidget(card("Virtual Surround (7.1)", intro))
+        layout.addWidget(card(self.tr("Virtual Surround (7.1)"), intro))
 
         # HRIR file card -----------------------------------------------
         path_row = QHBoxLayout()
         self.path_edit = QLineEdit()
         self.path_edit.setReadOnly(True)
-        self.path_edit.setPlaceholderText("(no HRIR file selected)")
+        self.path_edit.setPlaceholderText(self.tr("(no HRIR file selected)"))
         self.path_edit.setMinimumWidth(220)
         path_row.addWidget(self.path_edit, 1)
-        self.default_btn = QPushButton("Use Default")
+        self.default_btn = QPushButton(self.tr("Use Default"))
         self.default_btn.setToolTip(
-            "Fetch a generic HeSuVi-format HRIR from upstream "
-            "(EAC_Default.wav, ~165 KB) and use it. You can replace it "
-            "with your own file via Browse at any time."
+            self.tr(
+                "Fetch a generic HeSuVi-format HRIR from upstream "
+                "(EAC_Default.wav, ~165 KB) and use it. You can replace it "
+                "with your own file via Browse at any time."
+            )
         )
         self.default_btn.clicked.connect(self._on_use_default)
         path_row.addWidget(self.default_btn)
-        self.browse_btn = QPushButton("Browse…")
+        self.browse_btn = QPushButton(self.tr("Browse…"))
         self.browse_btn.clicked.connect(self._on_browse)
         path_row.addWidget(self.browse_btn)
-        self.clear_btn = QPushButton("Clear")
+        self.clear_btn = QPushButton(self.tr("Clear"))
         self.clear_btn.clicked.connect(self._on_clear)
         self.clear_btn.setEnabled(False)
         path_row.addWidget(self.clear_btn)
 
         hrir_help = QLabel(
-            "HeSuVi-format 14-channel WAV expected. The Use Default "
-            "button fetches a generic reference HRIR from upstream "
-            "(works fine for casual use); for tuned positioning try "
-            "the HeSuVi GitHub release (Atmos / DTS Headphone / "
-            "GoodHurt presets) or generate a personalised HRTF with "
-            "Impulcifer."
+            self.tr(
+                "HeSuVi-format 14-channel WAV expected. The Use Default "
+                "button fetches a generic reference HRIR from upstream "
+                "(works fine for casual use); for tuned positioning try "
+                "the HeSuVi GitHub release (Atmos / DTS Headphone / "
+                "GoodHurt presets) or generate a personalised HRTF with "
+                "Impulcifer."
+            )
         )
         hrir_help.setWordWrap(True)
         hrir_help.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
         )
-        layout.addWidget(card("HRIR File", path_row, hrir_help))
+        layout.addWidget(card(self.tr("HRIR File"), path_row, hrir_help))
 
         # Enable card --------------------------------------------------
         toggle_row, self.enable_toggle = labelled_toggle(
-            "Enable virtual surround",
-            tooltip="Loads the SteelSurround 7.1 sink + HRIR convolver chain.",
+            self.tr("Enable virtual surround"),
+            tooltip=self.tr("Loads the SteelSurround 7.1 sink + HRIR convolver chain."),
         )
         self.enable_toggle.setEnabled(False)
         self.enable_toggle.toggled.connect(self._on_toggled)
