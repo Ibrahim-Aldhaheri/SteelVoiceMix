@@ -602,12 +602,14 @@ class MixerGUI(QMainWindow):
         cache before querying so the result reflects what's on GitHub
         right now, not whatever was cached up to 24 h ago."""
         self._update_checker = None
-        self.update_label.setText("Checking…")
+        self.update_label.setText(self.tr("Checking…"))
         self._start_update_check(force=True)
 
     def _on_update_available(self, latest_tag: str, current_version: str) -> None:
         self.update_label.setText(
-            f"Update available: {latest_tag} (you have {current_version})"
+            self.tr("Update available: {latest} (you have {current})").format(
+                latest=latest_tag, current=current_version,
+            )
         )
         self.update_label.setStyleSheet(
             "color: #FF9800; font-size: 10px; font-weight: bold;"
@@ -623,7 +625,7 @@ class MixerGUI(QMainWindow):
         # Reachable upstream but no version tag found — typical for repos
         # that haven't cut a release yet, or for forks. Different from
         # offline; don't blame the network.
-        self.update_label.setText("No published release found")
+        self.update_label.setText(self.tr("No published release found"))
         self.update_label.setStyleSheet(
             "color: palette(placeholder-text); font-size: 10px;"
         )

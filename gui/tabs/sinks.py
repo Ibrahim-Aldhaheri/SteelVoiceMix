@@ -58,9 +58,13 @@ class _ChannelBoostRow:
         self.label.setFixedWidth(80)
         self.layout.addWidget(self.label)
 
+        from PySide6.QtCore import QCoreApplication
         self.toggle = ToggleSwitch()
         self.toggle.setToolTip(
-            f"Enable digital volume boost for the {channel.title()} channel"
+            QCoreApplication.translate(
+                "SinksTab",
+                "Enable digital volume boost for the {channel} channel",
+            ).format(channel=channel.title())
         )
         self.toggle.toggled.connect(self._on_toggle)
         self.layout.addWidget(self.toggle, 0, Qt.AlignVCenter)
@@ -120,17 +124,23 @@ class _ChannelBoostRow:
         self._available = available
         self.toggle.setEnabled(available)
         self.slider.setEnabled(available and self.toggle.isChecked())
+        from PySide6.QtCore import QCoreApplication
         if not available:
             # Keep stored multiplier_pct as-is so the user's chosen
             # boost survives a sink toggle round-trip.
             self.warn.setVisible(False)
-            tip = (
-                f"Add the {self.channel.title()} sink first to use boost"
+            self.toggle.setToolTip(
+                QCoreApplication.translate(
+                    "SinksTab",
+                    "Add the {channel} sink first to use boost",
+                ).format(channel=self.channel.title())
             )
-            self.toggle.setToolTip(tip)
         else:
             self.toggle.setToolTip(
-                f"Enable digital volume boost for the {self.channel.title()} channel"
+                QCoreApplication.translate(
+                    "SinksTab",
+                    "Enable digital volume boost for the {channel} channel",
+                ).format(channel=self.channel.title())
             )
 
     # ----- input handlers --------------------------------------------------
@@ -199,7 +209,7 @@ class SinksTab(QWidget):
         hdmi_lbl = QLabel(self.tr("📺  HDMI"))
         hdmi_lbl.setFixedWidth(80)
         hdmi_alpha = alpha_badge(
-            tooltip=(
+            tooltip=self.tr(
                 "Alpha — not yet hardware-verified against a real "
                 "HDMI sink (TV / AVR)."
             )
@@ -228,8 +238,8 @@ class SinksTab(QWidget):
         # Marked ALPHA — author hasn't pushed on it and treats it as
         # nice-to-have (per the user's flagged-as-experimental note).
         auto_row, self.auto_route_toggle = labelled_toggle(
-            "Route browsers and media players to SteelMedia automatically",
-            tooltip=(
+            self.tr("Route browsers and media players to SteelMedia automatically"),
+            tooltip=self.tr(
                 "Alpha — lightly tested. When enabled, the daemon moves "
                 "new browser and media-player audio streams (Firefox, "
                 "Chromium, mpv, VLC…) to the SteelMedia sink so they "

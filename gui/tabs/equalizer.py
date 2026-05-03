@@ -210,8 +210,8 @@ class EqualizerTab(QWidget):
 
         # Enable + channel selector card -------------------------------
         enable_row, self.eq_toggle = labelled_toggle(
-            f"Enable {NUM_EQ_BANDS}-band parametric EQ",
-            tooltip=(
+            self.tr("Enable {n}-band parametric EQ").format(n=NUM_EQ_BANDS),
+            tooltip=self.tr(
                 "Inserts a PipeWire filter chain between every loaded "
                 "virtual sink (Game / Chat / Media / HDMI) and the "
                 "downstream target. The user-facing sinks stay put across "
@@ -320,7 +320,7 @@ class EqualizerTab(QWidget):
         self.favourites_buttons_row = QHBoxLayout()
         self.favourites_buttons_row.setSpacing(6)
         self.favourites_empty_hint = QLabel(
-            "No favourites yet — tap ★ next to a preset to pin it here."
+            self.tr("No favourites yet — tap ★ next to a preset to pin it here.")
         )
         self.favourites_empty_hint.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
@@ -399,9 +399,11 @@ class EqualizerTab(QWidget):
             bands_row.addLayout(band_col)
 
         eq_help = QLabel(
-            "Drag a slider to boost or cut a frequency band by up to "
-            "±12 dB. Each release respawns the filter chain with the new "
-            "gains (~100 ms audio glitch per change)."
+            self.tr(
+                "Drag a slider to boost or cut a frequency band by up to "
+                "±12 dB. Each release respawns the filter chain with the new "
+                "gains (~100 ms audio glitch per change)."
+            )
         )
         eq_help.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
@@ -416,7 +418,7 @@ class EqualizerTab(QWidget):
             self.test_audio_combo.addItem(label)
         self.test_audio_combo.setMinimumWidth(200)
         test_row.addWidget(self.test_audio_combo, 1)
-        self.test_play_btn = QPushButton("▶ Play")
+        self.test_play_btn = QPushButton(self.tr("▶ Play"))
         self.test_play_btn.clicked.connect(self._on_test_play)
         self.test_stop_btn = QPushButton("⏹")
         self.test_stop_btn.setFixedWidth(36)
@@ -425,20 +427,24 @@ class EqualizerTab(QWidget):
         test_row.addWidget(self.test_play_btn)
         test_row.addWidget(self.test_stop_btn)
         test_warn = QLabel(
-            "⚠ Drop system volume to ~10–20% BEFORE pressing Play. "
-            "These clips are intentionally whisper-quiet to protect "
-            "your hearing, but if your headset gain or system volume "
-            "is high they can still be uncomfortable. Hit Stop "
-            "immediately if anything feels too loud."
+            self.tr(
+                "⚠ Drop system volume to ~10–20% BEFORE pressing Play. "
+                "These clips are intentionally whisper-quiet to protect "
+                "your hearing, but if your headset gain or system volume "
+                "is high they can still be uncomfortable. Hit Stop "
+                "immediately if anything feels too loud."
+            )
         )
         test_warn.setWordWrap(True)
         test_warn.setStyleSheet(
             "font-size: 11px; font-weight: bold; color: #FF9800;"
         )
         test_help = QLabel(
-            "Reference signals for ear-checking the EQ — pink noise "
-            "is the recommended starting point. Each clip ramps in over "
-            "200 ms so even the onset is gentle."
+            self.tr(
+                "Reference signals for ear-checking the EQ — pink noise "
+                "is the recommended starting point. Each clip ramps in over "
+                "200 ms so even the onset is gentle."
+            )
         )
         test_help.setWordWrap(True)
         test_help.setStyleSheet(
@@ -472,7 +478,7 @@ class EqualizerTab(QWidget):
 
     def _build_voice_test_card(self) -> QWidget:
         btn_row = QHBoxLayout()
-        self.voice_test_btn = QPushButton("🎧  Hear yourself (test mic)")
+        self.voice_test_btn = QPushButton(self.tr("🎧  Hear yourself (test mic)"))
         self.voice_test_btn.setCheckable(True)
         self.voice_test_btn.setMaximumWidth(280)
         self.voice_test_btn.toggled.connect(self._on_voice_test_toggled)
@@ -480,9 +486,11 @@ class EqualizerTab(QWidget):
         btn_row.addStretch(1)
 
         help_lbl = QLabel(
-            "Loops the processed SteelMic back through your headset "
-            "so you can A/B the EQ live. Same control as the "
-            "Microphone tab — toggling either button drives both."
+            self.tr(
+                "Loops the processed SteelMic back through your headset "
+                "so you can A/B the EQ live. Same control as the "
+                "Microphone tab — toggling either button drives both."
+            )
         )
         help_lbl.setWordWrap(True)
         help_lbl.setStyleSheet(
@@ -588,15 +596,17 @@ class EqualizerTab(QWidget):
         bindings_btns.addStretch(1)
 
         help_lbl = QLabel(
-            "When on, the app watches PipeWire for active audio "
-            "clients and applies a matching ASM preset to the Game "
-            "channel. The table below overrides the auto-match — bind "
-            "the same preset to several games to share one tuning. "
-            "Closing the game restores whatever EQ you had before. "
-            "Note: the EQ only takes effect when the game's audio is "
-            "routed to SteelGame; if the status above says 'not on "
-            "SteelGame', move the stream via your system audio "
-            "settings or pavucontrol."
+            self.tr(
+                "When on, the app watches PipeWire for active audio "
+                "clients and applies a matching ASM preset to the Game "
+                "channel. The table below overrides the auto-match — bind "
+                "the same preset to several games to share one tuning. "
+                "Closing the game restores whatever EQ you had before. "
+                "Note: the EQ only takes effect when the game's audio is "
+                "routed to SteelGame; if the status above says 'not on "
+                "SteelGame', move the stream via your system audio "
+                "settings or pavucontrol."
+            )
         )
         help_lbl.setWordWrap(True)
         help_lbl.setStyleSheet(

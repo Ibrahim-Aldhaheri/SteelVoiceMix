@@ -87,7 +87,7 @@ class SettingsTab(QWidget):
 
         # Overlay card -------------------------------------------------
         overlay_row, self.overlay_toggle = labelled_toggle(
-            "Show overlay when dial is turned"
+            self.tr("Show overlay when dial is turned")
         )
         self.overlay_toggle.setChecked(self._settings.get("overlay", True))
         self.overlay_toggle.toggled.connect(self._toggle_overlay)
@@ -144,8 +144,10 @@ class SettingsTab(QWidget):
         theme_row.addWidget(self.theme_combo, 1)
 
         theme_help = QLabel(
-            "Auto follows your desktop's light / dark setting. Pick "
-            "Light or Dark to override."
+            self.tr(
+                "Auto follows your desktop's light / dark setting. Pick "
+                "Light or Dark to override."
+            )
         )
         theme_help.setWordWrap(True)
         theme_help.setStyleSheet(
@@ -210,8 +212,8 @@ class SettingsTab(QWidget):
         self.autostart_toggle.toggled.connect(self._toggle_autostart)
 
         start_min_row, self.start_min_toggle = labelled_toggle(
-            "Start minimised to system tray",
-            tooltip=(
+            self.tr("Start minimised to system tray"),
+            tooltip=self.tr(
                 "When enabled, the app launches hidden in the tray "
                 "instead of opening its window. Click the tray icon "
                 "to bring the window up. Ignored on sessions without "
@@ -234,7 +236,7 @@ class SettingsTab(QWidget):
         # (system-wide) shortcuts can bind their DE's keyboard
         # settings to a shell command — TBD whether we ship a CLI.
         cycle_row, self.cycle_toggle = labelled_toggle(
-            "Cycle default sink shortcut",
+            self.tr("Cycle default sink shortcut"),
         )
         self.cycle_toggle.setChecked(
             bool(self._settings.get("default_sink_cycle_enabled", False))
@@ -286,10 +288,12 @@ class SettingsTab(QWidget):
         exclude_row.addStretch(1)
 
         cycle_help = QLabel(
-            "Qt shortcuts only fire while the GUI has focus — for "
-            "system-wide bindings, point your desktop's keyboard "
-            "settings at <code>steelvoicemix-cli sink cycle</code>. "
-            "Restart the GUI after changing the combo to apply."
+            self.tr(
+                "Qt shortcuts only fire while the GUI has focus — for "
+                "system-wide bindings, point your desktop's keyboard "
+                "settings at <code>steelvoicemix-cli sink cycle</code>. "
+                "Restart the GUI after changing the combo to apply."
+            )
         )
         cycle_help.setWordWrap(True)
         cycle_help.setTextFormat(Qt.RichText)
@@ -312,8 +316,8 @@ class SettingsTab(QWidget):
         #     up or drops. On by default (matches the legacy
         #     --no-notify-as-only-control behaviour).
         minimize_row, self.minimize_toggle = labelled_toggle(
-            "Show toast when minimised to tray",
-            tooltip=(
+            self.tr("Show toast when minimised to tray"),
+            tooltip=self.tr(
                 "When the window is closed with the X button, it hides "
                 "to the system tray. Enable this to see a confirmation "
                 "toast every time that happens. Off by default."
@@ -325,8 +329,8 @@ class SettingsTab(QWidget):
         self.minimize_toggle.toggled.connect(self._toggle_minimize_hint)
 
         daemon_notif_row, self.daemon_notif_toggle = labelled_toggle(
-            "Show 🎧 connect / disconnect notifications",
-            tooltip=(
+            self.tr("Show 🎧 connect / disconnect notifications"),
+            tooltip=self.tr(
                 "Desktop notifications emitted by the daemon when the "
                 "base station connects or drops. Distinct from the "
                 "minimize-to-tray toast above — those are GUI-side."
@@ -397,14 +401,14 @@ class SettingsTab(QWidget):
         alpha_title_row.addStretch(1)
 
         alpha_btns = QHBoxLayout()
-        self.alpha_enable_btn = QPushButton("📋 Switch to alpha")
+        self.alpha_enable_btn = QPushButton(self.tr("📋 Switch to alpha"))
         self.alpha_enable_btn.setToolTip(
-            "Copy the dnf commands that swap to the alpha COPR repo."
+            self.tr("Copy the dnf commands that swap to the alpha COPR repo.")
         )
         self.alpha_enable_btn.clicked.connect(self._copy_alpha_enable)
-        self.alpha_disable_btn = QPushButton("📋 Back to stable")
+        self.alpha_disable_btn = QPushButton(self.tr("📋 Back to stable"))
         self.alpha_disable_btn.setToolTip(
-            "Copy the dnf commands that switch back to the stable repo."
+            self.tr("Copy the dnf commands that switch back to the stable repo.")
         )
         self.alpha_disable_btn.clicked.connect(self._copy_alpha_disable)
         alpha_btns.addWidget(self.alpha_enable_btn)
@@ -412,13 +416,15 @@ class SettingsTab(QWidget):
         alpha_btns.addStretch(1)
 
         alpha_help = QLabel(
-            "Alpha builds rebuild from the dev branch on every commit "
-            "— bleeding-edge features, but expect rough edges. "
-            "Clicking either button copies the dnf commands to your "
-            "clipboard; paste into a terminal to actually switch. "
-            "After the swap, run `sudo dnf upgrade steelvoicemix` to "
-            "pull the new build. Going back to stable downgrades "
-            "cleanly via dnf."
+            self.tr(
+                "Alpha builds rebuild from the dev branch on every commit "
+                "— bleeding-edge features, but expect rough edges. "
+                "Clicking either button copies the dnf commands to your "
+                "clipboard; paste into a terminal to actually switch. "
+                "After the swap, run `sudo dnf upgrade steelvoicemix` to "
+                "pull the new build. Going back to stable downgrades "
+                "cleanly via dnf."
+            )
         )
         alpha_help.setWordWrap(True)
         alpha_help.setStyleSheet(
@@ -431,20 +437,24 @@ class SettingsTab(QWidget):
 
         # Help / Report issue card -----------------------------------
         help_row = QHBoxLayout()
-        self.report_btn = QPushButton("📋  Copy diagnostic + open new issue")
+        self.report_btn = QPushButton(self.tr("📋  Copy diagnostic + open new issue"))
         self.report_btn.setToolTip(
-            "Captures the daemon's recent journal output, the GUI "
-            "version, and your settings.json (sanitised), copies it "
-            "to the clipboard, and opens the SteelVoiceMix 'New "
-            "Issue' page in your browser. Paste into the body."
+            self.tr(
+                "Captures the daemon's recent journal output, the GUI "
+                "version, and your settings.json (sanitised), copies it "
+                "to the clipboard, and opens the SteelVoiceMix 'New "
+                "Issue' page in your browser. Paste into the body."
+            )
         )
         self.report_btn.clicked.connect(self._on_report_issue)
         help_row.addWidget(self.report_btn)
         help_row.addStretch(1)
         help_text = QLabel(
-            "Filing a bug report is a 2-step flow: this button does "
-            "step 1 (copy diagnostic) and opens step 2 (the issue "
-            "page) — paste the clipboard into the body."
+            self.tr(
+                "Filing a bug report is a 2-step flow: this button does "
+                "step 1 (copy diagnostic) and opens step 2 (the issue "
+                "page) — paste the clipboard into the body."
+            )
         )
         help_text.setWordWrap(True)
         help_text.setStyleSheet(
@@ -456,20 +466,24 @@ class SettingsTab(QWidget):
         reset_row = QHBoxLayout()
         self.reset_btn = QPushButton(self.tr("Reset to defaults…"))
         self.reset_btn.setToolTip(
-            "Reset every preference (overlay, sinks, EQ, surround, "
-            "notification toggles) to its default value. Saved audio "
-            "profiles are preserved."
+            self.tr(
+                "Reset every preference (overlay, sinks, EQ, surround, "
+                "notification toggles) to its default value. Saved audio "
+                "profiles are preserved."
+            )
         )
         self.reset_btn.clicked.connect(self._on_reset_clicked)
         reset_row.addWidget(self.reset_btn)
         reset_row.addStretch(1)
 
         reset_help = QLabel(
-            "Wipes overlay options, autostart, notification prefs, EQ "
-            "state, surround state, and the Media / HDMI sink toggles "
-            "back to their factory defaults. Saved audio profiles are "
-            "kept — delete them individually above if you want them "
-            "gone too."
+            self.tr(
+                "Wipes overlay options, autostart, notification prefs, EQ "
+                "state, surround state, and the Media / HDMI sink toggles "
+                "back to their factory defaults. Saved audio profiles are "
+                "kept — delete them individually above if you want them "
+                "gone too."
+            )
         )
         reset_help.setWordWrap(True)
         reset_help.setStyleSheet(
@@ -906,15 +920,17 @@ class SettingsTab(QWidget):
         saved audio profiles are explicitly preserved."""
         confirm = QMessageBox.warning(
             self,
-            "Reset to defaults",
-            "This will reset every preference back to its default:\n\n"
-            "  • Overlay options + autostart\n"
-            "  • Notification toggles\n"
-            "  • EQ state (sliders + per-channel tunings)\n"
-            "  • Surround on/off + HRIR path\n"
-            "  • Media / HDMI sink toggles\n"
-            "  • Browser auto-routing\n\n"
-            "Saved audio profiles are KEPT.\n\nContinue?",
+            self.tr("Reset to defaults"),
+            self.tr(
+                "This will reset every preference back to its default:\n\n"
+                "  • Overlay options + autostart\n"
+                "  • Notification toggles\n"
+                "  • EQ state (sliders + per-channel tunings)\n"
+                "  • Surround on/off + HRIR path\n"
+                "  • Media / HDMI sink toggles\n"
+                "  • Browser auto-routing\n\n"
+                "Saved audio profiles are KEPT.\n\nContinue?"
+            ),
             QMessageBox.Yes | QMessageBox.Cancel,
             QMessageBox.Cancel,
         )

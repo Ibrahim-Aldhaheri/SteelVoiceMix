@@ -222,9 +222,11 @@ class MicrophoneTab(QWidget):
             "padding: 2px 6px; border-radius: 8px;"
         )
         alpha_text = QLabel(
-            "All microphone features on this tab are still being "
-            "tested. Behaviour may change between releases; report "
-            "issues on GitHub."
+            self.tr(
+                "All microphone features on this tab are still being "
+                "tested. Behaviour may change between releases; report "
+                "issues on GitHub."
+            )
         )
         alpha_text.setWordWrap(True)
         alpha_text.setStyleSheet("font-size: 11px;")
@@ -232,9 +234,11 @@ class MicrophoneTab(QWidget):
         alpha_row.addWidget(alpha_text, 1)
 
         intro = QLabel(
-            "Apply capture-side processing to your headset's microphone. "
-            "Apps record from the SteelMic source — selectable in your "
-            "system audio settings or per-app input picker."
+            self.tr(
+                "Apply capture-side processing to your headset's microphone. "
+                "Apps record from the SteelMic source — selectable in your "
+                "system audio settings or per-app input picker."
+            )
         )
         intro.setWordWrap(True)
         intro.setStyleSheet(
@@ -246,26 +250,32 @@ class MicrophoneTab(QWidget):
             layout,
             "noise_gate",
             self.tr("Noise Gate"),
-            "Mutes the mic when input level falls below the threshold. "
-            "Higher strength = more aggressive (cuts more background "
-            "sound; may clip the start of soft speech). Provided by "
-            "swh-plugins' gate_1410.",
+            self.tr(
+                "Mutes the mic when input level falls below the threshold. "
+                "Higher strength = more aggressive (cuts more background "
+                "sound; may clip the start of soft speech). Provided by "
+                "swh-plugins' gate_1410."
+            ),
         )
         self.nr_toggle, self.nr_slider, self.nr_value = self._add_feature_card(
             layout,
             "noise_reduction",
             self.tr("Noise Reduction"),
-            "Mild RNNoise denoiser — removes constant background hum, "
-            "fan noise, keyboard clatter. Capped at 50% VAD threshold "
-            "for a lighter touch than AI NC.",
+            self.tr(
+                "Mild RNNoise denoiser — removes constant background hum, "
+                "fan noise, keyboard clatter. Capped at 50% VAD threshold "
+                "for a lighter touch than AI NC."
+            ),
         )
         self.ai_toggle, self.ai_slider, self.ai_value = self._add_feature_card(
             layout,
             "ai_noise_cancellation",
             self.tr("AI Noise Cancellation"),
-            "Aggressive RNNoise — handles non-stationary noise (typing, "
-            "dog barks, road noise) but can clip quieter speech at high "
-            "strength. If both NR and AI NC are on, only AI NC runs.",
+            self.tr(
+                "Aggressive RNNoise — handles non-stationary noise (typing, "
+                "dog barks, road noise) but can clip quieter speech at high "
+                "strength. If both NR and AI NC are on, only AI NC runs."
+            ),
         )
         # Track the parent layout's card count so we can grab the
         # Volume Stabilizer's QFrame#card afterwards and inject the
@@ -275,11 +285,13 @@ class MicrophoneTab(QWidget):
             layout,
             "volume_stabilizer",
             self.tr("Volume Stabilizer"),
-            "Smooths volume swings between quiet whispers and loud "
-            "bursts so apps don't get a wildly fluctuating mic "
-            "volume. Pick the mode that suits your voice — Broadcast "
-            "is audible levelling (Steve Harris SC4), Soft is gentle "
-            "transparency (Dyson). Both ship in ladspa-swh-plugins.",
+            self.tr(
+                "Smooths volume swings between quiet whispers and loud "
+                "bursts so apps don't get a wildly fluctuating mic "
+                "volume. Pick the mode that suits your voice — Broadcast "
+                "is audible levelling (Steve Harris SC4), Soft is gentle "
+                "transparency (Dyson). Both ship in ladspa-swh-plugins."
+            ),
             badge="ALPHA",
         )
         # Inject the plugin-choice combo into the card. The card is
@@ -328,10 +340,12 @@ class MicrophoneTab(QWidget):
             "padding: 2px 6px; border-radius: 8px;"
         )
         sidetone_alpha.setToolTip(
-            "Sidetone may not work on the wireless variant of the "
-            "Arctis Nova Pro — slider position quantises but the "
-            "headset firmware may ignore the HID write. Confirmed "
-            "untested across all hardware revisions."
+            self.tr(
+                "Sidetone may not work on the wireless variant of the "
+                "Arctis Nova Pro — slider position quantises but the "
+                "headset firmware may ignore the HID write. Confirmed "
+                "untested across all hardware revisions."
+            )
         )
         self.sidetone_slider = NoWheelSlider(Qt.Horizontal)
         self.sidetone_slider.setRange(0, 3)
@@ -351,10 +365,12 @@ class MicrophoneTab(QWidget):
         sidetone_row.addWidget(self.sidetone_value)
 
         sidetone_help = QLabel(
-            "Hardware sidetone — how loudly the headset feeds your "
-            "raw mic back into your ears. The Arctis Nova Pro "
-            "Wireless has 4 internal levels (Off / Low / Medium / "
-            "High); the slider maps 1:1."
+            self.tr(
+                "Hardware sidetone — how loudly the headset feeds your "
+                "raw mic back into your ears. The Arctis Nova Pro "
+                "Wireless has 4 internal levels (Off / Low / Medium / "
+                "High); the slider maps 1:1."
+            )
         )
         sidetone_help.setWordWrap(True)
         sidetone_help.setStyleSheet(
@@ -369,7 +385,7 @@ class MicrophoneTab(QWidget):
         # toggle-off. latency_msec=20 keeps the round-trip from
         # feeling laggy without taxing the scheduler.
         voice_btn_row = QHBoxLayout()
-        self.voice_test_btn = QPushButton("🎧  Hear yourself (test mic)")
+        self.voice_test_btn = QPushButton(self.tr("🎧  Hear yourself (test mic)"))
         self.voice_test_btn.setCheckable(True)
         self.voice_test_btn.setMaximumWidth(280)
         self.voice_test_btn.toggled.connect(self._on_voice_test_toggled)
@@ -377,10 +393,12 @@ class MicrophoneTab(QWidget):
         voice_btn_row.addStretch(1)
 
         voice_help = QLabel(
-            "Loops the processed SteelMic back through your headset "
-            "so you can hear what the gate / NR / AI-NC actually do. "
-            "Toggle off when done — the loopback also stops "
-            "automatically when you close the app."
+            self.tr(
+                "Loops the processed SteelMic back through your headset "
+                "so you can hear what the gate / NR / AI-NC actually do. "
+                "Toggle off when done — the loopback also stops "
+                "automatically when you close the app."
+            )
         )
         voice_help.setWordWrap(True)
         voice_help.setStyleSheet(
@@ -389,7 +407,7 @@ class MicrophoneTab(QWidget):
 
         layout.addWidget(
             card(
-                "Listen + Sidetone",
+                self.tr("Listen + Sidetone"),
                 sidetone_row,
                 sidetone_help,
                 voice_btn_row,
@@ -398,10 +416,12 @@ class MicrophoneTab(QWidget):
         )
 
         notes = QLabel(
-            "Requires the noise-suppression-for-voice and swh-plugins "
-            "packages. If a feature fails to come up, check that the "
-            "plugins are installed (Fedora: `dnf install "
-            "noise-suppression-for-voice swh-plugins`)."
+            self.tr(
+                "Requires the noise-suppression-for-voice and swh-plugins "
+                "packages. If a feature fails to come up, check that the "
+                "plugins are installed (Fedora: `dnf install "
+                "noise-suppression-for-voice swh-plugins`)."
+            )
         )
         notes.setWordWrap(True)
         notes.setStyleSheet(
@@ -528,7 +548,9 @@ class MicrophoneTab(QWidget):
             slider.setEnabled(False)
             display_name = plugin_filenames[0] if plugin_filenames else ""
             toggle.setToolTip(
-                f"Missing LADSPA plugin: {display_name}. {install_hint}"
+                self.tr("Missing LADSPA plugin: {plugin}. {hint}").format(
+                    plugin=display_name, hint=install_hint,
+                )
             )
             # Warning row: orange ⚠ message on the left, "Show
             # install steps" button on the right. The button opens
@@ -537,8 +559,9 @@ class MicrophoneTab(QWidget):
             # commands they can't select directly.
             warn_row = QHBoxLayout()
             missing_lbl = QLabel(
-                f"⚠ Missing LADSPA plugin <code>{display_name}</code>. "
-                f"{install_hint}"
+                self.tr(
+                    "⚠ Missing LADSPA plugin <code>{plugin}</code>. {hint}"
+                ).format(plugin=display_name, hint=install_hint)
             )
             missing_lbl.setWordWrap(True)
             missing_lbl.setTextFormat(Qt.RichText)
@@ -548,7 +571,7 @@ class MicrophoneTab(QWidget):
             )
             warn_row.addWidget(missing_lbl, 1)
             if build_cmd:
-                info_btn = QPushButton("ⓘ  Show install steps")
+                info_btn = QPushButton(self.tr("ⓘ  Show install steps"))
                 info_btn.setStyleSheet(
                     "font-size: 10px; padding: 4px 10px; "
                     "border: 1px solid #FF9800; color: #FF9800;"
@@ -709,7 +732,9 @@ class MicrophoneTab(QWidget):
         finally:
             self.voice_test_btn.blockSignals(was_blocked)
         self.voice_test_btn.setText(
-            "🛑  Stop voice test" if running else "🎧  Hear yourself (test mic)"
+            self.tr("🛑  Stop voice test")
+            if running
+            else self.tr("🎧  Hear yourself (test mic)")
         )
 
     # ---------------------------------------------------- install modal
@@ -722,16 +747,20 @@ class MicrophoneTab(QWidget):
         text selectable; the Copy button puts it on the clipboard so
         users don't have to hand-select."""
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"Install {feature_title} dependencies")
+        dlg.setWindowTitle(
+            self.tr("Install {feature} dependencies").format(feature=feature_title)
+        )
         dlg.setMinimumWidth(560)
 
         layout = QVBoxLayout(dlg)
 
         intro = QLabel(
-            "Run these commands in a terminal to build and install "
-            "the missing LADSPA plugin. After it's done, restart "
-            "steelvoicemix-gui (the last command does this) and the "
-            "feature toggle will go enabled."
+            self.tr(
+                "Run these commands in a terminal to build and install "
+                "the missing LADSPA plugin. After it's done, restart "
+                "steelvoicemix-gui (the last command does this) and the "
+                "feature toggle will go enabled."
+            )
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -747,7 +776,7 @@ class MicrophoneTab(QWidget):
         layout.addWidget(text_edit, 1)
 
         btn_row = QHBoxLayout()
-        copy_btn = QPushButton("📋  Copy to clipboard")
+        copy_btn = QPushButton(self.tr("📋  Copy to clipboard"))
         copy_btn.clicked.connect(
             lambda: self._copy_to_clipboard_with_feedback(
                 command_text, copy_btn
@@ -770,7 +799,7 @@ class MicrophoneTab(QWidget):
         original label after 1.5 s."""
         QApplication.clipboard().setText(text)
         original = btn.text()
-        btn.setText("✓  Copied!")
+        btn.setText(self.tr("✓  Copied!"))
         QTimer.singleShot(1500, lambda: btn.setText(original))
 
     # ------------------------------------------------------- default-source
@@ -789,14 +818,16 @@ class MicrophoneTab(QWidget):
             return
         QMessageBox.information(
             self,
-            "Default microphone changed",
-            "Heads up: SteelMic is now your system's default "
-            "microphone source. Apps that follow the system default "
-            "(most do) will pick up the processed audio automatically. "
-            "If you'd rather use a different mic, switch the default "
-            "back from your system audio settings — disabling all "
-            "microphone features here also restores the previous "
-            "default.\n\nThis notice only shows once.",
+            self.tr("Default microphone changed"),
+            self.tr(
+                "Heads up: SteelMic is now your system's default "
+                "microphone source. Apps that follow the system default "
+                "(most do) will pick up the processed audio automatically. "
+                "If you'd rather use a different mic, switch the default "
+                "back from your system audio settings — disabling all "
+                "microphone features here also restores the previous "
+                "default.\n\nThis notice only shows once."
+            ),
         )
         self._settings["mic_default_promoted_shown"] = True
         save_settings(self._settings)

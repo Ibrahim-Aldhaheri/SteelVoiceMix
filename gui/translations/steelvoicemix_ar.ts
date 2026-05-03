@@ -43,6 +43,18 @@
         <source>🔍  Connecting…</source>
         <translation>🔍  جارٍ الاتصال…</translation>
     </message>
+    <message>
+        <source>Checking…</source>
+        <translation>جارٍ التحقق…</translation>
+    </message>
+    <message>
+        <source>Update available: {latest} (you have {current})</source>
+        <translation>يتوفر تحديث: {latest} (لديك {current})</translation>
+    </message>
+    <message>
+        <source>No published release found</source>
+        <translation>لا يوجد إصدار منشور</translation>
+    </message>
 </context>
 <context>
     <name>HomeTab</name>
@@ -371,6 +383,46 @@
         <source>Auto-switch EQ when a known game launches</source>
         <translation>تبديل موازن الصوت تلقائيًا عند تشغيل لعبة معروفة</translation>
     </message>
+    <message>
+        <source>Drag a slider to boost or cut a frequency band by up to ±12 dB. Each release respawns the filter chain with the new gains (~100 ms audio glitch per change).</source>
+        <translation>اسحب أحد المؤشرات لتعزيز أو خفض نطاق ترددي حتى ±12 ديسيبل. كل إفلات يعيد تشغيل سلسلة المعالجة بالقيم الجديدة (يحدث تشوّش صوتي قصير ~100 مللي ثانية في كل تغيير).</translation>
+    </message>
+    <message>
+        <source>▶ Play</source>
+        <translation>▶ تشغيل</translation>
+    </message>
+    <message>
+        <source>⚠ Drop system volume to ~10–20% BEFORE pressing Play. These clips are intentionally whisper-quiet to protect your hearing, but if your headset gain or system volume is high they can still be uncomfortable. Hit Stop immediately if anything feels too loud.</source>
+        <translation>⚠ خفّض صوت النظام إلى نحو 10–20% قبل الضغط على تشغيل. هذه المقاطع منخفضة الصوت عمدًا لحماية سمعك، لكن إذا كان مستوى السماعة أو صوت النظام مرتفعًا فقد تظل مزعجة. اضغط إيقاف فورًا إن بدا أي شيء عاليًا أكثر من اللازم.</translation>
+    </message>
+    <message>
+        <source>Reference signals for ear-checking the EQ — pink noise is the recommended starting point. Each clip ramps in over 200 ms so even the onset is gentle.</source>
+        <translation>إشارات مرجعية لتقييم الموازنة بالأذن — الضوضاء الوردية هي نقطة البداية الموصى بها. كل مقطع يبدأ تدريجيًا خلال 200 مللي ثانية حتى تكون البداية لطيفة.</translation>
+    </message>
+    <message>
+        <source>🎧  Hear yourself (test mic)</source>
+        <translation>🎧  استمع لنفسك (اختبار الميكروفون)</translation>
+    </message>
+    <message>
+        <source>Loops the processed SteelMic back through your headset so you can A/B the EQ live. Same control as the Microphone tab — toggling either button drives both.</source>
+        <translation>يعيد توجيه إخراج SteelMic المعالج إلى سماعتك حتى تقارن الموازنة فورًا. نفس التحكم في تبويب الميكروفون — تبديل أي زر يُفعّل الآخر.</translation>
+    </message>
+    <message>
+        <source>When on, the app watches PipeWire for active audio clients and applies a matching ASM preset to the Game channel. The table below overrides the auto-match — bind the same preset to several games to share one tuning. Closing the game restores whatever EQ you had before. Note: the EQ only takes effect when the game's audio is routed to SteelGame; if the status above says 'not on SteelGame', move the stream via your system audio settings or pavucontrol.</source>
+        <translation>عند التفعيل يراقب التطبيق PipeWire للعملاء الصوتيين النشطين ويطبّق إعداد ASM المطابق على قناة الألعاب. الجدول أدناه يتجاوز المطابقة التلقائية — اربط نفس الإعداد بعدة ألعاب لاستخدام نفس الضبط. إغلاق اللعبة يستعيد الموازنة السابقة. ملاحظة: لا يسري التأثير إلا إذا كان صوت اللعبة موجّهًا إلى SteelGame؛ إذا كانت الحالة أعلاه "ليست على SteelGame" فحرّك المسار من إعدادات الصوت أو pavucontrol.</translation>
+    </message>
+    <message>
+        <source>No favourites yet — tap ★ next to a preset to pin it here.</source>
+        <translation>لا توجد مفضلات بعد — انقر ★ بجانب أي إعداد لإضافته هنا.</translation>
+    </message>
+    <message>
+        <source>Enable {n}-band parametric EQ</source>
+        <translation>تفعيل موازن صوت بارامترى من {n} نطاقات</translation>
+    </message>
+    <message>
+        <source>Inserts a PipeWire filter chain between every loaded virtual sink (Game / Chat / Media / HDMI) and the downstream target. The user-facing sinks stay put across toggles, so Discord and other apps don't lose their connection.</source>
+        <translation>يُدرج سلسلة معالجة PipeWire بين كل مخرج افتراضي محمَّل (الألعاب / المحادثة / الوسائط / HDMI) والوجهة النهائية. تظل المخارج الظاهرة للمستخدم ثابتة عبر التفعيل والإيقاف، فلا يفقد Discord أو غيره من التطبيقات اتصالها.</translation>
+    </message>
 </context>
 <context>
     <name>SinksTab</name>
@@ -429,6 +481,26 @@
     <message>
         <source>Digital amplification applied at the sink — use when an app is too quiet even at the system maximum. Headroom above 150% can introduce clipping; back off if loud passages distort.</source>
         <translation>تضخيم رقمي يُطبَّق على المخرج — استخدمه عندما يكون التطبيق هادئًا جدًا حتى عند أقصى مستوى للنظام. تجاوز 150% قد يسبب تشويشًا؛ خفّف إن سمعت تشوهًا في الأصوات العالية.</translation>
+    </message>
+    <message>
+        <source>Enable digital volume boost for the {channel} channel</source>
+        <translation>تفعيل تعزيز الصوت الرقمي لقناة {channel}</translation>
+    </message>
+    <message>
+        <source>Add the {channel} sink first to use boost</source>
+        <translation>أضف مخرج {channel} أولاً لاستخدام التعزيز</translation>
+    </message>
+    <message>
+        <source>Alpha — not yet hardware-verified against a real HDMI sink (TV / AVR).</source>
+        <translation>تجريبي — لم يُختبر بعد على جهاز HDMI حقيقي (تلفاز / مستقبل).</translation>
+    </message>
+    <message>
+        <source>Route browsers and media players to SteelMedia automatically</source>
+        <translation>توجيه المتصفحات ومشغلات الوسائط إلى SteelMedia تلقائيًا</translation>
+    </message>
+    <message>
+        <source>Alpha — lightly tested. When enabled, the daemon moves new browser and media-player audio streams (Firefox, Chromium, mpv, VLC…) to the SteelMedia sink so they bypass the ChatMix dial. Manual moves stick — the daemon only acts on first-seen streams.</source>
+        <translation>تجريبي — اختبار محدود. عند التفعيل، تنقل الخدمة تدفقات الصوت الجديدة من المتصفحات ومشغلات الوسائط (Firefox, Chromium, mpv, VLC…) إلى مخرج SteelMedia لتتجاوز قرص ميكس المحادثة. التحريك اليدوي يبقى — الخدمة لا تتدخل إلا في التدفقات لأول مرة.</translation>
     </message>
 </context>
 <context>
@@ -514,6 +586,211 @@
     <message>
         <source>Soft — transparent</source>
         <translation>ناعم — شفّاف</translation>
+    </message>
+    <message>
+        <source>All microphone features on this tab are still being tested. Behaviour may change between releases; report issues on GitHub.</source>
+        <translation>كل ميزات الميكروفون في هذا التبويب لا تزال قيد الاختبار. قد يتغير سلوكها بين الإصدارات؛ بلّغ عن المشاكل على GitHub.</translation>
+    </message>
+    <message>
+        <source>Apply capture-side processing to your headset's microphone. Apps record from the SteelMic source — selectable in your system audio settings or per-app input picker.</source>
+        <translation>طبّق معالجة جانب الالتقاط على ميكروفون سماعتك. تسجّل التطبيقات من مصدر SteelMic — يمكن اختياره من إعدادات الصوت في النظام أو من منتقي الإدخال داخل كل تطبيق.</translation>
+    </message>
+    <message>
+        <source>Mutes the mic when input level falls below the threshold. Higher strength = more aggressive (cuts more background sound; may clip the start of soft speech). Provided by swh-plugins' gate_1410.</source>
+        <translation>يكتم الميكروفون عندما يهبط مستوى الإدخال تحت العتبة. كلما زادت القوة كانت أكثر صرامة (تقطع المزيد من الضجيج الخلفي؛ قد تقطع بداية الكلام الناعم). مزوّد عبر gate_1410 من swh-plugins.</translation>
+    </message>
+    <message>
+        <source>Mild RNNoise denoiser — removes constant background hum, fan noise, keyboard clatter. Capped at 50% VAD threshold for a lighter touch than AI NC.</source>
+        <translation>إزالة ضجيج خفيفة بـ RNNoise — تزيل الطنين الثابت وصوت المراوح وصوت لوحة المفاتيح. محدودة بعتبة VAD بنسبة 50% للحصول على لمسة ألطف من إلغاء الضوضاء بالذكاء الاصطناعي.</translation>
+    </message>
+    <message>
+        <source>Aggressive RNNoise — handles non-stationary noise (typing, dog barks, road noise) but can clip quieter speech at high strength. If both NR and AI NC are on, only AI NC runs.</source>
+        <translation>إزالة ضجيج قوية بـ RNNoise — تتعامل مع الضجيج المتغيّر (الطباعة، نباح الكلاب، ضجيج الشارع) لكنها قد تقطع الكلام الهادئ في القوة العالية. إذا كانت إزالة الضوضاء وإلغاء الضوضاء بالذكاء الاصطناعي مفعّلين معًا، يعمل إلغاء الضوضاء بالذكاء الاصطناعي فقط.</translation>
+    </message>
+    <message>
+        <source>Smooths volume swings between quiet whispers and loud bursts so apps don't get a wildly fluctuating mic volume. Pick the mode that suits your voice — Broadcast is audible levelling (Steve Harris SC4), Soft is gentle transparency (Dyson). Both ship in ladspa-swh-plugins.</source>
+        <translation>يُنعِّم تذبذب الصوت بين الهمس الهادئ والانفجارات العالية كي لا تحصل التطبيقات على مستوى ميكروفون متقلب. اختر الوضع المناسب لصوتك — "إذاعي" موازنة مسموعة (Steve Harris SC4)، "ناعم" شفافية لطيفة (Dyson). كلاهما يأتيان مع ladspa-swh-plugins.</translation>
+    </message>
+    <message>
+        <source>Sidetone may not work on the wireless variant of the Arctis Nova Pro — slider position quantises but the headset firmware may ignore the HID write. Confirmed untested across all hardware revisions.</source>
+        <translation>الصوت الجانبي قد لا يعمل على النسخة اللاسلكية من Arctis Nova Pro — موضع المؤشر يُحدَّد بشكل صحيح لكن البرنامج الثابت للسماعة قد يتجاهل الكتابة عبر HID. لم يُختبر بشكل كامل عبر جميع إصدارات العتاد.</translation>
+    </message>
+    <message>
+        <source>Hardware sidetone — how loudly the headset feeds your raw mic back into your ears. The Arctis Nova Pro Wireless has 4 internal levels (Off / Low / Medium / High); the slider maps 1:1.</source>
+        <translation>الصوت الجانبي العتادي — مدى ارتفاع إعادة سماع صوت ميكروفونك الخام في أذنيك. يحتوي Arctis Nova Pro Wireless على 4 مستويات داخلية (معطّل / منخفض / متوسط / مرتفع)؛ يتطابق المؤشر معها 1:1.</translation>
+    </message>
+    <message>
+        <source>Loops the processed SteelMic back through your headset so you can hear what the gate / NR / AI-NC actually do. Toggle off when done — the loopback also stops automatically when you close the app.</source>
+        <translation>يعيد توجيه إخراج SteelMic المعالج إلى سماعتك حتى تسمع ما تفعله البوابة / إزالة الضوضاء / إلغاء الضوضاء بالذكاء الاصطناعي. أوقفه عند الانتهاء — يتوقف الحلقة تلقائيًا أيضًا عند إغلاق التطبيق.</translation>
+    </message>
+    <message>
+        <source>Listen + Sidetone</source>
+        <translation>الاستماع والصوت الجانبي</translation>
+    </message>
+    <message>
+        <source>🎧  Hear yourself (test mic)</source>
+        <translation>🎧  استمع لنفسك (اختبار الميكروفون)</translation>
+    </message>
+    <message>
+        <source>🛑  Stop voice test</source>
+        <translation>🛑  إيقاف اختبار الصوت</translation>
+    </message>
+    <message>
+        <source>Requires the noise-suppression-for-voice and swh-plugins packages. If a feature fails to come up, check that the plugins are installed (Fedora: `dnf install noise-suppression-for-voice swh-plugins`).</source>
+        <translation>يتطلب الحزم noise-suppression-for-voice و swh-plugins. إذا فشلت إحدى الميزات في الظهور، تأكد من تثبيت الإضافات (Fedora: `dnf install noise-suppression-for-voice swh-plugins`).</translation>
+    </message>
+    <message>
+        <source>Missing LADSPA plugin: {plugin}. {hint}</source>
+        <translation>إضافة LADSPA مفقودة: {plugin}. {hint}</translation>
+    </message>
+    <message>
+        <source>⚠ Missing LADSPA plugin &lt;code&gt;{plugin}&lt;/code&gt;. {hint}</source>
+        <translation>⚠ إضافة LADSPA مفقودة &lt;code&gt;{plugin}&lt;/code&gt;. {hint}</translation>
+    </message>
+    <message>
+        <source>ⓘ  Show install steps</source>
+        <translation>ⓘ  عرض خطوات التثبيت</translation>
+    </message>
+    <message>
+        <source>Install {feature} dependencies</source>
+        <translation>تثبيت اعتماديات {feature}</translation>
+    </message>
+    <message>
+        <source>Run these commands in a terminal to build and install the missing LADSPA plugin. After it's done, restart steelvoicemix-gui (the last command does this) and the feature toggle will go enabled.</source>
+        <translation>شغّل هذه الأوامر في الطرفية لبناء وتثبيت إضافة LADSPA المفقودة. بعد الانتهاء، أعد تشغيل steelvoicemix-gui (الأمر الأخير يفعل ذلك) وسيصبح مفتاح الميزة جاهزًا.</translation>
+    </message>
+    <message>
+        <source>📋  Copy to clipboard</source>
+        <translation>📋  انسخ إلى الحافظة</translation>
+    </message>
+    <message>
+        <source>✓  Copied!</source>
+        <translation>✓  تم النسخ!</translation>
+    </message>
+    <message>
+        <source>Default microphone changed</source>
+        <translation>تغيّر الميكروفون الافتراضي</translation>
+    </message>
+    <message>
+        <source>Heads up: SteelMic is now your system's default microphone source. Apps that follow the system default (most do) will pick up the processed audio automatically. If you'd rather use a different mic, switch the default back from your system audio settings — disabling all microphone features here also restores the previous default.
+
+This notice only shows once.</source>
+        <translation>تنبيه: SteelMic أصبح الآن مصدر الميكروفون الافتراضي للنظام. التطبيقات التي تتبع الافتراضي (وأغلبها كذلك) ستلتقط الصوت المعالج تلقائيًا. إذا كنت تفضّل ميكروفونًا آخر، أعد الافتراضي من إعدادات الصوت في النظام — إيقاف كل ميزات الميكروفون هنا يستعيد الافتراضي السابق أيضًا.
+
+هذه الرسالة تظهر مرة واحدة فقط.</translation>
+    </message>
+</context>
+<context>
+    <name>SettingsTab</name>
+    <message>
+        <source>Show overlay when dial is turned</source>
+        <translation>إظهار الطبقة العلوية عند تحريك القرص</translation>
+    </message>
+    <message>
+        <source>Auto follows your desktop's light / dark setting. Pick Light or Dark to override.</source>
+        <translation>يتبع الوضع التلقائي إعداد الفاتح/الداكن في سطح المكتب. اختر "فاتح" أو "داكن" لتجاوزه.</translation>
+    </message>
+    <message>
+        <source>Start minimised to system tray</source>
+        <translation>البدء مصغّرًا إلى شريط النظام</translation>
+    </message>
+    <message>
+        <source>When enabled, the app launches hidden in the tray instead of opening its window. Click the tray icon to bring the window up. Ignored on sessions without a system tray (the app shows normally).</source>
+        <translation>عند التفعيل، يبدأ التطبيق مخفيًا في شريط النظام بدلاً من فتح نافذته. انقر أيقونة شريط النظام لإظهار النافذة. يُتجاهل في الجلسات التي لا تحتوي شريط نظام (يظهر التطبيق طبيعيًا).</translation>
+    </message>
+    <message>
+        <source>Cycle default sink shortcut</source>
+        <translation>اختصار تدوير المخرج الافتراضي</translation>
+    </message>
+    <message>
+        <source>Qt shortcuts only fire while the GUI has focus — for system-wide bindings, point your desktop's keyboard settings at &lt;code&gt;steelvoicemix-cli sink cycle&lt;/code&gt;. Restart the GUI after changing the combo to apply.</source>
+        <translation>اختصارات Qt تعمل فقط عندما تكون الواجهة هي المركَّز عليها — للاختصارات على مستوى النظام، وجّه إعدادات لوحة المفاتيح في سطح مكتبك إلى &lt;code&gt;steelvoicemix-cli sink cycle&lt;/code&gt;. أعد تشغيل الواجهة بعد تغيير الاختصار للتفعيل.</translation>
+    </message>
+    <message>
+        <source>Show toast when minimised to tray</source>
+        <translation>إظهار إشعار عند التصغير إلى شريط النظام</translation>
+    </message>
+    <message>
+        <source>When the window is closed with the X button, it hides to the system tray. Enable this to see a confirmation toast every time that happens. Off by default.</source>
+        <translation>عند إغلاق النافذة بزر X، تختفي إلى شريط النظام. فعّل هذا لرؤية إشعار تأكيد في كل مرة. معطّل افتراضيًا.</translation>
+    </message>
+    <message>
+        <source>Show 🎧 connect / disconnect notifications</source>
+        <translation>إظهار إشعارات 🎧 الاتصال / قطع الاتصال</translation>
+    </message>
+    <message>
+        <source>Desktop notifications emitted by the daemon when the base station connects or drops. Distinct from the minimize-to-tray toast above — those are GUI-side.</source>
+        <translation>إشعارات سطح المكتب التي تُرسلها الخدمة عند اتصال القاعدة أو انقطاعها. مختلفة عن إشعار التصغير إلى شريط النظام أعلاه — ذاك من جانب الواجهة.</translation>
+    </message>
+    <message>
+        <source>📋 Switch to alpha</source>
+        <translation>📋 التحويل إلى ألفا</translation>
+    </message>
+    <message>
+        <source>Copy the dnf commands that swap to the alpha COPR repo.</source>
+        <translation>انسخ أوامر dnf التي تبدّل إلى مستودع COPR التجريبي.</translation>
+    </message>
+    <message>
+        <source>📋 Back to stable</source>
+        <translation>📋 العودة إلى المستقر</translation>
+    </message>
+    <message>
+        <source>Copy the dnf commands that switch back to the stable repo.</source>
+        <translation>انسخ أوامر dnf التي تعود إلى المستودع المستقر.</translation>
+    </message>
+    <message>
+        <source>Alpha builds rebuild from the dev branch on every commit — bleeding-edge features, but expect rough edges. Clicking either button copies the dnf commands to your clipboard; paste into a terminal to actually switch. After the swap, run `sudo dnf upgrade steelvoicemix` to pull the new build. Going back to stable downgrades cleanly via dnf.</source>
+        <translation>تُبنى نُسخ ألفا من فرع dev في كل التزام — ميزات حديثة جدًا، لكن توقّع عدم الاكتمال. النقر على أي من الزرين ينسخ أوامر dnf إلى الحافظة؛ ألصقها في طرفية لإجراء التبديل فعليًا. بعد التبديل شغّل `sudo dnf upgrade steelvoicemix` لجلب البناء الجديد. العودة إلى المستقر تنزل المستوى بنظافة عبر dnf.</translation>
+    </message>
+    <message>
+        <source>📋  Copy diagnostic + open new issue</source>
+        <translation>📋  انسخ المعلومات التشخيصية + افتح طلب مشكلة جديد</translation>
+    </message>
+    <message>
+        <source>Captures the daemon's recent journal output, the GUI version, and your settings.json (sanitised), copies it to the clipboard, and opens the SteelVoiceMix 'New Issue' page in your browser. Paste into the body.</source>
+        <translation>يلتقط مخرجات سجل الخدمة الأخيرة وإصدار الواجهة وإعدادات settings.json (بعد التنظيف)، وينسخها إلى الحافظة، ويفتح صفحة "مشكلة جديدة" في متصفحك. ألصق في جسم الموضوع.</translation>
+    </message>
+    <message>
+        <source>Filing a bug report is a 2-step flow: this button does step 1 (copy diagnostic) and opens step 2 (the issue page) — paste the clipboard into the body.</source>
+        <translation>إرسال تقرير مشكلة عملية من خطوتين: هذا الزر ينفذ الخطوة 1 (نسخ المعلومات التشخيصية) ويفتح الخطوة 2 (صفحة المشكلة) — ألصق الحافظة في الجسم.</translation>
+    </message>
+    <message>
+        <source>Reset every preference (overlay, sinks, EQ, surround, notification toggles) to its default value. Saved audio profiles are preserved.</source>
+        <translation>إعادة كل تفضيل (الطبقة العلوية، المخارج، الموازن، الصوت المحيطي، مفاتيح الإشعارات) إلى قيمته الافتراضية. ملفات الصوت المحفوظة تُحفظ كما هي.</translation>
+    </message>
+    <message>
+        <source>Wipes overlay options, autostart, notification prefs, EQ state, surround state, and the Media / HDMI sink toggles back to their factory defaults. Saved audio profiles are kept — delete them individually above if you want them gone too.</source>
+        <translation>يمحو خيارات الطبقة العلوية، البدء التلقائي، إعدادات الإشعارات، حالة الموازن، حالة الصوت المحيطي، ومفاتيح مخارج الوسائط/HDMI ويعيدها إلى الإعدادات الافتراضية. ملفات الصوت المحفوظة تبقى — احذفها يدويًا أعلاه إن أردت إزالتها أيضًا.</translation>
+    </message>
+    <message>
+        <source>Reset to defaults</source>
+        <translation>إعادة إلى الافتراضيات</translation>
+    </message>
+    <message>
+        <source>This will reset every preference back to its default:
+
+  • Overlay options + autostart
+  • Notification toggles
+  • EQ state (sliders + per-channel tunings)
+  • Surround on/off + HRIR path
+  • Media / HDMI sink toggles
+  • Browser auto-routing
+
+Saved audio profiles are KEPT.
+
+Continue?</source>
+        <translation>سيُعيد هذا كل تفضيل إلى قيمته الافتراضية:
+
+  • خيارات الطبقة العلوية + البدء التلقائي
+  • مفاتيح الإشعارات
+  • حالة الموازن (المؤشرات + ضبط كل قناة)
+  • تشغيل/إيقاف الصوت المحيطي + مسار HRIR
+  • مفاتيح مخارج الوسائط / HDMI
+  • التوجيه التلقائي للمتصفحات
+
+ملفات الصوت المحفوظة تبقى.
+
+هل تريد المتابعة؟</translation>
     </message>
 </context>
 </TS>
