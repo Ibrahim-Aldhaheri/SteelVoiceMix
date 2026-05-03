@@ -1,5 +1,5 @@
 Name:           steelvoicemix
-Version:        0.5.0
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux
 
@@ -152,7 +152,7 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
-* Sat May 03 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.5.0-1
+* Sat May 03 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.4.0-1
 - New: Volume Boost — per-channel 100-200% digital amplification on
   Game / Chat / Media / HDMI sinks. Toggle + slider on the Sinks tab,
   with a clipping-risk warning above 150%. Snapshots the chatmix dial
