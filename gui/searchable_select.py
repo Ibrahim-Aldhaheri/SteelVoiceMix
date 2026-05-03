@@ -317,7 +317,8 @@ class SearchableSelect(QWidget):
 
     def _refresh_button_label(self) -> None:
         if self._current_index < 0 or self._current_index >= len(self._items):
-            self._button.setText("Select…")
+            from PySide6.QtCore import QCoreApplication
+            self._button.setText(QCoreApplication.translate("SearchableSelect", "Select…"))
             return
         # Right-arrow chevron drawn manually in paintEvent so we don't
         # depend on a theme-icon being installed. Button text is just

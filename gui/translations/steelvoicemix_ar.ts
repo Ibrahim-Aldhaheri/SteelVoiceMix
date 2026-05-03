@@ -55,6 +55,42 @@
         <source>No published release found</source>
         <translation>لا يوجد إصدار منشور</translation>
     </message>
+    <message>
+        <source>Checking for updates…</source>
+        <translation>جارٍ التحقق من التحديثات…</translation>
+    </message>
+    <message>
+        <source>Update check failed (offline?)</source>
+        <translation>فشل التحقق من التحديثات (غير متصل؟)</translation>
+    </message>
+    <message>
+        <source>Show</source>
+        <translation>إظهار</translation>
+    </message>
+    <message>
+        <source>About</source>
+        <translation>عن البرنامج</translation>
+    </message>
+    <message>
+        <source>Quit</source>
+        <translation>خروج</translation>
+    </message>
+    <message>
+        <source>Minimized to tray</source>
+        <translation>تم التصغير إلى شريط النظام</translation>
+    </message>
+    <message>
+        <source>Cycle default sink failed</source>
+        <translation>فشل تدوير المخرج الافتراضي</translation>
+    </message>
+    <message>
+        <source>No SteelVoiceMix sinks loaded.</source>
+        <translation>لم يتم تحميل أي من مخارج SteelVoiceMix.</translation>
+    </message>
+    <message>
+        <source>Default sink</source>
+        <translation>المخرج الافتراضي</translation>
+    </message>
 </context>
 <context>
     <name>HomeTab</name>
@@ -81,6 +117,34 @@
     <message>
         <source>Battery good</source>
         <translation>البطارية جيدة</translation>
+    </message>
+    <message>
+        <source>EQ</source>
+        <translation>الموازن</translation>
+    </message>
+    <message>
+        <source>Surround</source>
+        <translation>الصوت المحيطي</translation>
+    </message>
+    <message>
+        <source>Media sink</source>
+        <translation>مخرج الوسائط</translation>
+    </message>
+    <message>
+        <source>HDMI sink</source>
+        <translation>مخرج HDMI</translation>
+    </message>
+    <message>
+        <source>Mic Gate</source>
+        <translation>بوابة الميكروفون</translation>
+    </message>
+    <message>
+        <source>Mic NR</source>
+        <translation>إزالة ضوضاء الميكروفون</translation>
+    </message>
+    <message>
+        <source>Mic AI-NC</source>
+        <translation>إلغاء ضوضاء الذكاء الاصطناعي</translation>
     </message>
     <message>
         <source>Battery low</source>
@@ -422,6 +486,70 @@
     <message>
         <source>Inserts a PipeWire filter chain between every loaded virtual sink (Game / Chat / Media / HDMI) and the downstream target. The user-facing sinks stay put across toggles, so Discord and other apps don't lose their connection.</source>
         <translation>يُدرج سلسلة معالجة PipeWire بين كل مخرج افتراضي محمَّل (الألعاب / المحادثة / الوسائط / HDMI) والوجهة النهائية. تظل المخارج الظاهرة للمستخدم ثابتة عبر التفعيل والإيقاف، فلا يفقد Discord أو غيره من التطبيقات اتصالها.</translation>
+    </message>
+    <message>
+        <source>Favourite this preset (up to {n} per channel)</source>
+        <translation>إضافة هذا الإعداد إلى المفضلة (حتى {n} لكل قناة)</translation>
+    </message>
+    <message>
+        <source>Bind app to preset</source>
+        <translation>اربط تطبيقًا بإعداد</translation>
+    </message>
+    <message>
+        <source>Pick a running app or type a custom name (the field is editable). Bindings match against PipeWire's application.name when audio starts.</source>
+        <translation>اختر تطبيقًا يعمل أو اكتب اسمًا مخصصًا (الحقل قابل للتحرير). تتطابق الروابط مع application.name من PipeWire عند بدء الصوت.</translation>
+    </message>
+    <message>
+        <source>No running apps detected — type a custom name below. It'll match when the app eventually produces audio.</source>
+        <translation>لم تُرصد تطبيقات قيد التشغيل — اكتب اسمًا مخصصًا أدناه. سيتطابق عندما يُنتج التطبيق صوتًا.</translation>
+    </message>
+    <message>
+        <source>e.g. Hunt: Showdown</source>
+        <translation>مثال: Hunt: Showdown</translation>
+    </message>
+    <message>
+        <source>No presets available</source>
+        <translation>لا تتوفر إعدادات</translation>
+    </message>
+    <message>
+        <source>There are no Game-channel presets to bind. Save one from this tab first.</source>
+        <translation>لا توجد إعدادات لقناة الألعاب لربطها. احفظ واحدًا من هذا التبويب أولاً.</translation>
+    </message>
+    <message>
+        <source>Preset for '{name}'</source>
+        <translation>إعداد لـ '{name}'</translation>
+    </message>
+    <message>
+        <source>EQ preset:</source>
+        <translation>إعداد الموازن:</translation>
+    </message>
+    <message>
+        <source> (no preset match)</source>
+        <translation> (لا يوجد إعداد مطابق)</translation>
+    </message>
+    <message>
+        <source>Currently detected: {name}{suffix}</source>
+        <translation>الذي يتم رصده حاليًا: {name}{suffix}</translation>
+    </message>
+    <message>
+        <source>Currently detected: {name}{suffix} — EQ applied; if you don't hear a change, route the game to SteelGame in your system audio settings</source>
+        <translation>الذي يتم رصده حاليًا: {name}{suffix} — تم تطبيق الموازن؛ إذا لم تسمع تغييرًا، وجّه اللعبة إلى SteelGame من إعدادات الصوت في النظام</translation>
+    </message>
+    <message>
+        <source>🎮 Auto Game-EQ active — preset: {preset}. Sliders are still editable; your tweaks stay until the next game change or until you close the game (at which point your pre-game EQ is restored).</source>
+        <translation>🎮 موازن الصوت التلقائي نشط — الإعداد: {preset}. المؤشرات لا تزال قابلة للتعديل؛ تبقى تعديلاتك حتى تغيير اللعبة التالي أو حتى إغلاق اللعبة (عندها يُستعاد إعدادك السابق).</translation>
+    </message>
+    <message>
+        <source>My Preset</source>
+        <translation>إعدادي</translation>
+    </message>
+    <message>
+        <source>Save preset</source>
+        <translation>حفظ الإعداد</translation>
+    </message>
+    <message>
+        <source>Save current {channel} EQ as:</source>
+        <translation>احفظ موازن قناة {channel} الحالي باسم:</translation>
     </message>
 </context>
 <context>
@@ -791,6 +919,84 @@ Continue?</source>
 ملفات الصوت المحفوظة تبقى.
 
 هل تريد المتابعة؟</translation>
+    </message>
+    <message>
+        <source>Top Right</source>
+        <translation>أعلى اليمين</translation>
+    </message>
+    <message>
+        <source>Top Left</source>
+        <translation>أعلى اليسار</translation>
+    </message>
+    <message>
+        <source>Bottom Right</source>
+        <translation>أسفل اليمين</translation>
+    </message>
+    <message>
+        <source>Bottom Left</source>
+        <translation>أسفل اليسار</translation>
+    </message>
+    <message>
+        <source>Center</source>
+        <translation>الوسط</translation>
+    </message>
+    <message>
+        <source>Horizontal</source>
+        <translation>أفقي</translation>
+    </message>
+    <message>
+        <source>Vertical</source>
+        <translation>عمودي</translation>
+    </message>
+    <message>
+        <source>Auto (system)</source>
+        <translation>تلقائي (النظام)</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>فاتح</translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation>داكن</translation>
+    </message>
+</context>
+<context>
+    <name>AboutDialog</name>
+    <message>
+        <source>About {app}</source>
+        <translation>عن {app}</translation>
+    </message>
+    <message>
+        <source>Version {ver}</source>
+        <translation>الإصدار {ver}</translation>
+    </message>
+    <message>
+        <source>ChatMix for the SteelSeries Arctis Nova Pro Wireless on Linux. Creates virtual PipeWire sinks controlled by the hardware dial on the base station.</source>
+        <translation>ChatMix لسماعة SteelSeries Arctis Nova Pro Wireless على Linux. يُنشئ مخارج PipeWire افتراضية يتحكم بها قرص العتاد على القاعدة.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Disclaimer:&lt;/b&gt; SteelVoiceMix has no affiliation with SteelSeries. The author is not responsible for damage, bricked devices, voided warranties, or any other outcome from using this software. Use at your own risk.</source>
+        <translation>&lt;b&gt;تنويه:&lt;/b&gt; SteelVoiceMix لا ارتباط له بشركة SteelSeries. لا يتحمل المؤلف أي مسؤولية عن الأضرار أو الأجهزة المعطّلة أو إلغاء الضمان أو أي نتيجة أخرى من استخدام هذا البرنامج. استخدم على مسؤوليتك.</translation>
+    </message>
+    <message>
+        <source>Homepage</source>
+        <translation>الصفحة الرئيسية</translation>
+    </message>
+    <message>
+        <source>Report an issue</source>
+        <translation>الإبلاغ عن مشكلة</translation>
+    </message>
+    <message>
+        <source>Licensed under the GNU GPL-3.0-or-later</source>
+        <translation>مرخّص تحت رخصة GNU GPL-3.0-or-later</translation>
+    </message>
+</context>
+<context>
+    <name>SearchableSelect</name>
+    <message>
+        <source>Select…</source>
+        <translation>اختر…</translation>
     </message>
 </context>
 </TS>

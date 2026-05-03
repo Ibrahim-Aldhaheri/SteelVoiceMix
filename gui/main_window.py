@@ -416,17 +416,17 @@ class MixerGUI(QMainWindow):
         self.tray.setToolTip(DISPLAY_NAME)
 
         menu = QMenu()
-        show_action = QAction("Show", self)
+        show_action = QAction(self.tr("Show"), self)
         show_action.triggered.connect(self._show_window)
         menu.addAction(show_action)
 
-        about_action = QAction("About", self)
+        about_action = QAction(self.tr("About"), self)
         about_action.triggered.connect(self._show_about)
         menu.addAction(about_action)
 
         menu.addSeparator()
 
-        quit_action = QAction("Quit", self)
+        quit_action = QAction(self.tr("Quit"), self)
         quit_action.triggered.connect(self._quit)
         menu.addAction(quit_action)
 
@@ -456,7 +456,7 @@ class MixerGUI(QMainWindow):
         if self.settings.get("notify_minimize_hint", False):
             self.tray.showMessage(
                 DISPLAY_NAME,
-                "Minimized to tray",
+                self.tr("Minimized to tray"),
                 QSystemTrayIcon.Information,
                 2000,
             )
@@ -506,12 +506,12 @@ class MixerGUI(QMainWindow):
         )
         if not new:
             self._show_tray_message(
-                "Cycle default sink failed",
-                "No SteelVoiceMix sinks loaded.",
+                self.tr("Cycle default sink failed"),
+                self.tr("No SteelVoiceMix sinks loaded."),
             )
         else:
             self._show_tray_message(
-                "Default sink",
+                self.tr("Default sink"),
                 f"{new}" if new == prev else f"{prev or '?'} → {new}",
             )
 
@@ -588,7 +588,7 @@ class MixerGUI(QMainWindow):
         self._update_checker.no_update.connect(self._on_no_update)
         self._update_checker.no_release_found.connect(self._on_no_release_found)
         self._update_checker.failed.connect(self._on_update_failed)
-        self.update_label.setText("Checking for updates…")
+        self.update_label.setText(self.tr("Checking for updates…"))
         self.update_label.setStyleSheet(
             "color: palette(placeholder-text); font-size: 10px;"
         )
@@ -631,7 +631,7 @@ class MixerGUI(QMainWindow):
         )
 
     def _on_update_failed(self) -> None:
-        self.update_label.setText("Update check failed (offline?)")
+        self.update_label.setText(self.tr("Update check failed (offline?)"))
         self.update_label.setStyleSheet(
             "color: palette(placeholder-text); font-size: 10px;"
         )

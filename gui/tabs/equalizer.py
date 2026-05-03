@@ -284,7 +284,9 @@ class EqualizerTab(QWidget):
         self.preset_fav_btn = QPushButton("☆")
         self.preset_fav_btn.setFixedWidth(36)
         self.preset_fav_btn.setToolTip(
-            f"Favourite this preset (up to {MAX_FAVOURITES_PER_CHANNEL} per channel)"
+            self.tr("Favourite this preset (up to {n} per channel)").format(
+                n=MAX_FAVOURITES_PER_CHANNEL,
+            )
         )
         self.preset_fav_btn.clicked.connect(self._on_preset_favourite_toggled)
         preset_picker_row.addWidget(self.preset_fav_btn)
@@ -663,10 +665,12 @@ class EqualizerTab(QWidget):
                     "game", ""
                 )
             self.auto_lock_banner.setText(
-                f"🎮 Auto Game-EQ active — preset: {preset_name}. "
-                "Sliders are still editable; your tweaks stay until "
-                "the next game change or until you close the game "
-                "(at which point your pre-game EQ is restored)."
+                self.tr(
+                    "🎮 Auto Game-EQ active — preset: {preset}. Sliders "
+                    "are still editable; your tweaks stay until the next "
+                    "game change or until you close the game (at which "
+                    "point your pre-game EQ is restored)."
+                ).format(preset=preset_name)
             )
             self.auto_lock_banner.show()
             self._active_preset_by_channel["game"] = preset_name
@@ -712,12 +716,16 @@ class EqualizerTab(QWidget):
                 "color: palette(placeholder-text);"
             )
             return
-        preset_part = f" → {preset}" if preset else " (no preset match)"
+        preset_part = (
+            f" → {preset}" if preset else self.tr(" (no preset match)")
+        )
         if on_steel_game:
             # We confirmed the sink-input is on SteelGame — EQ will
             # be audible.
             self.detected_label.setText(
-                f"Currently detected: {name}{preset_part}"
+                self.tr("Currently detected: {name}{suffix}").format(
+                    name=name, suffix=preset_part,
+                )
             )
             self.detected_label.setStyleSheet(
                 "font-size: 10px; padding: 4px 0; color: #4CAF50;"
@@ -732,9 +740,11 @@ class EqualizerTab(QWidget):
             # so the user knows it's a "maybe" not a "definitely
             # won't work".
             self.detected_label.setText(
-                f"Currently detected: {name}{preset_part} "
-                "— EQ applied; if you don't hear a change, route the "
-                "game to SteelGame in your system audio settings"
+                self.tr(
+                    "Currently detected: {name}{suffix} — EQ applied; "
+                    "if you don't hear a change, route the game to "
+                    "SteelGame in your system audio settings"
+                ).format(name=name, suffix=preset_part)
             )
             self.detected_label.setStyleSheet(
                 "font-size: 10px; padding: 4px 0; color: #FF9800;"
@@ -854,16 +864,20 @@ class EqualizerTab(QWidget):
             QVBoxLayout as _QVBoxLayout,
         )
         dlg = _QDialog(self)
-        dlg.setWindowTitle("Bind app to preset")
+        dlg.setWindowTitle(self.tr("Bind app to preset"))
         dlg.setMinimumWidth(420)
         dlg_layout = _QVBoxLayout(dlg)
         prompt_lbl = _QLabel(
-            "Pick a running app or type a custom name (the field is "
-            "editable). Bindings match against PipeWire's "
-            "application.name when audio starts."
+            self.tr(
+                "Pick a running app or type a custom name (the field is "
+                "editable). Bindings match against PipeWire's "
+                "application.name when audio starts."
+            )
             if active else
-            "No running apps detected — type a custom name below. "
-            "It'll match when the app eventually produces audio."
+            self.tr(
+                "No running apps detected — type a custom name below. "
+                "It'll match when the app eventually produces audio."
+            )
         )
         prompt_lbl.setWordWrap(True)
         dlg_layout.addWidget(prompt_lbl)
@@ -873,7 +887,7 @@ class EqualizerTab(QWidget):
         # Setting the line-edit's placeholder makes the empty-list
         # case obviously a free-text entry.
         if not active and combo.lineEdit() is not None:
-            combo.lineEdit().setPlaceholderText("e.g. Hunt: Showdown")
+            combo.lineEdit().setPlaceholderText(self.tr("e.g. Hunt: Showdown"))
         dlg_layout.addWidget(combo)
         buttons = _QDialogButtonBox(
             _QDialogButtonBox.Ok | _QDialogButtonBox.Cancel
@@ -890,15 +904,17 @@ class EqualizerTab(QWidget):
         if not preset_names:
             QMessageBox.warning(
                 self,
-                "No presets available",
-                "There are no Game-channel presets to bind. Save one "
-                "from this tab first.",
+                self.tr("No presets available"),
+                self.tr(
+                    "There are no Game-channel presets to bind. Save one "
+                    "from this tab first."
+                ),
             )
             return
         preset, ok = QInputDialog.getItem(
             self,
-            f"Preset for '{name}'",
-            "EQ preset:",
+            self.tr("Preset for '{name}'").format(name=name),
+            self.tr("EQ preset:"),
             preset_names,
             0,
             False,
@@ -1373,11 +1389,13 @@ class EqualizerTab(QWidget):
         self._update_action_buttons()
 
     def _on_preset_save(self) -> None:
-        suggested = self._selected_preset_name() or "My Preset"
+        suggested = self._selected_preset_name() or self.tr("My Preset")
         name, ok = QInputDialog.getText(
             self,
-            "Save preset",
-            f"Save current {self._current_channel} EQ as:",
+            self.tr("Save preset"),
+            self.tr("Save current {channel} EQ as:").format(
+                channel=self._current_channel,
+            ),
             text=suggested,
         )
         if not ok or not name.strip():

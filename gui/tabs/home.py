@@ -131,13 +131,13 @@ class HomeTab(QWidget):
         # Surround / Microphone / Sinks. Pills are read-only; flip
         # them on the relevant tab.
         self._pills: dict[str, _StatusPill] = {
-            "eq": _StatusPill("EQ"),
-            "surround": _StatusPill("Surround"),
-            "media": _StatusPill("Media sink"),
-            "hdmi": _StatusPill("HDMI sink"),
-            "mic_gate": _StatusPill("Mic Gate"),
-            "mic_nr": _StatusPill("Mic NR"),
-            "mic_ai": _StatusPill("Mic AI-NC"),
+            "eq": _StatusPill(self.tr("EQ")),
+            "surround": _StatusPill(self.tr("Surround")),
+            "media": _StatusPill(self.tr("Media sink")),
+            "hdmi": _StatusPill(self.tr("HDMI sink")),
+            "mic_gate": _StatusPill(self.tr("Mic Gate")),
+            "mic_nr": _StatusPill(self.tr("Mic NR")),
+            "mic_ai": _StatusPill(self.tr("Mic AI-NC")),
         }
         pill_row = QHBoxLayout()
         pill_row.setSpacing(8)

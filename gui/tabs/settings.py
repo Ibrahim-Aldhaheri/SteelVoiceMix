@@ -96,14 +96,19 @@ class SettingsTab(QWidget):
         pos_lbl = QLabel(self.tr("Position"))
         pos_lbl.setFixedWidth(80)
         self.position_combo = QComboBox()
-        self.position_combo.addItems(list(POSITION_DISPLAY.values()))
+        # Canonical key in itemData (English, used as the persisted
+        # value), translated label in itemText (what the user sees).
+        # Splitting them this way keeps lookups stable across language
+        # switches — translating itemText alone would break findText.
+        for key, display in POSITION_DISPLAY.items():
+            self.position_combo.addItem(self.tr(display), key)
         current_pos = normalize_position(
             self._settings.get("overlay_position", "top-right")
         )
-        idx = self.position_combo.findText(POSITION_DISPLAY[current_pos])
+        idx = self.position_combo.findData(current_pos)
         if idx >= 0:
             self.position_combo.setCurrentIndex(idx)
-        self.position_combo.currentTextChanged.connect(self._change_position)
+        self.position_combo.currentIndexChanged.connect(self._change_position)
         position_row.addWidget(pos_lbl)
         position_row.addWidget(self.position_combo, 1)
 
@@ -111,15 +116,15 @@ class SettingsTab(QWidget):
         ori_lbl = QLabel(self.tr("Style"))
         ori_lbl.setFixedWidth(80)
         self.orient_combo = QComboBox()
-        self.orient_combo.addItems(["Horizontal", "Vertical"])
-        idx = self.orient_combo.findText(
-            normalize_orientation(
-                self._settings.get("overlay_orientation", "horizontal")
-            ).capitalize()
+        for key, display in (("horizontal", "Horizontal"), ("vertical", "Vertical")):
+            self.orient_combo.addItem(self.tr(display), key)
+        current_ori = normalize_orientation(
+            self._settings.get("overlay_orientation", "horizontal")
         )
+        idx = self.orient_combo.findData(current_ori)
         if idx >= 0:
             self.orient_combo.setCurrentIndex(idx)
-        self.orient_combo.currentTextChanged.connect(self._change_orientation)
+        self.orient_combo.currentIndexChanged.connect(self._change_orientation)
         orient_row.addWidget(ori_lbl)
         orient_row.addWidget(self.orient_combo, 1)
 
@@ -134,11 +139,16 @@ class SettingsTab(QWidget):
         theme_lbl = QLabel(self.tr("Theme"))
         theme_lbl.setFixedWidth(80)
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Auto (system)", "Light", "Dark"])
+        for key, display in (
+            ("auto", "Auto (system)"),
+            ("light", "Light"),
+            ("dark", "Dark"),
+        ):
+            self.theme_combo.addItem(self.tr(display), key)
         current_theme = normalize_mode(self._settings.get("theme_mode", "auto"))
-        self.theme_combo.setCurrentIndex(
-            {"auto": 0, "light": 1, "dark": 2}.get(current_theme, 0)
-        )
+        idx = self.theme_combo.findData(current_theme)
+        if idx >= 0:
+            self.theme_combo.setCurrentIndex(idx)
         self.theme_combo.currentIndexChanged.connect(self._change_theme)
         theme_row.addWidget(theme_lbl)
         theme_row.addWidget(self.theme_combo, 1)
@@ -500,8 +510,11 @@ class SettingsTab(QWidget):
         self._settings["overlay"] = checked
         save_settings(self._settings)
 
-    def _change_position(self, text: str) -> None:
-        key = text.lower().replace(" ", "-")
+    def _change_position(self, _index: int) -> None:
+        # Read the canonical key from itemData rather than the
+        # displayed text — itemText is translated and would not
+        # round-trip through lower().replace(" ", "-") on Arabic.
+        key = self.position_combo.currentData()
         if key not in OVERLAY_POSITIONS:
             return
         self._settings["overlay_position"] = key
@@ -515,8 +528,8 @@ class SettingsTab(QWidget):
             key,
         )
 
-    def _change_orientation(self, text: str) -> None:
-        key = text.lower()
+    def _change_orientation(self, _index: int) -> None:
+        key = self.orient_combo.currentData()
         if key not in OVERLAY_ORIENTATIONS:
             return
         self._settings["overlay_orientation"] = key
@@ -580,8 +593,8 @@ class SettingsTab(QWidget):
         save_settings(self._settings)
 
 
-    def _change_theme(self, index: int) -> None:
-        mode = ("auto", "light", "dark")[index] if 0 <= index <= 2 else "auto"
+    def _change_theme(self, _index: int) -> None:
+        mode = self.theme_combo.currentData() or "auto"
         if mode not in THEME_MODES:
             mode = "auto"
         self._settings["theme_mode"] = mode
@@ -880,13 +893,13 @@ class SettingsTab(QWidget):
         current_pos = normalize_position(
             self._settings.get("overlay_position", "top-right")
         )
-        idx = self.position_combo.findText(POSITION_DISPLAY[current_pos])
+        idx = self.position_combo.findData(current_pos)
         if idx >= 0:
             self.position_combo.setCurrentIndex(idx)
-        idx = self.orient_combo.findText(
+        idx = self.orient_combo.findData(
             normalize_orientation(
                 self._settings.get("overlay_orientation", "horizontal")
-            ).capitalize()
+            )
         )
         if idx >= 0:
             self.orient_combo.setCurrentIndex(idx)
@@ -967,17 +980,17 @@ class SettingsTab(QWidget):
         current_pos = normalize_position(
             self._settings.get("overlay_position", "top-right")
         )
-        idx = self.position_combo.findText(POSITION_DISPLAY[current_pos])
+        idx = self.position_combo.findData(current_pos)
         if idx >= 0:
             was_blocked = self.position_combo.blockSignals(True)
             try:
                 self.position_combo.setCurrentIndex(idx)
             finally:
                 self.position_combo.blockSignals(was_blocked)
-        idx = self.orient_combo.findText(
+        idx = self.orient_combo.findData(
             normalize_orientation(
                 self._settings.get("overlay_orientation", "horizontal")
-            ).capitalize()
+            )
         )
         if idx >= 0:
             was_blocked = self.orient_combo.blockSignals(True)
@@ -990,9 +1003,9 @@ class SettingsTab(QWidget):
         mode = normalize_mode(self._settings.get("theme_mode", "auto"))
         was_blocked = self.theme_combo.blockSignals(True)
         try:
-            self.theme_combo.setCurrentIndex(
-                {"auto": 0, "light": 1, "dark": 2}.get(mode, 0)
-            )
+            tidx = self.theme_combo.findData(mode)
+            if tidx >= 0:
+                self.theme_combo.setCurrentIndex(tidx)
         finally:
             self.theme_combo.blockSignals(was_blocked)
         apply_theme(mode)

@@ -23,8 +23,10 @@ ISSUES_URL = "https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/issues"
 
 
 def make_about_dialog(parent=None) -> QDialog:
+    from PySide6.QtCore import QCoreApplication
+    _tr = lambda s: QCoreApplication.translate("AboutDialog", s)
     dialog = QDialog(parent)
-    dialog.setWindowTitle(f"About {DISPLAY_NAME}")
+    dialog.setWindowTitle(_tr("About {app}").format(app=DISPLAY_NAME))
     dialog.setWindowIcon(
         QIcon.fromTheme("steelvoicemix", QIcon.fromTheme("audio-headset"))
     )
@@ -38,24 +40,28 @@ def make_about_dialog(parent=None) -> QDialog:
     title.setAlignment(Qt.AlignCenter)
     layout.addWidget(title)
 
-    version = QLabel(f"Version {APP_VERSION}")
+    version = QLabel(_tr("Version {ver}").format(ver=APP_VERSION))
     version.setAlignment(Qt.AlignCenter)
     version.setStyleSheet("color: #888;")
     layout.addWidget(version)
 
     summary = QLabel(
-        "ChatMix for the SteelSeries Arctis Nova Pro Wireless on Linux. "
-        "Creates virtual PipeWire sinks controlled by the hardware dial on "
-        "the base station."
+        _tr(
+            "ChatMix for the SteelSeries Arctis Nova Pro Wireless on Linux. "
+            "Creates virtual PipeWire sinks controlled by the hardware dial on "
+            "the base station."
+        )
     )
     summary.setWordWrap(True)
     layout.addWidget(summary)
 
     disclaimer = QLabel(
-        "<b>Disclaimer:</b> SteelVoiceMix has no affiliation with SteelSeries. "
-        "The author is not responsible for damage, bricked devices, voided "
-        "warranties, or any other outcome from using this software. Use at "
-        "your own risk."
+        _tr(
+            "<b>Disclaimer:</b> SteelVoiceMix has no affiliation with SteelSeries. "
+            "The author is not responsible for damage, bricked devices, voided "
+            "warranties, or any other outcome from using this software. Use at "
+            "your own risk."
+        )
     )
     disclaimer.setWordWrap(True)
     disclaimer.setStyleSheet(
@@ -67,16 +73,16 @@ def make_about_dialog(parent=None) -> QDialog:
 
     links = QLabel(
         f'<p style="text-align:center;">'
-        f'<a href="{HOMEPAGE}">Homepage</a>'
+        f'<a href="{HOMEPAGE}">{_tr("Homepage")}</a>'
         f' &nbsp;·&nbsp; '
-        f'<a href="{ISSUES_URL}">Report an issue</a>'
+        f'<a href="{ISSUES_URL}">{_tr("Report an issue")}</a>'
         f'</p>'
     )
     links.setAlignment(Qt.AlignCenter)
     links.setOpenExternalLinks(True)
     layout.addWidget(links)
 
-    license_lbl = QLabel("Licensed under the GNU GPL-3.0-or-later")
+    license_lbl = QLabel(_tr("Licensed under the GNU GPL-3.0-or-later"))
     license_lbl.setAlignment(Qt.AlignCenter)
     license_lbl.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
     layout.addWidget(license_lbl)
