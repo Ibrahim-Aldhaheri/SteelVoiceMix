@@ -37,7 +37,7 @@
 # stable release.
 
 Name:           steelvoicemix
-Version:        0.3.3~beta1
+Version:        0.4.1~beta20
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta / dev channel)
 
@@ -49,10 +49,19 @@ BuildRequires:  rust >= 1.70
 BuildRequires:  cargo
 BuildRequires:  hidapi-devel
 BuildRequires:  systemd-rpm-macros
+# qt6-linguist provides lrelease-qt6, used in %build to compile
+# the bundled .ts translation sources into .qm files. The runtime
+# QTranslator loads the .qm at startup.
+BuildRequires:  qt6-linguist
 
 Requires:       pipewire
 Requires:       pulseaudio-utils
 Requires:       pipewire-utils
+# wmctrl powers the Auto Game-EQ Add Binding dialog's 'open
+# windowed apps' suggestion list. Recommends — keeps installs
+# robust against transient repo issues, and dnf still pulls it
+# automatically on first install.
+Recommends:     wmctrl
 Requires:       libnotify
 Requires:       hidapi
 
@@ -74,6 +83,11 @@ COPR project (abokhalil/steelvoicemix) if you want fewer surprises.
 
 %build
 cargo build --release
+# Compile bundled translations. lrelease-qt6 turns each .ts source
+# into a .qm binary the QTranslator loads at runtime.
+for ts in gui/translations/*.ts; do
+    lrelease-qt6 "$ts" -qm "${ts%.ts}.qm"
+done
 
 %install
 # Daemon binary
@@ -99,6 +113,20 @@ install -Dm644 gui/presets/asm/mic/*.json \
 install -d %{buildroot}%{_datadir}/%{name}/gui/data/hrir
 install -Dm644 gui/data/hrir/EAC_Default.wav \
     %{buildroot}%{_datadir}/%{name}/gui/data/hrir/EAC_Default.wav
+
+# Translations: ship the compiled .qm files (the .ts sources stay
+# in-tree for contributors but aren't installed). i18n.py looks
+# them up under <pkg-dir>/gui/translations/.
+install -d %{buildroot}%{_datadir}/%{name}/gui/translations
+for qm in gui/translations/*.qm; do
+    [ -e "$qm" ] || continue
+    install -Dm644 "$qm" \
+        %{buildroot}%{_datadir}/%{name}/gui/translations/$(basename "$qm")
+done
+
+# CLI wrapper — `steelvoicemix-cli sink cycle` exposed for global
+# keyboard-shortcut binding via the user's DE settings.
+install -Dm755 steelvoicemix-cli.py %{buildroot}%{_bindir}/steelvoicemix-cli
 
 # GUI launcher — force XCB so overlay positioning works under Wayland
 cat > %{buildroot}%{_bindir}/steelvoicemix-gui << 'EOF'
@@ -142,6 +170,7 @@ udevadm control --reload-rules 2>/dev/null || :
 %doc README.md
 %{_bindir}/steelvoicemix
 %{_bindir}/steelvoicemix-gui
+%{_bindir}/steelvoicemix-cli
 %{_datadir}/%{name}/
 %{_userunitdir}/steelvoicemix.service
 %{_userunitdir}/steelvoicemix-gui.service

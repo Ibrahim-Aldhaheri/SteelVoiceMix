@@ -15,7 +15,7 @@ import os
 import threading
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -111,6 +111,7 @@ class MixerGUI(QMainWindow):
         self._start_daemon_client()
         self._update_checker = None
         self._start_update_check()
+        self._install_default_sink_shortcut()
 
         # Universal cleanup: aboutToQuit fires for every exit path
         # (tray Quit action, X button when no tray, SIGTERM, SIGINT,
@@ -142,7 +143,7 @@ class MixerGUI(QMainWindow):
         title.setStyleSheet("font-size: 14px; font-weight: bold;")
         header.addWidget(title)
         header.addStretch(1)
-        self.status_label = QLabel("🔍  Connecting…")
+        self.status_label = QLabel(self.tr("🔍  Connecting…"))
         self.status_label.setObjectName("status-pill")
         self.status_label.setProperty("state", "")
         self.status_label.setAlignment(Qt.AlignCenter)
@@ -200,12 +201,12 @@ class MixerGUI(QMainWindow):
         self.stack = QStackedWidget()
 
         for label, widget in (
-            ("🏠   Home", self.home_tab),
-            ("🔊   Sinks", self.sinks_tab),
-            ("🎛   Equalizer", self.eq_tab),
-            ("🎬   Surround", self.surround_tab),
-            ("🎙   Microphone", self.mic_tab),
-            ("⚙   Settings", self.settings_tab),
+            (self.tr("🏠   Home"), self.home_tab),
+            (self.tr("🔊   Sinks"), self.sinks_tab),
+            (self.tr("🎛   Equalizer"), self.eq_tab),
+            (self.tr("🎬   Surround"), self.surround_tab),
+            (self.tr("🎙   Microphone"), self.mic_tab),
+            (self.tr("⚙   Settings"), self.settings_tab),
         ):
             item = QListWidgetItem(label)
             self.nav.addItem(item)
@@ -233,15 +234,15 @@ class MixerGUI(QMainWindow):
         # Persistent footer — update status + check-now + about, always visible.
         footer = QHBoxLayout()
         footer.setSpacing(8)
-        self.update_label = QLabel("Up to date")
+        self.update_label = QLabel(self.tr("Up to date"))
         self.update_label.setStyleSheet(
             "color: palette(placeholder-text); font-size: 10px;"
         )
-        update_btn = QPushButton("Check for updates")
+        update_btn = QPushButton(self.tr("Check for updates"))
         update_btn.setFlat(True)
         update_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
         update_btn.clicked.connect(self._force_update_check)
-        self.about_btn = QPushButton("About…")
+        self.about_btn = QPushButton(self.tr("About…"))
         self.about_btn.setFlat(True)
         self.about_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
         self.about_btn.clicked.connect(self._show_about)
@@ -290,6 +291,12 @@ class MixerGUI(QMainWindow):
         self.signals.hdmi_sink_changed.connect(self.home_tab.on_hdmi_enabled)
         self.signals.auto_route_browsers_changed.connect(
             self.sinks_tab.on_auto_route_changed
+        )
+        self.signals.channel_boost_changed.connect(
+            self.sinks_tab.on_channel_boost_changed
+        )
+        self.signals.volume_boost_state.connect(
+            self.sinks_tab.on_volume_boost_state
         )
 
         self.signals.eq_enabled_changed.connect(self.eq_tab.on_enabled_changed)
@@ -454,6 +461,69 @@ class MixerGUI(QMainWindow):
                 2000,
             )
 
+    def _install_default_sink_shortcut(self) -> None:
+        """Bind the configured key sequence to gui.sink_cycle.
+        Context = ApplicationShortcut so the shortcut fires while
+        ANY of our windows has focus (main window, tray menu open,
+        etc.) — not just the main window. Genuine system-wide
+        hotkeys (firing while the game has focus) need
+        steelvoicemix-cli bound in the DE's keyboard settings."""
+        # Always tear down the previous shortcut first so re-installs
+        # on toggle or combo change don't leak.
+        old = getattr(self, "_default_sink_shortcut", None)
+        if old is not None:
+            try:
+                old.setEnabled(False)
+                old.deleteLater()
+            except Exception:
+                pass
+            self._default_sink_shortcut = None
+        if not self.settings.get("default_sink_cycle_enabled", False):
+            return
+        combo = self.settings.get("default_sink_cycle_combo", "Ctrl+Shift+S")
+        seq = QKeySequence(combo)
+        if seq.isEmpty():
+            return
+        # Owned by self so the shortcut is GC-safe and lives as long
+        # as the window does.
+        self._default_sink_shortcut = QShortcut(seq, self)
+        self._default_sink_shortcut.setContext(Qt.ApplicationShortcut)
+        self._default_sink_shortcut.activated.connect(
+            self._on_default_sink_shortcut
+        )
+
+    def reload_default_sink_shortcut(self) -> None:
+        """Public re-entry point used by SettingsTab when the user
+        toggles the feature on/off or changes the combo. Tears down
+        and rebuilds the QShortcut so the new state takes effect
+        without restarting the app."""
+        self._install_default_sink_shortcut()
+
+    def _on_default_sink_shortcut(self) -> None:
+        from .sink_cycle import cycle_default_sink
+        prev, new = cycle_default_sink(
+            exclude=self.settings.get("default_sink_cycle_exclude") or [],
+        )
+        if not new:
+            self._show_tray_message(
+                "Cycle default sink failed",
+                "No SteelVoiceMix sinks loaded.",
+            )
+        else:
+            self._show_tray_message(
+                "Default sink",
+                f"{new}" if new == prev else f"{prev or '?'} → {new}",
+            )
+
+    def _show_tray_message(self, title: str, body: str) -> None:
+        """Best-effort tray toast — silently no-op if no tray exists."""
+        if getattr(self, "tray", None) is None:
+            return
+        try:
+            self.tray.showMessage(title, body, msecs=2000)
+        except Exception:
+            pass
+
     def _quit(self) -> None:
         # User-driven quit: ask Qt to exit. aboutToQuit will fire
         # _cleanup_on_quit which actually stops the threads.
@@ -544,7 +614,7 @@ class MixerGUI(QMainWindow):
         )
 
     def _on_no_update(self) -> None:
-        self.update_label.setText("Up to date")
+        self.update_label.setText(self.tr("Up to date"))
         self.update_label.setStyleSheet(
             "color: palette(placeholder-text); font-size: 10px;"
         )

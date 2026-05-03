@@ -9,9 +9,10 @@ use std::time::{Duration, Instant};
 use log::{debug, info, warn};
 
 use crate::audio::{SinkManager, CHAT_SINK, GAME_SINK};
+use crate::config;
 use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
-use crate::protocol::{DaemonEvent, EqState, MicState};
+use crate::protocol::{DaemonEvent, EqChannel, EqState, MicState, VolumeBoostState};
 
 pub type SharedSinks = Arc<Mutex<SinkManager>>;
 
@@ -24,6 +25,33 @@ pub fn broadcast_event(
 ) {
     let mut subs = subscribers.lock().unwrap();
     subs.retain(|tx| tx.send(event.clone()).is_ok());
+}
+
+/// Persist the dial-tracking part of MixerState to disk. Called from
+/// the dial-event handler so the latest game/chat split survives a
+/// daemon restart instead of resetting to 100/100. Cheap (one small
+/// JSON write) and the dial fires at most a few events per session,
+/// so per-event writes are fine. We pull every other field from the
+/// current state so this stays consistent with main.rs's
+/// persist_sink_state helper for non-dial commands.
+fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
+    let st = state.lock().unwrap();
+    config::save(&config::DaemonState {
+        media_sink_enabled: st.media_sink_enabled,
+        hdmi_sink_enabled: st.hdmi_sink_enabled,
+        auto_route_browsers: st.auto_route_browsers,
+        eq_enabled: st.eq_enabled,
+        eq_state: st.eq_state,
+        surround_enabled: st.surround_enabled,
+        surround_hrir_path: st.surround_hrir_path.clone(),
+        mic_state: st.mic_state,
+        mic_default_applied: true,
+        sidetone_level: st.sidetone_level,
+        notifications_enabled: st.notifications_enabled,
+        volume_boost: st.volume_boost,
+        game_vol: st.game_vol,
+        chat_vol: st.chat_vol,
+    });
 }
 
 const RECONNECT_BASE: Duration = Duration::from_secs(3);
@@ -71,6 +99,21 @@ pub struct MixerState {
     pub mic_state: MicState,
     pub sidetone_level: u8,
     pub notifications_enabled: bool,
+    /// Per-channel digital volume multiplier applied at the
+    /// pactl set-sink-volume call site. Scales the chatmix-derived
+    /// game/chat volume and the fixed 100% volume on Media/HDMI.
+    pub volume_boost: VolumeBoostState,
+    /// Snapshot of the chatmix dial value at the moment a channel's
+    /// boost was last toggled ON, used to restore the user's pre-
+    /// boost balance when the boost is later turned OFF. Without
+    /// this, lowering the dial during boost (to compensate for the
+    /// extra loudness) and then disabling boost would leave the sink
+    /// stuck at the now-too-low dial reading. Transient — never
+    /// persisted across daemon restarts. None means "not currently
+    /// holding a snapshot for this channel"; some(v) means "boost is
+    /// currently on for this channel and the dial-at-enable was v".
+    pub pre_boost_game_vol: Option<u8>,
+    pub pre_boost_chat_vol: Option<u8>,
 }
 
 impl MixerState {
@@ -86,11 +129,14 @@ impl MixerState {
         mic_state: MicState,
         sidetone_level: u8,
         notifications_enabled: bool,
+        volume_boost: VolumeBoostState,
+        game_vol: u8,
+        chat_vol: u8,
     ) -> Self {
         MixerState {
             connected: false,
-            game_vol: 100,
-            chat_vol: 100,
+            game_vol,
+            chat_vol,
             battery: None,
             media_sink_enabled,
             hdmi_sink_enabled,
@@ -102,6 +148,9 @@ impl MixerState {
             mic_state,
             sidetone_level,
             notifications_enabled,
+            volume_boost,
+            pre_boost_game_vol: None,
+            pre_boost_chat_vol: None,
         }
     }
 }
@@ -282,8 +331,15 @@ impl Mixer {
         }
 
         let (init_game, init_chat) = self.resolve_initial_dial(&dev);
-        SinkManager::set_volume(GAME_SINK, init_game);
-        SinkManager::set_volume(CHAT_SINK, init_chat);
+        let (game_boost, chat_boost) = {
+            let st = self.state.lock().unwrap();
+            (
+                st.volume_boost.for_channel(EqChannel::Game),
+                st.volume_boost.for_channel(EqChannel::Chat),
+            )
+        };
+        SinkManager::set_volume(GAME_SINK, game_boost.apply(init_game));
+        SinkManager::set_volume(CHAT_SINK, chat_boost.apply(init_chat));
 
         {
             let mut st = self.state.lock().unwrap();
@@ -378,13 +434,24 @@ impl Mixer {
                 Ok(Some(msg)) => match NovaDevice::parse_event(&msg) {
                     HidEvent::ChatMix { game_vol, chat_vol } => {
                         debug!("dial: game={game_vol}% chat={chat_vol}%");
-                        SinkManager::set_volume(GAME_SINK, game_vol);
-                        SinkManager::set_volume(CHAT_SINK, chat_vol);
+                        let (game_boost, chat_boost) = {
+                            let st = self.state.lock().unwrap();
+                            (
+                                st.volume_boost.for_channel(EqChannel::Game),
+                                st.volume_boost.for_channel(EqChannel::Chat),
+                            )
+                        };
+                        SinkManager::set_volume(GAME_SINK, game_boost.apply(game_vol));
+                        SinkManager::set_volume(CHAT_SINK, chat_boost.apply(chat_vol));
                         {
                             let mut st = self.state.lock().unwrap();
                             st.game_vol = game_vol;
                             st.chat_vol = chat_vol;
                         }
+                        // Persist so a future daemon restart doesn't reset
+                        // the split to defaults when the firmware doesn't
+                        // answer get_chatmix.
+                        persist_dial_state(&self.state);
                         // Broadcast to GUI/overlay first — the OLED draw
                         // can stall on firmware that rejects feature
                         // reports, and we don't want GUI updates waiting

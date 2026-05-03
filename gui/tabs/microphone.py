@@ -240,12 +240,12 @@ class MicrophoneTab(QWidget):
         intro.setStyleSheet(
             "font-size: 11px; color: palette(placeholder-text);"
         )
-        layout.addWidget(card("Microphone Processing", alpha_row, intro))
+        layout.addWidget(card(self.tr("Microphone Processing"), alpha_row, intro))
 
         self.gate_toggle, self.gate_slider, self.gate_value = self._add_feature_card(
             layout,
             "noise_gate",
-            "Noise Gate",
+            self.tr("Noise Gate"),
             "Mutes the mic when input level falls below the threshold. "
             "Higher strength = more aggressive (cuts more background "
             "sound; may clip the start of soft speech). Provided by "
@@ -254,7 +254,7 @@ class MicrophoneTab(QWidget):
         self.nr_toggle, self.nr_slider, self.nr_value = self._add_feature_card(
             layout,
             "noise_reduction",
-            "Noise Reduction",
+            self.tr("Noise Reduction"),
             "Mild RNNoise denoiser — removes constant background hum, "
             "fan noise, keyboard clatter. Capped at 50% VAD threshold "
             "for a lighter touch than AI NC.",
@@ -262,7 +262,7 @@ class MicrophoneTab(QWidget):
         self.ai_toggle, self.ai_slider, self.ai_value = self._add_feature_card(
             layout,
             "ai_noise_cancellation",
-            "AI Noise Cancellation",
+            self.tr("AI Noise Cancellation"),
             "Aggressive RNNoise — handles non-stationary noise (typing, "
             "dog barks, road noise) but can clip quieter speech at high "
             "strength. If both NR and AI NC are on, only AI NC runs.",
@@ -274,7 +274,7 @@ class MicrophoneTab(QWidget):
         self.vs_toggle, self.vs_slider, self.vs_value = self._add_feature_card(
             layout,
             "volume_stabilizer",
-            "Volume Stabilizer",
+            self.tr("Volume Stabilizer"),
             "Smooths volume swings between quiet whispers and loud "
             "bursts so apps don't get a wildly fluctuating mic "
             "volume. Pick the mode that suits your voice — Broadcast "
@@ -289,11 +289,13 @@ class MicrophoneTab(QWidget):
         vs_card_layout = vs_card_widget.layout() if vs_card_widget else None
         if vs_card_layout is not None:
             kind_row = QHBoxLayout()
-            kind_lbl = QLabel("Mode")
+            kind_lbl = QLabel(self.tr("Mode"))
             kind_lbl.setFixedWidth(80)
             self.vs_kind_combo = QComboBox()
-            self.vs_kind_combo.addItem("Broadcast — audible levelling", "broadcast")
-            self.vs_kind_combo.addItem("Soft — transparent", "soft")
+            self.vs_kind_combo.addItem(
+                self.tr("Broadcast — audible levelling"), "broadcast"
+            )
+            self.vs_kind_combo.addItem(self.tr("Soft — transparent"), "soft")
             self.vs_kind_combo.setMaximumWidth(420)
             self.vs_kind_combo.currentIndexChanged.connect(
                 self._on_vs_kind_changed
@@ -311,7 +313,7 @@ class MicrophoneTab(QWidget):
         # with what the firmware actually applies. No debounce
         # needed (4 discrete stops, not 128 pixel positions).
         sidetone_row = QHBoxLayout()
-        sidetone_lbl = QLabel("Sidetone")
+        sidetone_lbl = QLabel(self.tr("Sidetone"))
         sidetone_lbl.setFixedWidth(80)
         sidetone_alpha = QLabel("ALPHA")
         # Pin the badge to a tight intrinsic size so QHBoxLayout
@@ -340,7 +342,7 @@ class MicrophoneTab(QWidget):
         self.sidetone_slider.setMaximumWidth(280)
         self.sidetone_slider.setEnabled(self._daemon is not None)
         self.sidetone_slider.valueChanged.connect(self._on_sidetone_step_changed)
-        self.sidetone_value = QLabel("Off")
+        self.sidetone_value = QLabel(self.tr("Off"))
         self.sidetone_value.setFixedWidth(72)
         self.sidetone_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         sidetone_row.addWidget(sidetone_lbl)
@@ -471,11 +473,11 @@ class MicrophoneTab(QWidget):
         description: str,
         badge: str | None = None,
     ):
-        toggle_row, toggle = labelled_toggle("Enabled", badge=badge)
+        toggle_row, toggle = labelled_toggle(self.tr("Enabled"), badge=badge)
         toggle.toggled.connect(lambda checked, k=key: self._on_toggled(k, checked))
 
         slider_row = QHBoxLayout()
-        strength_lbl = QLabel("Strength")
+        strength_lbl = QLabel(self.tr("Strength"))
         strength_lbl.setFixedWidth(80)
         slider = NoWheelSlider(Qt.Horizontal)
         slider.setRange(0, 100)
@@ -635,7 +637,13 @@ class MicrophoneTab(QWidget):
     # 86..=128 → high. We pick the centre of each bucket for clarity
     # so the user gets the exact hardware level they expect.
     _SIDETONE_LEVELS = (0, 21, 64, 107)
+    # Source strings for the slider's value label. We translate them
+    # at display time via self.tr(...) — the constant stays in English
+    # for stable equality + .ts extraction.
     _SIDETONE_LABELS = ("Off", "Low", "Medium", "High")
+
+    def _sidetone_label_for(self, step: int) -> str:
+        return self.tr(self._SIDETONE_LABELS[max(0, min(3, step))])
 
     def _level_to_step(self, level: int) -> int:
         """Daemon level (0..128) → slider step (0..3)."""
@@ -659,13 +667,13 @@ class MicrophoneTab(QWidget):
             self.sidetone_slider.setValue(step)
         finally:
             self.sidetone_slider.blockSignals(was_blocked)
-        self.sidetone_value.setText(self._SIDETONE_LABELS[step])
+        self.sidetone_value.setText(self._sidetone_label_for(step))
 
     def _on_sidetone_step_changed(self, step: int) -> None:
         """User moved the slider — fire the daemon command + update
         the label. No debounce needed at 4 steps."""
         step = max(0, min(3, step))
-        self.sidetone_value.setText(self._SIDETONE_LABELS[step])
+        self.sidetone_value.setText(self._sidetone_label_for(step))
         if self._daemon is None:
             return
         self._daemon.send_command(

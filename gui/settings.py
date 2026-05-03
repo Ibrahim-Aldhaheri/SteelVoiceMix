@@ -14,7 +14,30 @@ from typing import Any
 
 APP_NAME = "steelvoicemix"
 DISPLAY_NAME = "SteelVoiceMix"
-APP_VERSION = "0.3.1"
+def _derive_app_version() -> str:
+    """Read the package version from RPM at runtime so the GUI's
+    'About' dialog and User-Agent header match what's actually
+    installed. Falls back to the hardcoded constant when the
+    binary isn't an RPM (manual install, source checkout, etc)."""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["rpm", "-q", "--qf", "%{VERSION}", APP_NAME],
+            capture_output=True, text=True, timeout=2,
+        )
+        v = r.stdout.strip()
+        if r.returncode == 0 and v and not v.startswith("package"):
+            return v
+    except Exception:
+        pass
+    return _APP_VERSION_FALLBACK
+
+
+# Bumped manually on each beta cut; runtime derives from RPM if
+# available so this constant only matters in source-checkout /
+# manual-install scenarios.
+_APP_VERSION_FALLBACK = "0.4.1~beta20"
+APP_VERSION = _derive_app_version()
 
 CONFIG_DIR = Path.home() / ".config" / APP_NAME
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
@@ -79,6 +102,12 @@ DEFAULTS: dict[str, Any] = {
     # Appearance: 'auto' follows the system colour scheme; 'light'
     # / 'dark' override with our packaged palettes. See gui/theme.py.
     "theme_mode": "auto",
+    # UI language. 'system' follows the OS locale; explicit codes
+    # ('en', 'ar', etc.) override. Translation coverage is partial
+    # — strings without a translation fall back to English, which
+    # means a user picking 'ar' sees a mix until the .qm catches
+    # up. Tracked in gui/translations/<code>.ts.
+    "ui_language": "system",
     # Auto-switch the Game-channel EQ when a known game launches.
     # When True, the GameWatcher polls SteelGame's sink-inputs and:
     #   1. Looks up `game_eq_bindings[detected_name]` (manual override).
@@ -94,6 +123,35 @@ DEFAULTS: dict[str, Any] = {
     # Migrated automatically from the legacy dict shape on first
     # load by `gui/settings.py:load()`.
     "game_eq_bindings": [],
+    # Persisted state of the Auto Game-EQ orchestrator. Without
+    # these, suspending the PC right after closing a game (before
+    # the watcher's 4-second exit grace fires) lost the snapshot
+    # that was supposed to restore the user's pre-game EQ — the
+    # daemon kept the game preset on disk and there was nothing to
+    # override it with after resume / GUI restart.
+    #
+    #   auto_game_eq_active_preset: name of the preset currently
+    #     applied via auto-switch, or "" if no auto preset is
+    #     engaged. Set on _enter / _switch, cleared on _exit.
+    #   auto_game_eq_snapshot_bands: list[band-dict], the user's
+    #     pre-game Game-channel EQ. Saved at _enter, consumed at
+    #     _exit. Empty list means "no snapshot stored".
+    "auto_game_eq_active_preset": "",
+    "auto_game_eq_snapshot_bands": [],
+    # Default-sink cycle shortcut. When enabled, the configured
+    # key combo cycles the system default sink between the loaded
+    # SteelVoiceMix virtual sinks (Game / Chat / Media / HDMI).
+    # Off by default — adds a global-ish keybinding, which users
+    # should opt into. The combo is a Qt key-sequence string;
+    # default Ctrl+Shift+S works in most desktop environments
+    # without conflicting with common app shortcuts.
+    "default_sink_cycle_enabled": False,
+    "default_sink_cycle_combo": "Ctrl+Shift+S",
+    # Sink names to skip when cycling (e.g. "SteelChat"). Stored
+    # as a list of canonical sink names — the cycle helper compares
+    # against `pactl list sinks short` output so the names must
+    # match exactly.
+    "default_sink_cycle_exclude": [],
 }
 
 # Star-tier capacity per channel. Five is enough to cover the main use

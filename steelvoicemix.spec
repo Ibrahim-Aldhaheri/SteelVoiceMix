@@ -11,10 +11,18 @@ BuildRequires:  rust >= 1.70
 BuildRequires:  cargo
 BuildRequires:  hidapi-devel
 BuildRequires:  systemd-rpm-macros
+BuildRequires:  qt6-linguist
 
 Requires:       pipewire
 Requires:       pulseaudio-utils
 Requires:       pipewire-utils
+# wmctrl powers the Auto Game-EQ Add Binding dialog's 'open
+# windowed apps' suggestion list. Recommends so dnf doesn't break
+# the install when wmctrl isn't available (e.g. transient repo
+# issues, derivative distros). Existing users upgrading from
+# earlier versions can `dnf install wmctrl` manually if they
+# want the window-suggestion source.
+Recommends:     wmctrl
 Requires:       libnotify
 Requires:       hidapi
 
@@ -46,6 +54,10 @@ with battery indicator that communicates with the daemon over a Unix socket.
 
 %build
 cargo build --release
+# Compile bundled translations.
+for ts in gui/translations/*.ts; do
+    lrelease-qt6 "$ts" -qm "${ts%.ts}.qm"
+done
 
 %install
 # Daemon binary
@@ -74,6 +86,19 @@ install -Dm644 gui/presets/asm/mic/*.json \
 install -d %{buildroot}%{_datadir}/%{name}/gui/data/hrir
 install -Dm644 gui/data/hrir/EAC_Default.wav \
     %{buildroot}%{_datadir}/%{name}/gui/data/hrir/EAC_Default.wav
+
+# Translations — compiled .qm files only; .ts sources stay in-tree
+# for contributors but don't ship.
+install -d %{buildroot}%{_datadir}/%{name}/gui/translations
+for qm in gui/translations/*.qm; do
+    [ -e "$qm" ] || continue
+    install -Dm644 "$qm" \
+        %{buildroot}%{_datadir}/%{name}/gui/translations/$(basename "$qm")
+done
+
+# CLI wrapper — exposes `steelvoicemix-cli sink cycle` for users
+# who want to bind a global keyboard shortcut via their DE.
+install -Dm755 steelvoicemix-cli.py %{buildroot}%{_bindir}/steelvoicemix-cli
 
 # GUI launcher — force XCB so overlay positioning works under Wayland
 cat > %{buildroot}%{_bindir}/steelvoicemix-gui << 'EOF'
@@ -117,6 +142,7 @@ udevadm control --reload-rules 2>/dev/null || :
 %doc README.md
 %{_bindir}/steelvoicemix
 %{_bindir}/steelvoicemix-gui
+%{_bindir}/steelvoicemix-cli
 %{_datadir}/%{name}/
 %{_userunitdir}/steelvoicemix.service
 %{_userunitdir}/steelvoicemix-gui.service

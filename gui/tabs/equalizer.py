@@ -226,7 +226,7 @@ class EqualizerTab(QWidget):
         # combo loads that channel's stored values. Emoji icons match
         # the Home-tab convention (🎮 / 💬).
         ch_row = QHBoxLayout()
-        ch_row.addWidget(QLabel("Channel"))
+        ch_row.addWidget(QLabel(self.tr("Channel")))
         self.channel_combo = NoWheelComboBox()
         self.channel_combo.setMinimumWidth(140)
         self.channel_combo.currentTextChanged.connect(self._on_channel_changed)
@@ -253,7 +253,7 @@ class EqualizerTab(QWidget):
         self.auto_lock_banner.hide()
 
         layout.addWidget(card(
-            "Equalizer", enable_row, ch_row, self.auto_lock_banner,
+            self.tr("Equalizer"), enable_row, ch_row, self.auto_lock_banner,
         ))
 
         # Preset row: searchable dropdown filtered by the current channel,
@@ -307,7 +307,7 @@ class EqualizerTab(QWidget):
         preset_btn_row.addWidget(self.preset_delete_btn)
         preset_btn_row.addStretch(1)
 
-        layout.addWidget(card("Preset", preset_picker_row, preset_btn_row))
+        layout.addWidget(card(self.tr("Preset"), preset_picker_row, preset_btn_row))
         # Populate the combo for the initial channel before any signals fire.
         self._refresh_preset_combo()
 
@@ -327,7 +327,7 @@ class EqualizerTab(QWidget):
         )
         self.favourites_card_layout.addLayout(self.favourites_buttons_row)
         self.favourites_card_layout.addWidget(self.favourites_empty_hint)
-        layout.addWidget(card("Favourites", self.favourites_card_layout))
+        layout.addWidget(card(self.tr("Favourites"), self.favourites_card_layout))
         self._refresh_favourites_card()
 
         # 10 vertical sliders, one per band. The musical name + frequency
@@ -407,7 +407,7 @@ class EqualizerTab(QWidget):
             "font-size: 10px; color: palette(placeholder-text);"
         )
         eq_help.setWordWrap(True)
-        layout.addWidget(card("Bands", bands_row, eq_help))
+        layout.addWidget(card(self.tr("Bands"), bands_row, eq_help))
 
         # Test-audio card ----------------------------------------------
         test_row = QHBoxLayout()
@@ -448,7 +448,7 @@ class EqualizerTab(QWidget):
         # cache the widget so _on_channel_changed can hide it when
         # the user switches to Mic (where Test Audio doesn't make
         # sense — a noise generator wouldn't go through the mic).
-        self.test_audio_card = card("Test Audio", test_warn, test_row, test_help)
+        self.test_audio_card = card(self.tr("Test Audio"), test_warn, test_row, test_help)
         layout.addWidget(self.test_audio_card)
 
         # Hear Yourself card — only visible on the Mic channel.
@@ -494,7 +494,7 @@ class EqualizerTab(QWidget):
                 self._on_voice_test_state_changed
             )
 
-        return card("Listen", btn_row, help_lbl)
+        return card(self.tr("Listen"), btn_row, help_lbl)
 
     def _on_voice_test_toggled(self, checked: bool) -> None:
         if self._voice_test is None:
@@ -604,7 +604,7 @@ class EqualizerTab(QWidget):
         )
 
         return card(
-            "Auto Game-EQ",
+            self.tr("Auto Game-EQ"),
             auto_row,
             self.detected_label,
             self.bindings_table,
@@ -829,39 +829,53 @@ class EqualizerTab(QWidget):
         return out
 
     def _add_binding(self) -> None:
-        # Combine three sources so the user has one dropdown to pick
-        # from regardless of whether the target app is currently
-        # making audio:
-        #   1. Audio clients PipeWire is reporting right now (best —
-        #      proven names that match what the daemon will see).
-        #   2. Open windowed applications via wmctrl, if available
-        #      (catches Steam Big Picture, launchers, native games
-        #      that opened their window before producing audio).
-        #   3. Free-text input — the combo is editable so users can
-        #      pre-bind anything they expect to run later, even
-        #      something not currently visible at all.
+        # Custom dialog (not QInputDialog.getItem) — the editable=True
+        # variant of getItem hides the dropdown arrow on some Qt
+        # themes and the field reads as a plain text-edit, which the
+        # user reported as 'no dropdown'. Building one ourselves lets
+        # us show a real combo with explicit dropdown UI.
         active = self._collect_binding_candidates()
-        prompt = (
-            "Pick a running app or game from the list — or type a "
-            "custom name. Bindings match against PipeWire's "
+        from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtWidgets import (
+            QComboBox as _QComboBox,
+            QDialog as _QDialog,
+            QDialogButtonBox as _QDialogButtonBox,
+            QLabel as _QLabel,
+            QVBoxLayout as _QVBoxLayout,
+        )
+        dlg = _QDialog(self)
+        dlg.setWindowTitle("Bind app to preset")
+        dlg.setMinimumWidth(420)
+        dlg_layout = _QVBoxLayout(dlg)
+        prompt_lbl = _QLabel(
+            "Pick a running app or type a custom name (the field is "
+            "editable). Bindings match against PipeWire's "
             "application.name when audio starts."
+            if active else
+            "No running apps detected — type a custom name below. "
+            "It'll match when the app eventually produces audio."
         )
-        if not active:
-            prompt = (
-                "No running apps detected. Type a custom name below — "
-                "it'll match when the app produces audio later."
-            )
-        name, ok = QInputDialog.getItem(
-            self,
-            "Bind app to preset",
-            prompt,
-            active,
-            0,
-            True,  # editable: user can type anything
+        prompt_lbl.setWordWrap(True)
+        dlg_layout.addWidget(prompt_lbl)
+        combo = _QComboBox()
+        combo.setEditable(True)
+        combo.addItems(active)
+        # Setting the line-edit's placeholder makes the empty-list
+        # case obviously a free-text entry.
+        if not active and combo.lineEdit() is not None:
+            combo.lineEdit().setPlaceholderText("e.g. Hunt: Showdown")
+        dlg_layout.addWidget(combo)
+        buttons = _QDialogButtonBox(
+            _QDialogButtonBox.Ok | _QDialogButtonBox.Cancel
         )
-        if not ok or not name or not name.strip():
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        dlg_layout.addWidget(buttons)
+        if dlg.exec() != _QDialog.Accepted:
             return
-        name = name.strip()
+        name = combo.currentText().strip()
+        if not name:
+            return
         preset_names = [p["name"] for p in list_presets("game")]
         if not preset_names:
             QMessageBox.warning(
@@ -918,7 +932,15 @@ class EqualizerTab(QWidget):
         """Daemon broadcast: bands for `channel` changed (perhaps because
         we just sent the change, perhaps from another client or a preset
         load). Update the local cache; if it's the channel currently on
-        screen, refresh sliders + labels too."""
+        screen, refresh sliders + labels too.
+
+        We deliberately do NOT reconcile the active-preset name here —
+        every band edit + every chain respawn echoes a broadcast back,
+        and re-walking the preset list each time can flip the combo to
+        a different preset that happens to match by float tolerance
+        (the 'pink noise played, EQ flipped to Podcast' bug). The
+        active-preset name is owned by whoever triggered the change:
+        _apply_preset, _maybe_fork_to_custom, _on_auto_applied, etc."""
         if channel not in self._bands_by_channel:
             return
         self._bands_by_channel[channel] = list(bands)
@@ -927,12 +949,71 @@ class EqualizerTab(QWidget):
 
     def on_full_state(self, state: dict) -> None:
         """Initial Status snapshot delivered every channel's band data
-        at once (Game / Chat / Media / HDMI). Cache them all and refresh
-        the visible sliders."""
+        at once (Game / Chat / Media / HDMI / Mic). Cache them all and
+        reconcile the active-preset name from the loaded bands so the
+        preset combo doesn't show 'Flat' while the sliders sit on a
+        non-flat preset (the bug we hit on first restart after upgrade
+        from a stable that didn't persist active_preset)."""
         for ch in ("game", "chat", "media", "hdmi", "mic"):
             if ch in state:
                 self._bands_by_channel[ch] = list(state[ch])
+                self._reconcile_active_preset(ch)
         self._render_sliders_for_channel(self._current_channel)
+        self._refresh_preset_combo()
+
+    def _reconcile_active_preset(self, channel: str) -> None:
+        """Look at the currently-loaded bands for `channel` and set
+        `_active_preset_by_channel[channel]` to the name of whichever
+        bundled / built-in / user preset matches them, or '' if no
+        preset matches.
+
+        We do this because the daemon persists the BANDS (which is
+        the source of truth for the audio chain) but NOT which
+        preset name the bands came from — that's GUI-side metadata.
+        Without this reconcile, after a daemon restart the user sees
+        their non-flat bands but the combo still says 'Flat'."""
+        bands = self._bands_by_channel.get(channel)
+        if not bands:
+            return
+        matched = self._find_preset_name_for_bands(channel, bands)
+        # Empty string is fine — means 'bands don't match any known
+        # preset' which is the legitimate state when the user has
+        # been hand-editing.
+        self._active_preset_by_channel[channel] = matched
+
+    def _find_preset_name_for_bands(
+        self, channel: str, bands: list[dict],
+    ) -> str:
+        """Find the preset whose bands match `bands` exactly (within
+        float tolerance). Returns the preset name, or '' if none
+        matches. Iterates list_presets(channel) which already merges
+        built-in + ASM-bundled + user presets."""
+        for preset in list_presets(channel):
+            preset_bands = preset.get("bands") or []
+            if self._bands_equal(bands, preset_bands):
+                return str(preset.get("name", ""))
+        return ""
+
+    @staticmethod
+    def _bands_equal(a: list[dict], b: list[dict]) -> bool:
+        """Field-by-field band comparison with float tolerance for
+        freq / q / gain. Type + enabled compare exactly."""
+        if len(a) != len(b):
+            return False
+        for ba, bb in zip(a, b):
+            if not isinstance(ba, dict) or not isinstance(bb, dict):
+                return False
+            if abs(float(ba.get("freq", 0)) - float(bb.get("freq", 0))) > 0.5:
+                return False
+            if abs(float(ba.get("q", 0)) - float(bb.get("q", 0))) > 0.001:
+                return False
+            if abs(float(ba.get("gain", 0)) - float(bb.get("gain", 0))) > 0.05:
+                return False
+            if str(ba.get("type", "")) != str(bb.get("type", "")):
+                return False
+            if bool(ba.get("enabled", True)) != bool(bb.get("enabled", True)):
+                return False
+        return True
 
     def on_media_sink_changed(self, enabled: bool) -> None:
         """Sink toggled in another tab → make Media available (or not)
@@ -956,12 +1037,15 @@ class EqualizerTab(QWidget):
         active, and the daemon spawns it on demand. UserData carries
         the bare channel key ('game', 'chat', 'media', 'hdmi', 'mic')
         so internal lookups don't have to parse the emoji prefix."""
-        labels = [("game", "🎮 Game"), ("chat", "💬 Chat")]
+        labels = [
+            ("game", self.tr("🎮 Game")),
+            ("chat", self.tr("💬 Chat")),
+        ]
         if self._media_sink_enabled:
-            labels.append(("media", "🎵 Media"))
+            labels.append(("media", self.tr("🎵 Media")))
         if self._hdmi_sink_enabled:
-            labels.append(("hdmi", "📺 HDMI"))
-        labels.append(("mic", "🎙 Microphone"))
+            labels.append(("hdmi", self.tr("📺 HDMI")))
+        labels.append(("mic", self.tr("🎙 Microphone")))
 
         was_blocked = self.channel_combo.blockSignals(True)
         try:

@@ -126,6 +126,16 @@ class DaemonSignals(QObject):
     # source. `active=True` = SteelMic is now the default; the GUI
     # uses this for a one-time "we changed your default mic" notice.
     mic_default_source_changed = Signal(bool)
+    # Per-channel volume boost — emitted when the daemon applies a
+    # SetChannelBoost or replays state on (re)subscribe. Args:
+    # (channel: str ("game"/"chat"/"media"/"hdmi"), enabled: bool,
+    # multiplier_pct: int (100..=200)).
+    channel_boost_changed = Signal(str, bool, int)
+    # Snapshot replay of the full per-channel boost state, fired from
+    # the Status event so the Sinks tab can populate every row before
+    # the user touches anything. Shape: {"game": {"enabled": bool,
+    # "multiplier_pct": int}, "chat": {...}, ...}.
+    volume_boost_state = Signal(dict)
 
 
 class DaemonClient:
@@ -222,6 +232,15 @@ class DaemonClient:
             self.signals.mic_default_source_changed.emit(
                 bool(event.get("active", False))
             )
+        elif ev == "channel-boost-changed":
+            channel = event.get("channel", "")
+            boost = event.get("boost") or {}
+            if channel in ("game", "chat", "media", "hdmi") and isinstance(boost, dict):
+                self.signals.channel_boost_changed.emit(
+                    channel,
+                    bool(boost.get("enabled", False)),
+                    int(boost.get("multiplier_pct", 100)),
+                )
         elif ev == "eq-bands-changed":
             channel = event.get("channel", "")
             bands = event.get("bands")
@@ -256,6 +275,18 @@ class DaemonClient:
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("notifications_enabled", True))
             )
+            boost = event.get("volume_boost")
+            if isinstance(boost, dict):
+                normalized: dict[str, dict] = {}
+                for ch in ("game", "chat", "media", "hdmi"):
+                    raw = boost.get(ch)
+                    if isinstance(raw, dict):
+                        normalized[ch] = {
+                            "enabled": bool(raw.get("enabled", False)),
+                            "multiplier_pct": int(raw.get("multiplier_pct", 100)),
+                        }
+                if normalized:
+                    self.signals.volume_boost_state.emit(normalized)
             eq_state = event.get("eq_state") or event.get("eq_gains")
             if isinstance(eq_state, dict):
                 state: dict[str, list[dict]] = {}

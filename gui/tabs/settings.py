@@ -7,6 +7,7 @@ import subprocess
 import urllib.parse
 import webbrowser
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -130,7 +131,7 @@ class SettingsTab(QWidget):
         # Implementation lives in gui/theme.py — swapping QPalette
         # propagates everywhere the QSS uses palette(...) refs.
         theme_row = QHBoxLayout()
-        theme_lbl = QLabel("Theme")
+        theme_lbl = QLabel(self.tr("Theme"))
         theme_lbl.setFixedWidth(80)
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Auto (system)", "Light", "Dark"])
@@ -151,11 +152,59 @@ class SettingsTab(QWidget):
             "font-size: 10px; color: palette(placeholder-text);"
         )
 
-        layout.addWidget(card("Appearance", theme_row, theme_help))
+        # Language selector -------------------------------------------
+        # Translation coverage is partial; strings without a
+        # translation fall back to English. RTL languages (Arabic,
+        # Hebrew, etc.) flip the layoutDirection automatically when
+        # selected.
+        from ..i18n import SUPPORTED_LANGUAGES
+        from ..widgets import alpha_badge as _badge
+        lang_row = QHBoxLayout()
+        lang_lbl = QLabel(self.tr("Language"))
+        lang_lbl.setFixedWidth(80)
+        # BETA marker: only English + Arabic exist, and Arabic
+        # coverage is partial — many strings still fall back to
+        # English. Visually marking the row matches the user's
+        # mental model so they don't think the gaps are bugs.
+        lang_beta = _badge(
+            self.tr("BETA"),
+            tooltip=self.tr(
+                "Beta — translations are partial. Untranslated "
+                "strings fall back to English."
+            ),
+        )
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItem(self.tr("System default"), "system")
+        for code, label in SUPPORTED_LANGUAGES:
+            self.lang_combo.addItem(label, code)
+        current_lang = self._settings.get("ui_language", "system")
+        for i in range(self.lang_combo.count()):
+            if self.lang_combo.itemData(i) == current_lang:
+                self.lang_combo.setCurrentIndex(i)
+                break
+        self.lang_combo.currentIndexChanged.connect(self._change_language)
+        lang_row.addWidget(lang_lbl)
+        lang_row.addWidget(lang_beta, 0, Qt.AlignVCenter)
+        lang_row.addWidget(self.lang_combo, 1)
+        lang_help = QLabel(
+            self.tr(
+                "Translation coverage is partial — strings without a "
+                "translation fall back to English. Restart the GUI for "
+                "the language change to take full effect."
+            )
+        )
+        lang_help.setWordWrap(True)
+        lang_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        layout.addWidget(card(
+            self.tr("Appearance"), theme_row, theme_help, lang_row, lang_help,
+        ))
 
         # Startup card -------------------------------------------------
         autostart_row, self.autostart_toggle = labelled_toggle(
-            "Start with system"
+            self.tr("Start with system")
         )
         self.autostart_toggle.setChecked(self._settings.get("autostart", True))
         self.autostart_toggle.toggled.connect(self._toggle_autostart)
@@ -174,7 +223,82 @@ class SettingsTab(QWidget):
         )
         self.start_min_toggle.toggled.connect(self._toggle_start_minimized)
 
-        layout.addWidget(card("Startup", autostart_row, start_min_row))
+        layout.addWidget(card(self.tr("Startup"), autostart_row, start_min_row))
+
+        # Shortcut card -----------------------------------------------
+        # Optional QShortcut to cycle the system default sink between
+        # SteelGame / SteelChat / SteelMedia / SteelHDMI. Off by
+        # default — Qt shortcuts only fire while the GUI has focus,
+        # so this is most useful on a multi-monitor setup or with
+        # the GUI parked on a side screen. Users wanting global
+        # (system-wide) shortcuts can bind their DE's keyboard
+        # settings to a shell command — TBD whether we ship a CLI.
+        cycle_row, self.cycle_toggle = labelled_toggle(
+            "Cycle default sink shortcut",
+        )
+        self.cycle_toggle.setChecked(
+            bool(self._settings.get("default_sink_cycle_enabled", False))
+        )
+        self.cycle_toggle.toggled.connect(self._toggle_cycle_shortcut)
+
+        from PySide6.QtGui import QKeySequence
+        from PySide6.QtWidgets import QKeySequenceEdit
+        cycle_combo_row = QHBoxLayout()
+        combo_lbl = QLabel("Key combo")
+        combo_lbl.setFixedWidth(80)
+        self.cycle_keyseq_edit = QKeySequenceEdit(
+            QKeySequence(
+                self._settings.get("default_sink_cycle_combo", "Ctrl+Shift+S")
+            )
+        )
+        self.cycle_keyseq_edit.setMaximumWidth(220)
+        self.register_btn = QPushButton("Register")
+        self.register_btn.setToolTip(
+            "Save the key combo currently shown in the field. After "
+            "registering, the shortcut takes effect immediately — no "
+            "GUI restart needed."
+        )
+        self.register_btn.clicked.connect(self._register_cycle_combo)
+        cycle_combo_row.addWidget(combo_lbl)
+        cycle_combo_row.addWidget(self.cycle_keyseq_edit, 1)
+        cycle_combo_row.addWidget(self.register_btn)
+
+        # Exclude-from-cycle multi-select. Some users want certain
+        # sinks (typically SteelChat) skipped — Discord stays put on
+        # SteelChat regardless of the system default, so cycling
+        # there mid-game is a footgun.
+        from PySide6.QtWidgets import QCheckBox
+        excludes = self._settings.get("default_sink_cycle_exclude") or []
+        excludes_set = set(excludes)
+        exclude_row = QHBoxLayout()
+        exclude_lbl = QLabel("Exclude")
+        exclude_lbl.setFixedWidth(80)
+        exclude_row.addWidget(exclude_lbl)
+        self._cycle_exclude_checkboxes: dict[str, QCheckBox] = {}
+        for sink in ("SteelGame", "SteelChat", "SteelMedia", "SteelHDMI"):
+            cb = QCheckBox(sink.removeprefix("Steel"))
+            cb.setChecked(sink in excludes_set)
+            cb.toggled.connect(self._save_cycle_excludes)
+            exclude_row.addWidget(cb)
+            self._cycle_exclude_checkboxes[sink] = cb
+        exclude_row.addStretch(1)
+
+        cycle_help = QLabel(
+            "Qt shortcuts only fire while the GUI has focus — for "
+            "system-wide bindings, point your desktop's keyboard "
+            "settings at <code>steelvoicemix-cli sink cycle</code>. "
+            "Restart the GUI after changing the combo to apply."
+        )
+        cycle_help.setWordWrap(True)
+        cycle_help.setTextFormat(Qt.RichText)
+        cycle_help.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        layout.addWidget(card(
+            self.tr("Shortcuts"),
+            cycle_row, cycle_combo_row, exclude_row, cycle_help,
+        ))
 
         # Notifications card -------------------------------------------
         # Two distinct toggles:
@@ -212,7 +336,7 @@ class SettingsTab(QWidget):
         self.daemon_notif_toggle.setChecked(True)
         self.daemon_notif_toggle.toggled.connect(self._toggle_daemon_notifs)
 
-        layout.addWidget(card("Notifications", minimize_row, daemon_notif_row))
+        layout.addWidget(card(self.tr("Notifications"), minimize_row, daemon_notif_row))
 
         # Profiles card ------------------------------------------------
         profile_row = QHBoxLayout()
@@ -243,7 +367,7 @@ class SettingsTab(QWidget):
         profile_help.setWordWrap(True)
 
         layout.addWidget(
-            card("Audio Profiles", profile_row, profile_btns, profile_help)
+            card(self.tr("Audio Profiles"), profile_row, profile_btns, profile_help)
         )
 
         # Alpha channel card -------------------------------------------
@@ -322,11 +446,11 @@ class SettingsTab(QWidget):
         help_text.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
         )
-        layout.addWidget(card("Report Issue", help_row, help_text))
+        layout.addWidget(card(self.tr("Report Issue"), help_row, help_text))
 
         # Reset card --------------------------------------------------
         reset_row = QHBoxLayout()
-        self.reset_btn = QPushButton("Reset to defaults…")
+        self.reset_btn = QPushButton(self.tr("Reset to defaults…"))
         self.reset_btn.setToolTip(
             "Reset every preference (overlay, sinks, EQ, surround, "
             "notification toggles) to its default value. Saved audio "
@@ -348,7 +472,7 @@ class SettingsTab(QWidget):
             "font-size: 10px; color: palette(placeholder-text);"
         )
 
-        layout.addWidget(card("Reset", reset_row, reset_help))
+        layout.addWidget(card(self.tr("Reset"), reset_row, reset_help))
 
         layout.addStretch(1)
 
@@ -394,6 +518,49 @@ class SettingsTab(QWidget):
         self._settings["start_minimized"] = checked
         save_settings(self._settings)
 
+    def _toggle_cycle_shortcut(self, checked: bool) -> None:
+        self._settings["default_sink_cycle_enabled"] = checked
+        save_settings(self._settings)
+        self._reload_shortcut_on_window()
+
+    def _register_cycle_combo(self) -> None:
+        seq = self.cycle_keyseq_edit.keySequence()
+        combo = seq.toString()
+        if not combo:
+            QMessageBox.warning(
+                self,
+                "No key combo",
+                "Click the Key combo field and press the keys you want "
+                "to assign first, then click Register.",
+            )
+            return
+        self._settings["default_sink_cycle_combo"] = combo
+        save_settings(self._settings)
+        self._reload_shortcut_on_window()
+        QMessageBox.information(
+            self, "Shortcut registered",
+            f"Default-sink cycle is now bound to {combo}. The shortcut "
+            "fires while any SteelVoiceMix window has focus.",
+        )
+
+    def _reload_shortcut_on_window(self) -> None:
+        """Ask the main window to rebuild its QShortcut so the new
+        toggle / combo takes effect without a restart."""
+        win = self.window()
+        if hasattr(win, "reload_default_sink_shortcut"):
+            try:
+                win.reload_default_sink_shortcut()
+            except Exception:
+                pass
+
+    def _save_cycle_excludes(self) -> None:
+        excludes = [
+            sink for sink, cb in self._cycle_exclude_checkboxes.items()
+            if cb.isChecked()
+        ]
+        self._settings["default_sink_cycle_exclude"] = excludes
+        save_settings(self._settings)
+
 
     def _change_theme(self, index: int) -> None:
         mode = ("auto", "light", "dark")[index] if 0 <= index <= 2 else "auto"
@@ -402,6 +569,50 @@ class SettingsTab(QWidget):
         self._settings["theme_mode"] = mode
         save_settings(self._settings)
         apply_theme(mode)
+
+    def _change_language(self, _index: int) -> None:
+        """Save the picked language, swap the QTranslator, flip the
+        layoutDirection, and offer to restart the GUI so all already-
+        constructed widget text re-translates. Qt's installTranslator
+        only affects strings looked up *after* the swap — existing
+        widgets keep their cached text until they're rebuilt or the
+        process restarts. A restart is the only fully reliable path."""
+        code = self.lang_combo.currentData() or "system"
+        previous = self._settings.get("ui_language", "system")
+        self._settings["ui_language"] = code
+        save_settings(self._settings)
+        from ..i18n import apply_layout_direction, reset_translator
+        app = QApplication.instance()
+        reset_translator(app, code)
+        apply_layout_direction(app, code)
+        # Skip the prompt when the language didn't actually change —
+        # the dropdown also fires currentIndexChanged on initial set.
+        if code == previous:
+            return
+        choice = QMessageBox.question(
+            self,
+            self.tr("Restart required"),
+            self.tr(
+                "Language changes only fully apply after a restart of "
+                "the GUI. Restart now?"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if choice == QMessageBox.Yes:
+            self._restart_gui()
+
+    def _restart_gui(self) -> None:
+        """Re-exec the running GUI process. We only restart the GUI
+        layer — the Rust daemon stays up so audio doesn't blip."""
+        import os
+        import sys
+        try:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception:
+            # Fallback: just quit; the user can relaunch from the
+            # tray or the menu.
+            QApplication.instance().quit()
 
     def _copy_to_clipboard(self, text: str, label: str) -> None:
         cb = QApplication.clipboard()

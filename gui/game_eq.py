@@ -35,6 +35,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from .eq_presets import bundled_asm_dir, list_presets
+from .settings import save as save_settings
 
 log = logging.getLogger(__name__)
 
@@ -328,8 +329,18 @@ class GameProfileManager(QObject):
         self._daemon = daemon_client
         self._settings = settings
         self._eq_state = eq_state
-        self._snapshot_bands: list[dict] | None = None
-        self._active_preset: str | None = None
+        # Rehydrate any persisted snapshot from a prior session — used
+        # when the GUI is restarted (or the system suspended) before
+        # the watcher's exit grace fired and consumed it. Without
+        # this, a "close game → suspend immediately" pattern left the
+        # daemon's persisted Game EQ stuck on the auto-applied game
+        # preset with nothing to restore from on resume.
+        persisted_snapshot = settings.get("auto_game_eq_snapshot_bands") or []
+        persisted_active = settings.get("auto_game_eq_active_preset") or ""
+        self._snapshot_bands: list[dict] | None = (
+            list(persisted_snapshot) if persisted_snapshot else None
+        )
+        self._active_preset: str | None = persisted_active or None
         self._current_games: dict[str, bool] = {}
         self._last_seen: dict[str, bool] = {}
         # Counts consecutive watcher ticks where no candidate-game
@@ -337,6 +348,14 @@ class GameProfileManager(QObject):
         # tick (loading screen, cutscene, audio refocus) doesn't
         # respawn the EQ chain unnecessarily.
         self._consecutive_empty_ticks: int = 0
+        if self._snapshot_bands is not None:
+            log.info(
+                "Auto game-EQ: rehydrated stale session — preset=%r, "
+                "snapshot bands=%d. Will restore on first empty watcher "
+                "tick.",
+                self._active_preset,
+                len(self._snapshot_bands),
+            )
 
     def latest_seen(self) -> dict[str, bool]:
         """Snapshot of the most recent watcher tick. Used by the
@@ -477,6 +496,7 @@ class GameProfileManager(QObject):
         else:
             self._snapshot_bands = None
         self._active_preset = preset_name
+        self._persist_runtime_state()
         log.info(
             "Auto game-EQ: sending set-eq-channel game with %d bands "
             "(first band: %s)",
@@ -500,6 +520,7 @@ class GameProfileManager(QObject):
             self._active_preset, new_preset, games,
         )
         self._active_preset = new_preset
+        self._persist_runtime_state()
         self._daemon.send_command(
             "set-eq-channel", channel="game", bands=bands,
         )
@@ -509,6 +530,7 @@ class GameProfileManager(QObject):
     def _exit(self) -> None:
         if self._snapshot_bands is None:
             self._active_preset = None
+            self._persist_runtime_state()
             self.applied_changed.emit("")
             return
         log.info("Auto game-EQ: restoring user's pre-game Game EQ")
@@ -520,4 +542,23 @@ class GameProfileManager(QObject):
         self.bands_to_load.emit(snapshot)
         self._snapshot_bands = None
         self._active_preset = None
+        self._persist_runtime_state()
         self.applied_changed.emit("")
+
+    def _persist_runtime_state(self) -> None:
+        """Mirror the in-memory snapshot/active-preset to settings.json
+        so a GUI restart (or a suspend that lets the watcher's exit
+        grace expire after an unexpected GUI restart) can pick up
+        where we left off and still restore the user's pre-game EQ.
+
+        Cheap — settings.save is a small JSON write — and only fires
+        on the rare _enter / _switch / _exit transitions, never per
+        watcher tick."""
+        self._settings["auto_game_eq_active_preset"] = self._active_preset or ""
+        self._settings["auto_game_eq_snapshot_bands"] = (
+            list(self._snapshot_bands) if self._snapshot_bands else []
+        )
+        try:
+            save_settings(self._settings)
+        except Exception as e:  # don't crash the auto-EQ flow on a settings I/O blip
+            log.warning("Auto game-EQ: persist runtime state failed: %s", e)

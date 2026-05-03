@@ -11,7 +11,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
-from .i18n import setup_translator
+from .i18n import apply_layout_direction, setup_translator
 from .main_window import MixerGUI
 from .settings import APP_NAME
 
@@ -90,7 +90,14 @@ def main() -> None:
     app.setQuitOnLastWindowClosed(False)
     app.setStyle("fusion")
     # Keep a reference so the translator isn't GC'd; no-op if no .qm matches.
-    app._translator = setup_translator(app)
+    # Read the persisted UI-language preference before building the
+    # main window so the translator + layout direction are in place
+    # for first paint. Fallback handling lives in setup_translator
+    # — a missing .qm just means English source strings show through.
+    from .settings import load as _load_settings
+    _ui_lang = _load_settings().get("ui_language", "system")
+    app._translator = setup_translator(app, _ui_lang)
+    apply_layout_direction(app, _ui_lang)
 
     # Make Ctrl+C in the launching terminal quit cleanly. Python signal
     # handlers only run when the interpreter gets a chance between Qt events,

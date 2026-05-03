@@ -23,7 +23,7 @@ use filter_chain::{FilterChainHandle, FilterChainSpec};
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
 use protocol::{
     default_channel_bands, ClientCommand, DaemonEvent, EqChannel, EqState, MicFeature,
-    MicState,
+    MicState, VolumeBoost,
 };
 use routing::{spawn_router, RouterState};
 
@@ -59,6 +59,7 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         mic_state: st.mic_state,
         sidetone_level: st.sidetone_level,
         notifications_enabled: st.notifications_enabled,
+        volume_boost: st.volume_boost,
     }
 }
 
@@ -120,6 +121,9 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         mic_default_applied: true,
         sidetone_level: st.sidetone_level,
         notifications_enabled: st.notifications_enabled,
+        volume_boost: st.volume_boost,
+        game_vol: st.game_vol,
+        chat_vol: st.chat_vol,
     });
 }
 
@@ -504,6 +508,111 @@ fn handle_client(
                     strength,
                 );
             }
+            ClientCommand::SetChannelBoost {
+                channel,
+                enabled,
+                multiplier_pct,
+            } => {
+                if matches!(channel, EqChannel::Mic) {
+                    warn!("set-channel-boost rejected: mic channel has no sink-volume control");
+                    continue;
+                }
+                let pct = multiplier_pct.clamp(100, 200);
+                let new_boost = VolumeBoost {
+                    enabled,
+                    multiplier_pct: pct,
+                };
+                // Snapshot management — store the dial-at-the-moment
+                // when boost transitions OFF→ON, restore it when boost
+                // transitions ON→OFF. Slider drags while the toggle is
+                // already on don't touch the snapshot. The restore is
+                // baked into st.game_vol / st.chat_vol so the
+                // immediate-apply call below sees the snapshot, and
+                // any subsequent broadcast carries the restored value.
+                let (
+                    current_game,
+                    current_chat,
+                    restored_chatmix,
+                ) = {
+                    let mut st = state.lock().unwrap();
+                    let was_enabled = st.volume_boost.for_channel(channel).enabled;
+                    if let Some(slot) = st.volume_boost.for_channel_mut(channel) {
+                        *slot = new_boost;
+                    }
+                    let mut restored = false;
+                    match (was_enabled, enabled, channel) {
+                        (false, true, EqChannel::Game) => {
+                            st.pre_boost_game_vol = Some(st.game_vol);
+                        }
+                        (false, true, EqChannel::Chat) => {
+                            st.pre_boost_chat_vol = Some(st.chat_vol);
+                        }
+                        (true, false, EqChannel::Game) => {
+                            if let Some(snap) = st.pre_boost_game_vol.take() {
+                                st.game_vol = snap;
+                                restored = true;
+                            }
+                        }
+                        (true, false, EqChannel::Chat) => {
+                            if let Some(snap) = st.pre_boost_chat_vol.take() {
+                                st.chat_vol = snap;
+                                restored = true;
+                            }
+                        }
+                        // Slider change while already on (or already
+                        // off, or Media/HDMI which have no snapshot)
+                        // — leave snapshot state untouched.
+                        _ => {}
+                    }
+                    (st.game_vol, st.chat_vol, restored)
+                };
+                persist_sink_state(&state);
+                // Apply right away — without this, Game/Chat would only
+                // pick up the new multiplier on the next dial event, and
+                // Media/HDMI would never apply at all (their volumes are
+                // set once at sink-load time).
+                match channel {
+                    EqChannel::Game => {
+                        SinkManager::set_volume(audio::GAME_SINK, new_boost.apply(current_game));
+                    }
+                    EqChannel::Chat => {
+                        SinkManager::set_volume(audio::CHAT_SINK, new_boost.apply(current_chat));
+                    }
+                    EqChannel::Media => {
+                        // Media sink has no chatmix-derived volume — base is 100%.
+                        SinkManager::set_volume(audio::MEDIA_SINK, new_boost.apply(100));
+                    }
+                    EqChannel::Hdmi => {
+                        SinkManager::set_volume(audio::HDMI_SINK, new_boost.apply(100));
+                    }
+                    EqChannel::Mic => unreachable!(),
+                }
+                info!(
+                    "GUI requested: set-channel-boost → channel={:?} enabled={} pct={} restored={}",
+                    channel, enabled, pct, restored_chatmix
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::ChannelBoostChanged {
+                        channel,
+                        boost: new_boost,
+                    },
+                );
+                // Replay a fresh chatmix event when we restored a
+                // snapshot so the GUI overlay (and any other
+                // chatmix-following client) reflects the new
+                // effective balance instead of the now-stale dial
+                // reading the user adjusted during the boost.
+                if restored_chatmix {
+                    broadcast_event(
+                        &subscribers,
+                        DaemonEvent::ChatMix {
+                            game: current_game,
+                            chat: current_chat,
+                        },
+                    );
+                }
+            }
             ClientCommand::SetSidetone { level } => {
                 let clamped = level.min(128);
                 {
@@ -692,6 +801,9 @@ fn main() {
     let mic_state = persisted.mic_state;
     let sidetone_level = persisted.sidetone_level;
     let notifications_enabled = persisted.notifications_enabled;
+    let volume_boost = persisted.volume_boost;
+    let persisted_game_vol = persisted.game_vol;
+    let persisted_chat_vol = persisted.chat_vol;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -736,6 +848,9 @@ fn main() {
         mic_state,
         sidetone_level,
         notifications_enabled,
+        volume_boost,
+        persisted_game_vol,
+        persisted_chat_vol,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
