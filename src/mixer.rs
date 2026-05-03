@@ -64,6 +64,17 @@ const BATTERY_POLL_INTERVAL: Duration = Duration::from_secs(60);
 // resume-from-sleep brings the mic back before the user reaches for
 // their app, but long enough to not show up in profiling.
 const MIC_HEALTH_INTERVAL: Duration = Duration::from_secs(5);
+// Sink-graph health watchdog. PipeWire restarting (user reloads it,
+// distro pushes a pipewire upgrade, wireplumber crashes) destroys
+// every module-loaded null-sink we own without giving the daemon a
+// signal — we'd silently lose SteelGame / SteelChat / SteelMedia /
+// SteelHDMI / surround chain and the user just hears the headset's
+// raw output bypassing everything. Polling pactl every 10s for
+// SteelGame is cheap (~5 ms shell-out) and lets us rebuild the whole
+// graph automatically. Slower than the mic watchdog because sink
+// loss is less common — pipewire restart is a rare event whereas
+// the mic chain dies routinely on suspend.
+const SINK_HEALTH_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Why the event loop returned. Reconnect on `Disconnected`, exit on `Shutdown`.
 enum SessionEnd {
@@ -409,6 +420,7 @@ impl Mixer {
     ) -> SessionEnd {
         let mut last_battery_poll = Instant::now();
         let mut last_mic_health = Instant::now();
+        let mut last_sink_health = Instant::now();
         // Track the last-applied sidetone level so we can detect
         // GUI-driven changes from MixerState and push them to the
         // device. Initialised from current state (already applied at
@@ -483,6 +495,43 @@ impl Mixer {
                     if last_mic_health.elapsed() >= MIC_HEALTH_INTERVAL {
                         self.sinks.lock().unwrap().check_mic_health();
                         last_mic_health = Instant::now();
+                    }
+                    if last_sink_health.elapsed() >= SINK_HEALTH_INTERVAL {
+                        let respawned =
+                            self.sinks.lock().unwrap().check_sinks_alive();
+                        if respawned {
+                            // Push the current dial value back through
+                            // the freshly-rebuilt sinks so the user's
+                            // game/chat split is right immediately
+                            // (rather than waiting for the next dial
+                            // event). volume_boost gets re-applied by
+                            // the same code path the dial handler uses.
+                            let (game_vol, chat_vol, game_boost, chat_boost) = {
+                                let st = self.state.lock().unwrap();
+                                (
+                                    st.game_vol,
+                                    st.chat_vol,
+                                    st.volume_boost.for_channel(EqChannel::Game),
+                                    st.volume_boost.for_channel(EqChannel::Chat),
+                                )
+                            };
+                            SinkManager::set_volume(
+                                GAME_SINK,
+                                game_boost.apply(game_vol),
+                            );
+                            SinkManager::set_volume(
+                                CHAT_SINK,
+                                chat_boost.apply(chat_vol),
+                            );
+                            // Notify subscribed GUI clients so any
+                            // downstream UI re-syncs (sink-graph state,
+                            // overlay) after the rebuild.
+                            self.broadcast(DaemonEvent::ChatMix {
+                                game: game_vol,
+                                chat: chat_vol,
+                            });
+                        }
+                        last_sink_health = Instant::now();
                     }
                 }
                 Err(_) => {

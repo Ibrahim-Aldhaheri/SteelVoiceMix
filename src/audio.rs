@@ -295,6 +295,63 @@ impl SinkManager {
         }
     }
 
+    /// Watchdog check — call periodically while the headset is
+    /// connected. Detects PipeWire-side teardown of our sink graph
+    /// (user reloads pipewire, wireplumber crashes, distro upgrade
+    /// restarts the audio stack) by polling for SteelGame's presence
+    /// in `pactl list sinks short`. When SteelGame goes missing while
+    /// the daemon thinks it should exist, every other sink we
+    /// created is also gone — destroy + recreate from scratch.
+    ///
+    /// Returns true when a respawn happened, so the caller can log
+    /// noisily about it. `false` is the steady-state path.
+    pub fn check_sinks_alive(&mut self) -> bool {
+        // No-op until create_sinks has been called once — `output_sink`
+        // is None on a fresh daemon before the first device connect.
+        if self.output_sink.is_none() {
+            return false;
+        }
+        // We assume SteelGame is the canonical "if this exists, the
+        // graph is healthy" probe. game_vol/chat_vol always go through
+        // it, so its absence is the strongest signal of a torn-down
+        // graph.
+        let listed = match Command::new("pactl")
+            .args(["list", "sinks", "short"])
+            .output()
+        {
+            Ok(o) if o.status.success() => o.stdout,
+            // pactl unreachable (pipewire-pulse not running yet during
+            // a restart) — don't trigger a respawn we can't actually
+            // perform. Wait for the next tick.
+            _ => return false,
+        };
+        let stdout = String::from_utf8_lossy(&listed);
+        let alive = stdout
+            .lines()
+            .any(|l| l.split('\t').nth(1) == Some(GAME_SINK));
+        if alive {
+            return false;
+        }
+        warn!(
+            "Sink graph torn down externally (SteelGame missing from pactl) \
+             — likely a pipewire / wireplumber restart. Rebuilding."
+        );
+        // Re-discover the headset's underlying alsa_output: pipewire
+        // restart can rename the node (rare, but happens with USB
+        // re-enumeration races). Fall back to the previously-cached
+        // name when the discovery returns nothing — a stale cached
+        // name is still better than a hard-coded default.
+        let target = Self::find_output_sink()
+            .or_else(|| self.output_sink.clone())
+            .unwrap_or_default();
+        if target.is_empty() {
+            warn!("Cannot rebuild sinks: no headset output sink visible");
+            return false;
+        }
+        self.create_sinks(&target);
+        true
+    }
+
     /// Auto-detect the Arctis Nova Pro Wireless capture (microphone)
     /// source via pactl. Symmetric to `find_output_sink` — looks for
     /// the same OUTPUT_MATCH substring but on the input list. Returns
