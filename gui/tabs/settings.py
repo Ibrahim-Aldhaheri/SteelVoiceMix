@@ -352,7 +352,27 @@ class SettingsTab(QWidget):
         self.daemon_notif_toggle.setChecked(True)
         self.daemon_notif_toggle.toggled.connect(self._toggle_daemon_notifs)
 
-        layout.addWidget(card(self.tr("Notifications"), minimize_row, daemon_notif_row))
+        auto_eq_row, self.auto_eq_notif_toggle = labelled_toggle(
+            "Show Auto Game-EQ notifications",
+            tooltip=(
+                "When Auto Game-EQ applies a preset for a detected "
+                "game (or restores your pre-game preset on close), "
+                "fire a desktop toast naming what changed. Same "
+                "notify-send transport as the connect / disconnect "
+                "toggle above. On by default."
+            ),
+        )
+        self.auto_eq_notif_toggle.setChecked(
+            bool(self._settings.get("notify_auto_game_eq", True))
+        )
+        self.auto_eq_notif_toggle.toggled.connect(self._toggle_auto_eq_notif)
+
+        layout.addWidget(card(
+            self.tr("Notifications"),
+            minimize_row,
+            daemon_notif_row,
+            auto_eq_row,
+        ))
 
         # Profiles card ------------------------------------------------
         profile_row = QHBoxLayout()
@@ -543,6 +563,10 @@ class SettingsTab(QWidget):
 
     def _toggle_minimize_hint(self, checked: bool) -> None:
         self._settings["notify_minimize_hint"] = checked
+        save_settings(self._settings)
+
+    def _toggle_auto_eq_notif(self, checked: bool) -> None:
+        self._settings["notify_auto_game_eq"] = checked
         save_settings(self._settings)
 
     def _toggle_start_minimized(self, checked: bool) -> None:

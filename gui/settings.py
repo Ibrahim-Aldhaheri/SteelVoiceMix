@@ -36,7 +36,7 @@ def _derive_app_version() -> str:
 # Bumped manually on each beta cut; runtime derives from RPM if
 # available so this constant only matters in source-checkout /
 # manual-install scenarios.
-_APP_VERSION_FALLBACK = "0.4.2~beta8"
+_APP_VERSION_FALLBACK = "0.4.2~beta9"
 APP_VERSION = _derive_app_version()
 
 CONFIG_DIR = Path.home() / ".config" / APP_NAME
@@ -87,6 +87,12 @@ DEFAULTS: dict[str, Any] = {
     # button popped a toast every single time. Default off so new
     # users aren't pestered; users who want the reminder can re-enable.
     "notify_minimize_hint": False,
+    # Auto Game-EQ notifications. When True, the GUI fires a
+    # notify-send toast on every Auto Game-EQ enter / switch / exit
+    # transition so the user sees what was applied without having to
+    # flip to the EQ tab. Default on — feedback should be visible the
+    # first time the feature engages; users can mute later.
+    "notify_auto_game_eq": True,
     # First-run marker for the surround default. Surround is on out
     # of the box — on first GUI launch we send the bundled HRIR path
     # to the daemon so its surround_enabled flag has something to

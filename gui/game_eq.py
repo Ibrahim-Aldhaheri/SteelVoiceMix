@@ -27,6 +27,7 @@ from __future__ import annotations
 import difflib
 import logging
 import re
+import shlex
 import shutil
 import subprocess
 from copy import deepcopy
@@ -506,6 +507,15 @@ class GameProfileManager(QObject):
             self._snapshot_bands = deepcopy(snapshot)
         else:
             self._snapshot_bands = None
+        # Capture the pre-game preset name so the exit notification
+        # can say what we're restoring back to. The orchestrator only
+        # sees an opaque snapshot of bands; the EQ tab tracks the
+        # named preset and we read it through the same settings dict
+        # that the EQ tab persists to.
+        self._pre_active_preset = self._settings.get(
+            "auto_game_eq_pre_preset", ""
+        ) or self._active_preset_at_enter()
+        self._settings["auto_game_eq_pre_preset"] = self._pre_active_preset
         self._active_preset = preset_name
         self._persist_runtime_state()
         log.info(
@@ -518,6 +528,14 @@ class GameProfileManager(QObject):
         )
         self.bands_to_load.emit(bands)
         self.applied_changed.emit(preset_name)
+        # Notification: "Game name → New preset". Picks the first
+        # detected game name as the user-facing label — the watcher
+        # can see multiples but typically one is the actually-running
+        # game and the others are launchers (Steam, etc.).
+        game_label = next(iter(games), "") if games else ""
+        self._notify(
+            f"{game_label} → {preset_name}" if game_label else preset_name
+        )
 
     def _switch(self, games) -> None:
         new_preset = self._resolve_preset(games)
@@ -537,10 +555,15 @@ class GameProfileManager(QObject):
         )
         self.bands_to_load.emit(bands)
         self.applied_changed.emit(new_preset)
+        game_label = next(iter(games), "") if games else ""
+        self._notify(
+            f"{game_label} → {new_preset}" if game_label else new_preset
+        )
 
     def _exit(self) -> None:
         if self._snapshot_bands is None:
             self._active_preset = None
+            self._settings["auto_game_eq_pre_preset"] = ""
             self._persist_runtime_state()
             self.applied_changed.emit("")
             return
@@ -551,10 +574,51 @@ class GameProfileManager(QObject):
             bands=snapshot,
         )
         self.bands_to_load.emit(snapshot)
+        # Notification: name what we're restoring to so the user
+        # gets confirmation that their pre-game tuning is back, not
+        # just "EQ changed".
+        pre = self._settings.get("auto_game_eq_pre_preset", "") or "default"
+        self._notify(f"Restored: {pre}")
         self._snapshot_bands = None
         self._active_preset = None
+        self._settings["auto_game_eq_pre_preset"] = ""
         self._persist_runtime_state()
         self.applied_changed.emit("")
+
+    def _active_preset_at_enter(self) -> str:
+        """Try to read the user's currently-selected named preset from
+        settings.json — the EQ tab persists the active per-channel
+        preset under `eq_active_preset_by_channel` (best-effort key
+        name; fallback to empty string)."""
+        active = self._settings.get("eq_active_preset_by_channel") or {}
+        if isinstance(active, dict):
+            return str(active.get("game", ""))
+        return ""
+
+    def _notify(self, body: str) -> None:
+        """Emit a desktop notification via notify-send when the user
+        has Auto Game-EQ notifications enabled. Same transport the
+        Rust daemon uses for connect/disconnect — surfaces in the
+        system notification centre, not a transient Qt toast."""
+        if not self._settings.get("notify_auto_game_eq", True):
+            return
+        if not shutil.which("notify-send"):
+            return
+        try:
+            subprocess.Popen(
+                [
+                    "notify-send",
+                    "--app-name=SteelVoiceMix",
+                    "--icon=steelvoicemix",
+                    "--expire-time=4000",
+                    "Auto EQ",
+                    body,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as e:
+            log.debug("notify-send failed: %s", e)
 
     def _persist_runtime_state(self) -> None:
         """Mirror the in-memory snapshot/active-preset to settings.json

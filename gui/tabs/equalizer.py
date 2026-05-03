@@ -174,12 +174,14 @@ class EqualizerTab(QWidget):
         # auto-fork-to-Custom-N behaviour: if the user starts editing
         # while a built-in preset is active, we fork to a fresh Custom N
         # so the built-in stays clean.
+        # Hydrate from settings so a fresh GUI launch can restore
+        # which preset name was last active per channel — needed by
+        # the Auto Game-EQ orchestrator to remember the user's
+        # pre-game preset for the exit notification.
+        persisted_active = self._settings.get("eq_active_preset_by_channel") or {}
         self._active_preset_by_channel: dict[str, str] = {
-            "game": "",
-            "chat": "",
-            "media": "",
-            "hdmi": "",
-            "mic": "",
+            ch: str(persisted_active.get(ch, "") or "")
+            for ch in ("game", "chat", "media", "hdmi", "mic")
         }
 
         # Slider commits are debounced. While the user drags, we just
@@ -674,6 +676,7 @@ class EqualizerTab(QWidget):
             )
             self.auto_lock_banner.show()
             self._active_preset_by_channel["game"] = preset_name
+            self._persist_active_presets()
             if self._current_channel == "game":
                 idx = self._index_for_preset_name(preset_name)
                 if idx >= 0:
@@ -689,6 +692,7 @@ class EqualizerTab(QWidget):
             self.auto_lock_banner.hide()
             previous = getattr(self, "_pre_auto_preset_game", "") or ""
             self._active_preset_by_channel["game"] = previous
+            self._persist_active_presets()
             if self._current_channel == "game":
                 idx = self._index_for_preset_name(previous) if previous else -1
                 was_blocked = self.preset_combo.blockSignals(True)
@@ -1010,6 +1014,22 @@ class EqualizerTab(QWidget):
         # preset' which is the legitimate state when the user has
         # been hand-editing.
         self._active_preset_by_channel[channel] = matched
+        self._persist_active_presets()
+
+    def _persist_active_presets(self) -> None:
+        """Mirror the per-channel active preset names to settings.json
+        so the Auto Game-EQ orchestrator can read what was selected
+        pre-game. Called from every site that mutates
+        _active_preset_by_channel — it's a small JSON write and the
+        sites are all user-initiated (preset pick / save / rename
+        / delete), so the cost per operation is negligible."""
+        self._settings["eq_active_preset_by_channel"] = dict(
+            self._active_preset_by_channel
+        )
+        try:
+            save_settings(self._settings)
+        except Exception:
+            pass
 
     def _find_preset_name_for_bands(
         self, channel: str, bands: list[dict],
@@ -1168,6 +1188,7 @@ class EqualizerTab(QWidget):
         except ValueError:
             return
         self._active_preset_by_channel[channel] = new_name
+        self._persist_active_presets()
         # _refresh_preset_combo handles the star-prefix + favourites
         # sorting and re-selects the active preset for us.
         self._refresh_preset_combo()
@@ -1380,6 +1401,7 @@ class EqualizerTab(QWidget):
             bands=preset["bands"],
         )
         self._active_preset_by_channel[self._current_channel] = name
+        self._persist_active_presets()
         # Make sure the combo reflects what's now active — useful
         # when this was triggered by the favourites bar (combo had
         # something else selected).
@@ -1414,6 +1436,7 @@ class EqualizerTab(QWidget):
             QMessageBox.warning(self, self.tr("Could not save preset"), str(e))
             return
         self._active_preset_by_channel[self._current_channel] = name.strip()
+        self._persist_active_presets()
         self._refresh_preset_combo()
 
     def _on_preset_rename(self) -> None:
@@ -1439,6 +1462,7 @@ class EqualizerTab(QWidget):
             self._settings, self._current_channel, old_name, new_name.strip()
         )
         self._active_preset_by_channel[self._current_channel] = new_name.strip()
+        self._persist_active_presets()
         self._refresh_preset_combo()
 
     # ----------------------------------------------------------- test audio
@@ -1528,6 +1552,7 @@ class EqualizerTab(QWidget):
         remove_favourite(self._settings, self._current_channel, name)
         if self._active_preset_by_channel.get(self._current_channel) == name:
             self._active_preset_by_channel[self._current_channel] = ""
+            self._persist_active_presets()
         self._refresh_preset_combo()
 
     def _render_sliders_for_channel(self, channel: str) -> None:
