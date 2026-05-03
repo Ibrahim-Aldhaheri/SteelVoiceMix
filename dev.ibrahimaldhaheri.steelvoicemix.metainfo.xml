@@ -39,6 +39,31 @@
     <modalias>usb:v1038p12E0*</modalias>
   </provides>
   <releases>
+    <release version="0.5.0" date="2026-05-03" type="stable">
+      <description>
+        <p>
+          Major release: Volume Boost (per-channel 100-200% digital
+          amplification with clipping warning + pre-boost dial
+          snapshot/restore). Multi-language UI with Arabic + RTL
+          support. Default-sink cycle keyboard shortcut and CLI.
+        </p>
+        <p>
+          Channel-aware update checker (dev users see dev, stable
+          users see stable). APP_VERSION derived from RPM at runtime.
+          Chatmix dial position persisted across daemon restarts.
+          Auto Game-EQ snapshot persisted so close-game-then-suspend
+          no longer leaks the game preset into the user's default.
+        </p>
+        <p>
+          Audio glitch fixes: filter chains set node.lock-quantum,
+          node.suspend-on-idle = false, node.latency = 1024/48000,
+          and the surround convolver pins blocksize = 512. Defends
+          against PipeWire issue #4013 / EasyEffects #1567 false-
+          resync glitches during fast scene transitions and alt-tab
+          refocus.
+        </p>
+      </description>
+    </release>
     <release version="0.3.2" date="2026-05-01" type="stable">
       <description>
         <p>

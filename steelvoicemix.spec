@@ -1,5 +1,5 @@
 Name:           steelvoicemix
-Version:        0.3.2
+Version:        0.5.0
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux
 
@@ -152,6 +152,43 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
+* Sat May 03 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.5.0-1
+- New: Volume Boost — per-channel 100-200% digital amplification on
+  Game / Chat / Media / HDMI sinks. Toggle + slider on the Sinks tab,
+  with a clipping-risk warning above 150%. Snapshots the chatmix dial
+  position when boost engages and restores it when boost disables, so
+  lowering the dial to compensate for boost no longer strands you at
+  the now-too-low level.
+- New: Multi-language UI. Settings → Appearance language picker
+  (System default / English / Arabic). Arabic ships with right-to-
+  left layout. Translation coverage is partial — strings without a
+  translation fall back to English. Language switch prompts to
+  restart the GUI for full effect; the daemon stays up.
+- New: Default-sink cycle. Optional keyboard shortcut (default
+  Ctrl+Shift+S) cycles the system default between SteelGame /
+  SteelChat / SteelMedia / SteelHDMI; per-sink exclude in Settings.
+  Standalone steelvoicemix-cli `sink cycle` exposes the same path
+  for global window-manager bindings.
+- Update checker is channel-aware: dev users see dev releases,
+  stable users see stable. About dialog's APP_VERSION derives from
+  RPM at runtime so it always matches what's installed.
+- Audio glitch fixes: filter chains now set node.lock-quantum,
+  node.suspend-on-idle = false, node.latency = 1024/48000, and the
+  surround convolver pins blocksize = 512. Defends against PipeWire
+  bug #4013 / EasyEffects #1567 false-resync glitches during fast
+  scene transitions and alt-tab refocus.
+- Chatmix dial position is now persisted across daemon restarts.
+  No more 100/100 reset when systemctl restart misses the firmware
+  query window.
+- Auto Game-EQ snapshot is persisted to disk. Closing a game and
+  suspending immediately (before the watcher's exit grace fires)
+  no longer leaks the game preset into the user's "default" EQ.
+- Bug fixes: English language pick falling back to system locale
+  (loaded Arabic on Arabic systems); Volume Boost slider lag (now
+  debounced); preset combo flipping to wrong preset on test-audio
+  playback; preset/bands mismatch on restart; wmctrl is Recommends
+  not Requires (avoids broken installs on edge-case repo states).
+
 * Fri May 01 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.3.2-1
 - Major feature: Microphone capture-side processing. Three
   independent toggles (Noise Gate / Noise Reduction / AI Noise
