@@ -865,6 +865,10 @@ class EqualizerTab(QWidget):
         )
         dlg = _QDialog(self)
         dlg.setWindowTitle(self.tr("Bind app to preset"))
+        from PySide6.QtWidgets import QApplication as _QApp
+        app = _QApp.instance()
+        if app is not None:
+            dlg.setLayoutDirection(app.layoutDirection())
         dlg.setMinimumWidth(420)
         dlg_layout = _QVBoxLayout(dlg)
         prompt_lbl = _QLabel(

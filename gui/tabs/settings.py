@@ -290,7 +290,7 @@ class SettingsTab(QWidget):
         exclude_row.addWidget(exclude_lbl)
         self._cycle_exclude_checkboxes: dict[str, QCheckBox] = {}
         for sink in ("SteelGame", "SteelChat", "SteelMedia", "SteelHDMI"):
-            cb = QCheckBox(sink.removeprefix("Steel"))
+            cb = QCheckBox(self.tr(sink.removeprefix("Steel")))
             cb.setChecked(sink in excludes_set)
             cb.toggled.connect(self._save_cycle_excludes)
             exclude_row.addWidget(cb)
@@ -650,16 +650,18 @@ class SettingsTab(QWidget):
         cb.setText(text)
         QMessageBox.information(
             self,
-            "Copied",
-            f"{label} commands copied to clipboard. Paste into a "
-            "terminal:\n\n" + text,
+            self.tr("Copied"),
+            self.tr(
+                "{label} commands copied to clipboard. Paste into a "
+                "terminal:\n\n{text}"
+            ).format(label=label, text=text),
         )
 
     def _copy_alpha_enable(self) -> None:
-        self._copy_to_clipboard(_ALPHA_ENABLE_CMD, "Alpha-enable")
+        self._copy_to_clipboard(_ALPHA_ENABLE_CMD, self.tr("Alpha-enable"))
 
     def _copy_alpha_disable(self) -> None:
-        self._copy_to_clipboard(_ALPHA_DISABLE_CMD, "Stable-restore")
+        self._copy_to_clipboard(_ALPHA_DISABLE_CMD, self.tr("Stable-restore"))
 
     def _toggle_daemon_notifs(self, checked: bool) -> None:
         # Pure daemon-side state — we just send the command and let
@@ -709,11 +711,17 @@ class SettingsTab(QWidget):
 
     def _on_report_issue(self) -> None:
         """Bundle a diagnostic block (version + last 100 daemon
-        journal lines + sanitised settings.json), copy to the
-        clipboard, and open the GitHub New Issue page so the user
-        only has to paste."""
+        journal lines + sanitised settings.json), pre-fill the GitHub
+        New Issue body with it via URL parameter, and open the page.
+        Falls back to the clipboard path when the URL exceeds GitHub's
+        ~8 KB cap — long journal tails or huge settings blobs would
+        otherwise truncate at the browser/server boundary."""
         from ..settings import APP_VERSION  # avoid circular at import time
         diag_lines: list[str] = [
+            self.tr("-- describe your issue here --"),
+            "",
+            "---",
+            "",
             "## Diagnostic",
             "",
             f"- SteelVoiceMix version: {APP_VERSION}",
@@ -733,16 +741,48 @@ class SettingsTab(QWidget):
             "```",
         ]
         body = "\n".join(diag_lines)
-        QApplication.clipboard().setText(body)
-        # Open new-issue page with explicit placeholder text so the
-        # user knows what to replace.
+        # GitHub's `?body=` parameter pre-fills the issue body. URL
+        # length is the constraint: most servers cap at ~8 KB. We
+        # measure the encoded URL and fall back to the legacy
+        # clipboard-paste flow if we'd overflow — better one extra
+        # paste step than a silently-truncated diagnostic.
+        BASE_URL = "https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/issues/new"
+        URL_LIMIT = 7800  # leave a little headroom under the 8K HTTP cap
+        title = self.tr("-- put the subject here --")
         url = (
-            "https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/issues/new?"
+            BASE_URL
+            + "?"
+            + urllib.parse.urlencode({"title": title, "body": body})
+        )
+        if len(url) <= URL_LIMIT:
+            # Pre-fill path: the body shows up in GitHub's textarea
+            # without any user intervention.
+            try:
+                webbrowser.open(url, new=2)
+            except Exception:
+                pass
+            QMessageBox.information(
+                self,
+                self.tr("Issue page opened"),
+                self.tr(
+                    "Browser is opening the SteelVoiceMix issue tracker "
+                    "with the diagnostic already filled in. Replace the "
+                    "subject placeholder and write your description."
+                ),
+            )
+            return
+        # Fallback: clipboard + placeholder body (URL too long).
+        QApplication.clipboard().setText(body)
+        url = (
+            BASE_URL
+            + "?"
             + urllib.parse.urlencode({
-                "title": "-- put the subject here --",
+                "title": title,
                 "body": (
-                    "-- describe your issue here --\n\n"
-                    "<!-- Paste diagnostic from clipboard below -->\n"
+                    self.tr("-- describe your issue here --")
+                    + "\n\n<!-- "
+                    + self.tr("Paste diagnostic from clipboard below")
+                    + " -->\n"
                 ),
             })
         )
@@ -752,10 +792,12 @@ class SettingsTab(QWidget):
             pass
         QMessageBox.information(
             self,
-            "Diagnostic copied",
-            "Diagnostic copied to clipboard. The browser is opening "
-            "the SteelVoiceMix issue tracker — paste the clipboard "
-            "into the issue body.",
+            self.tr("Diagnostic copied"),
+            self.tr(
+                "Diagnostic was too long to pre-fill via URL — copied "
+                "to clipboard instead. The browser is opening the issue "
+                "tracker; paste the clipboard into the issue body."
+            ),
         )
 
     def _py_version(self) -> str:
@@ -823,7 +865,9 @@ class SettingsTab(QWidget):
         return out
 
     def _save_new_profile(self) -> None:
-        name, ok = QInputDialog.getText(self, "Save profile", "Profile name:")
+        name, ok = QInputDialog.getText(
+            self, self.tr("Save profile"), self.tr("Profile name:"),
+        )
         if not ok or not name.strip():
             return
         try:

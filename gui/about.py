@@ -24,12 +24,21 @@ ISSUES_URL = "https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix/issues"
 
 def make_about_dialog(parent=None) -> QDialog:
     from PySide6.QtCore import QCoreApplication
+    from PySide6.QtWidgets import QApplication as _QApp
     _tr = lambda s: QCoreApplication.translate("AboutDialog", s)
     dialog = QDialog(parent)
     dialog.setWindowTitle(_tr("About {app}").format(app=DISPLAY_NAME))
     dialog.setWindowIcon(
         QIcon.fromTheme("steelvoicemix", QIcon.fromTheme("audio-headset"))
     )
+    # Inherit the application's layoutDirection (RTL on Arabic etc.).
+    # Without this, child dialogs default to LTR even when the main
+    # window is RTL — Qt applies layoutDirection at app-level but
+    # standalone QDialogs created post-init don't pick it up unless
+    # asked explicitly.
+    app = _QApp.instance()
+    if app is not None:
+        dialog.setLayoutDirection(app.layoutDirection())
     dialog.setMinimumWidth(420)
 
     layout = QVBoxLayout(dialog)

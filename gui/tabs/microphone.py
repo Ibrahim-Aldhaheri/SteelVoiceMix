@@ -750,6 +750,12 @@ class MicrophoneTab(QWidget):
         dlg.setWindowTitle(
             self.tr("Install {feature} dependencies").format(feature=feature_title)
         )
+        # Inherit the app's layoutDirection so RTL languages render
+        # the dialog mirrored. QDialog doesn't pick this up from its
+        # parent QWidget alone — has to be set explicitly.
+        app = QApplication.instance()
+        if app is not None:
+            dlg.setLayoutDirection(app.layoutDirection())
         dlg.setMinimumWidth(560)
 
         layout = QVBoxLayout(dlg)

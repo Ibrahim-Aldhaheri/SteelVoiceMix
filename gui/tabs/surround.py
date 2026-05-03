@@ -182,15 +182,18 @@ class SurroundTab(QWidget):
     def _refresh_status_label(self) -> None:
         if not self._hrir_path:
             self.status_label.setText(
-                "Pick an HRIR file to enable surround."
+                self.tr("Pick an HRIR file to enable surround.")
             )
         elif self._enabled:
             self.status_label.setText(
-                "🟢 SteelSurround sink active. Set apps to output to "
-                "SteelSurround for 7.1 → binaural conversion."
+                self.tr(
+                    "🟢 SteelSurround sink active. Set apps to output to "
+                    "SteelSurround for 7.1 → binaural conversion."
+                )
             )
         else:
             self.status_label.setText(
-                f"HRIR ready: {os.path.basename(self._hrir_path)}. "
-                "Toggle Enable to load the chain."
+                self.tr("HRIR ready: {file}. Toggle Enable to load the chain.").format(
+                    file=os.path.basename(self._hrir_path)
+                )
             )

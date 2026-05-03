@@ -159,6 +159,10 @@
         <translation>جارٍ الشحن</translation>
     </message>
     <message>
+        <source>Offline</source>
+        <translation>غير متصلة</translation>
+    </message>
+    <message>
         <source>Headset offline</source>
         <translation>سماعة الرأس غير متصلة</translation>
     </message>
@@ -740,6 +744,14 @@
         <source>Fetch a generic HeSuVi-format HRIR from upstream (EAC_Default.wav, ~165 KB) and use it. You can replace it with your own file via Browse at any time.</source>
         <translation>اجلب ملف HRIR عام بصيغة HeSuVi من المصدر (EAC_Default.wav، ~165 ك.ب) واستخدمه. يمكنك استبداله بملفك الخاص عبر زر استعراض في أي وقت.</translation>
     </message>
+    <message>
+        <source>🟢 SteelSurround sink active. Set apps to output to SteelSurround for 7.1 → binaural conversion.</source>
+        <translation>🟢 مخرج SteelSurround نشط. اضبط التطبيقات على إخراج صوتها إلى SteelSurround للتحويل من 7.1 إلى مجسم ثنائي الأذن.</translation>
+    </message>
+    <message>
+        <source>HRIR ready: {file}. Toggle Enable to load the chain.</source>
+        <translation>ملف HRIR جاهز: {file}. فعّل المفتاح لتحميل سلسلة المعالجة.</translation>
+    </message>
 </context>
 <context>
     <name>MicrophoneTab</name>
@@ -999,6 +1011,78 @@ Continue?</source>
     <message>
         <source>Dark</source>
         <translation>داكن</translation>
+    </message>
+    <message>
+        <source>Game</source>
+        <translation>الألعاب</translation>
+    </message>
+    <message>
+        <source>Chat</source>
+        <translation>المحادثة</translation>
+    </message>
+    <message>
+        <source>Media</source>
+        <translation>الوسائط</translation>
+    </message>
+    <message>
+        <source>HDMI</source>
+        <translation>HDMI</translation>
+    </message>
+    <message>
+        <source>Save profile</source>
+        <translation>حفظ ملف الصوت</translation>
+    </message>
+    <message>
+        <source>Profile name:</source>
+        <translation>اسم ملف الصوت:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>تم النسخ</translation>
+    </message>
+    <message>
+        <source>{label} commands copied to clipboard. Paste into a terminal:
+
+{text}</source>
+        <translation>تم نسخ أوامر {label} إلى الحافظة. ألصقها في الطرفية:
+
+{text}</translation>
+    </message>
+    <message>
+        <source>Alpha-enable</source>
+        <translation>تفعيل ألفا</translation>
+    </message>
+    <message>
+        <source>Stable-restore</source>
+        <translation>العودة إلى المستقر</translation>
+    </message>
+    <message>
+        <source>Issue page opened</source>
+        <translation>تم فتح صفحة المشكلة</translation>
+    </message>
+    <message>
+        <source>Browser is opening the SteelVoiceMix issue tracker with the diagnostic already filled in. Replace the subject placeholder and write your description.</source>
+        <translation>المتصفح يفتح متعقّب مشكلات SteelVoiceMix والمعلومات التشخيصية مُعبّأة سلفًا. استبدل عنوان الموضوع المؤقت واكتب وصفك.</translation>
+    </message>
+    <message>
+        <source>Diagnostic copied</source>
+        <translation>تم نسخ المعلومات التشخيصية</translation>
+    </message>
+    <message>
+        <source>Diagnostic was too long to pre-fill via URL — copied to clipboard instead. The browser is opening the issue tracker; paste the clipboard into the issue body.</source>
+        <translation>المعلومات التشخيصية أطول من أن تُملأ تلقائيًا عبر الرابط — تم نسخها إلى الحافظة بدلاً من ذلك. المتصفح يفتح متعقّب المشكلات؛ ألصق الحافظة في جسم الموضوع.</translation>
+    </message>
+    <message>
+        <source>-- put the subject here --</source>
+        <translation>-- اكتب عنوان الموضوع هنا --</translation>
+    </message>
+    <message>
+        <source>-- describe your issue here --</source>
+        <translation>-- صف مشكلتك هنا --</translation>
+    </message>
+    <message>
+        <source>Paste diagnostic from clipboard below</source>
+        <translation>ألصق المعلومات التشخيصية من الحافظة أدناه</translation>
     </message>
 </context>
 <context>

@@ -31,6 +31,7 @@ cd "$(dirname "$0")/.."
 
 SPEC="steelvoicemix-dev.spec"
 PY="gui/settings.py"
+CARGO="Cargo.toml"
 
 # Pull the current version from the canonical spec file.
 current=$(awk '/^Version:[[:space:]]/ {print $2; exit}' "$SPEC")
@@ -61,6 +62,16 @@ else
 fi
 
 if [[ "$new" == "$current" ]]; then
+    # Spec/Py already at target — but Cargo.toml may have drifted
+    # (existed in the repo before the bump script grew Cargo
+    # support). Re-sync it without re-bumping the others.
+    cargo_new="${new/~beta/-beta.}"
+    cur_cargo=$(awk -F'"' '/^version = / {print $2; exit}' "$CARGO")
+    if [[ "$cur_cargo" != "$cargo_new" ]]; then
+        sed -i "s/^version = \".*\"/version = \"$cargo_new\"/" "$CARGO"
+        echo "Re-synced $CARGO: $cur_cargo → $cargo_new"
+        exit 0
+    fi
     echo "Already at $current — nothing to do."
     exit 0
 fi
@@ -76,17 +87,26 @@ if ! [[ "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+(~beta[0-9]+)?$ ]]; then
 fi
 
 # Atomic-ish updates — write to .tmp, mv into place.
+# Cargo doesn't accept RPM's `~betaN` pre-release syntax; it wants
+# semver `-beta.N`. Translate before writing to Cargo.toml so
+# `cargo build` doesn't reject the file and `--version` reflects the
+# bump. RPM still reads its own copy from the spec.
+cargo_new="${new/~beta/-beta.}"
+
 tmp_spec="$SPEC.tmp.$$"
 tmp_py="$PY.tmp.$$"
-trap 'rm -f "$tmp_spec" "$tmp_py"' EXIT
+tmp_cargo="$CARGO.tmp.$$"
+trap 'rm -f "$tmp_spec" "$tmp_py" "$tmp_cargo"' EXIT
 
 sed "s/^Version:.*/Version:        $new/" "$SPEC" > "$tmp_spec"
 sed "s/^_APP_VERSION_FALLBACK = \".*\"/_APP_VERSION_FALLBACK = \"$new\"/" "$PY" > "$tmp_py"
+sed "s/^version = \".*\"/version = \"$cargo_new\"/" "$CARGO" > "$tmp_cargo"
 
 # Verify each file actually changed exactly the line we wanted, and
 # only one line. Catches a regex mismatch silently doing nothing.
 spec_diff=$(diff "$SPEC" "$tmp_spec" | grep -c '^[<>]' || true)
 py_diff=$(diff "$PY" "$tmp_py" | grep -c '^[<>]' || true)
+cargo_diff=$(diff "$CARGO" "$tmp_cargo" | grep -c '^[<>]' || true)
 if [[ "$spec_diff" -ne 2 ]]; then
     echo "Unexpected diff in $SPEC ($spec_diff lines changed, expected 2)" >&2
     diff "$SPEC" "$tmp_spec" >&2 || true
@@ -97,13 +117,22 @@ if [[ "$py_diff" -ne 2 ]]; then
     diff "$PY" "$tmp_py" >&2 || true
     exit 1
 fi
+# Cargo diff is allowed to be 0 (already at target after a no-op
+# bump) or 2 (real change). Anything else is a regex miss.
+if [[ "$cargo_diff" -ne 0 && "$cargo_diff" -ne 2 ]]; then
+    echo "Unexpected diff in $CARGO ($cargo_diff lines changed)" >&2
+    diff "$CARGO" "$tmp_cargo" >&2 || true
+    exit 1
+fi
 
 mv "$tmp_spec" "$SPEC"
 mv "$tmp_py" "$PY"
+mv "$tmp_cargo" "$CARGO"
 trap - EXIT
 
 echo "Bumped: $current → $new"
 echo "  $SPEC"
 echo "  $PY"
+echo "  $CARGO  (cargo: $cargo_new)"
 echo
 echo "Next: commit alongside whatever change motivated this bump."
