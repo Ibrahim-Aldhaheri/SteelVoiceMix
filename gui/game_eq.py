@@ -167,12 +167,23 @@ class GameWatcher(QThread):
     _IGNORED_APPS = frozenset({
         "Spotify", "Discord", "WEBRTC VoiceEngine", "Web Content",
         "Steam", "Steam Voice Settings",
+        # Our own EQ test-audio playback. pw-cat fuzzy-matches
+        # 'Podcast' at SequenceMatcher ratio ~0.67 (shared p/c/a/t
+        # characters), which auto-applied the Podcast preset every
+        # time the user pressed Play on a noise/sweep clip. Listing
+        # the app name as well as the binary defends against
+        # PipeWire variants that surface the friendlier name.
+        "pw-cat", "PipeWire pw-cat",
     })
     _IGNORED_BINARIES = frozenset({
         "firefox", "firefox-bin", "chromium", "chromium-browser",
         "chrome", "google-chrome", "brave", "brave-browser",
         "spotify", "discord", "vesktop", "telegram-desktop",
         "obs", "OBS", "easyeffects", "pavucontrol", "qpwgraph",
+        # Audio test / playback tools — they're not games even when
+        # they happen to fuzzy-match an ASM preset name.
+        "pw-cat", "pw-play", "paplay", "aplay", "ffplay", "mpv",
+        "vlc", "mplayer",
     })
 
     @staticmethod

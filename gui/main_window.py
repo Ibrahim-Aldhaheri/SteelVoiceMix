@@ -345,10 +345,10 @@ class MixerGUI(QMainWindow):
     # ----------------------------------------------------- header + chatmix
 
     def _on_connected(self) -> None:
-        self._set_status_pill("●  Connected", "ok")
+        self._set_status_pill(self.tr("●  Connected"), "ok")
 
     def _on_disconnected(self) -> None:
-        self._set_status_pill("●  Reconnecting…", "bad")
+        self._set_status_pill(self.tr("●  Reconnecting…"), "bad")
         self.home_tab.on_disconnected()
 
     def _on_status_message(self, msg: str) -> None:

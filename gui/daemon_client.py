@@ -153,7 +153,12 @@ class DaemonClient:
             except Exception:
                 pass
             if self.running:
-                self.signals.status_message.emit("🔍 Connecting to daemon...")
+                from PySide6.QtCore import QCoreApplication
+                self.signals.status_message.emit(
+                    QCoreApplication.translate(
+                        "DaemonClient", "🔍 Connecting to daemon..."
+                    )
+                )
                 time.sleep(2)
 
     def _connect_and_subscribe(self) -> None:

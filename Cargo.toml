@@ -1,6 +1,6 @@
 [package]
 name = "steelvoicemix"
-version = "0.4.2-beta.7"
+version = "0.4.2-beta.8"
 edition = "2021"
 description = "ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux"
 license = "GPL-3.0-only"

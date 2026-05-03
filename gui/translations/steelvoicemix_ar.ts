@@ -44,6 +44,14 @@
         <translation>🔍  جارٍ الاتصال…</translation>
     </message>
     <message>
+        <source>●  Connected</source>
+        <translation>●  متصلة</translation>
+    </message>
+    <message>
+        <source>●  Reconnecting…</source>
+        <translation>●  جارٍ إعادة الاتصال…</translation>
+    </message>
+    <message>
         <source>Checking…</source>
         <translation>جارٍ التحقق…</translation>
     </message>
@@ -1121,6 +1129,13 @@ Continue?</source>
     <message>
         <source>Select…</source>
         <translation>اختر…</translation>
+    </message>
+</context>
+<context>
+    <name>DaemonClient</name>
+    <message>
+        <source>🔍 Connecting to daemon...</source>
+        <translation>🔍 جارٍ الاتصال بالخدمة…</translation>
     </message>
 </context>
 </TS>
