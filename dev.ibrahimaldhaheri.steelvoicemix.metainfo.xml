@@ -39,7 +39,7 @@
     <modalias>usb:v1038p12E0*</modalias>
   </provides>
   <releases>
-    <release version="0.5.0" date="2026-05-03" type="stable">
+    <release version="0.4.0" date="2026-05-03" type="stable">
       <description>
         <p>
           Major release: Volume Boost (per-channel 100-200% digital
