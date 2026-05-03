@@ -94,6 +94,7 @@ pub struct DaemonState {
     ///   - written on every HidEvent::ChatMix event in the mixer,
     ///   - re-read on startup and used as MixerState's initial value
     ///     (fallback for resolve_initial_dial when get_chatmix is silent).
+    ///
     /// Defaults to 50/50 — a balanced split — for first-run installs.
     #[serde(default = "default_chatmix_half")]
     pub game_vol: u8,
