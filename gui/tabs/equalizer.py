@@ -417,7 +417,7 @@ class EqualizerTab(QWidget):
         test_row = QHBoxLayout()
         self.test_audio_combo = NoWheelComboBox()
         for label, _factory in TEST_AUDIO_CATALOGUE:
-            self.test_audio_combo.addItem(label)
+            self.test_audio_combo.addItem(self.tr(label))
         self.test_audio_combo.setMinimumWidth(200)
         test_row.addWidget(self.test_audio_combo, 1)
         self.test_play_btn = QPushButton(self.tr("▶ Play"))

@@ -551,6 +551,46 @@
         <source>Save current {channel} EQ as:</source>
         <translation>احفظ موازن قناة {channel} الحالي باسم:</translation>
     </message>
+    <message>
+        <source>Pink noise (5 s)</source>
+        <translation>ضوضاء وردية (5 ث)</translation>
+    </message>
+    <message>
+        <source>White noise (5 s)</source>
+        <translation>ضوضاء بيضاء (5 ث)</translation>
+    </message>
+    <message>
+        <source>Sweep 20 Hz – 20 kHz (10 s)</source>
+        <translation>تدرّج 20 هرتز – 20 ك.هرتز (10 ث)</translation>
+    </message>
+    <message>
+        <source>Sweep low 20 Hz – 2 kHz (10 s)</source>
+        <translation>تدرّج منخفض 20 هرتز – 2 ك.هرتز (10 ث)</translation>
+    </message>
+    <message>
+        <source>Sweep high 2 kHz – 20 kHz (10 s)</source>
+        <translation>تدرّج عالٍ 2 ك.هرتز – 20 ك.هرتز (10 ث)</translation>
+    </message>
+    <message>
+        <source>Tone 100 Hz (3 s)</source>
+        <translation>نغمة 100 هرتز (3 ث)</translation>
+    </message>
+    <message>
+        <source>Tone 250 Hz (3 s)</source>
+        <translation>نغمة 250 هرتز (3 ث)</translation>
+    </message>
+    <message>
+        <source>Tone 1 kHz (3 s)</source>
+        <translation>نغمة 1 ك.هرتز (3 ث)</translation>
+    </message>
+    <message>
+        <source>Tone 4 kHz (3 s)</source>
+        <translation>نغمة 4 ك.هرتز (3 ث)</translation>
+    </message>
+    <message>
+        <source>Tone 10 kHz (3 s)</source>
+        <translation>نغمة 10 ك.هرتز (3 ث)</translation>
+    </message>
 </context>
 <context>
     <name>SinksTab</name>
@@ -988,8 +1028,8 @@ Continue?</source>
         <translation>الإبلاغ عن مشكلة</translation>
     </message>
     <message>
-        <source>Licensed under the GNU GPL-3.0-or-later</source>
-        <translation>مرخّص تحت رخصة GNU GPL-3.0-or-later</translation>
+        <source>Licensed under the GNU GPL-3.0-only</source>
+        <translation>مرخّص تحت رخصة GNU GPL-3.0-only</translation>
     </message>
 </context>
 <context>

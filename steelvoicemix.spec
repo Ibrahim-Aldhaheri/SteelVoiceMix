@@ -3,7 +3,7 @@ Version:        0.4.0
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux
 
-License:        GPL-3.0-or-later
+License:        GPL-3.0-only
 URL:            https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix
 Source0:        {{{ git_dir_pack }}}
 

@@ -225,11 +225,11 @@ pip install PySide6                 # pip
 
 ## License
 
-[GPL-3.0-or-later](LICENSE).
+[GPL-3.0-only](LICENSE).
 
-SteelVoiceMix is licensed under the GNU General Public License, version 3 or
-later, in alignment with the broader Linux audio ecosystem (PipeWire is LGPL,
-JACK is LGPL, the GNU userland is mostly GPL) and the upstream projects whose
-work made this possible (Linux-Arctis-Manager and Arctis Sound Manager are
-both GPL-3.0). If you fork or build on this code, your derivative work must
-also be GPL-3.0-compatible.
+SteelVoiceMix is licensed under the GNU General Public License, version 3,
+in alignment with the broader Linux audio ecosystem (PipeWire is LGPL,
+JACK is LGPL, the GNU userland is mostly GPL) and the upstream projects
+whose work made this possible (Linux-Arctis-Manager and Arctis Sound
+Manager are both GPL-3.0). If you fork or build on this code, your
+derivative work must also be GPL-3.0-compatible.
