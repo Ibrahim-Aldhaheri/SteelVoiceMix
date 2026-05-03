@@ -262,6 +262,7 @@ impl SinkManager {
     ///   2. We never had a chain because the mic source wasn't
     ///      visible at create_sinks time — re-discover and spawn if
     ///      the user has features enabled.
+    ///
     /// No-op when no features are enabled.
     pub fn check_mic_health(&mut self) {
         let any_features = self.mic_state.noise_gate.enabled
