@@ -51,6 +51,7 @@ fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
         volume_boost: st.volume_boost,
         game_vol: st.game_vol,
         chat_vol: st.chat_vol,
+        oled_brightness: st.oled_brightness,
     });
 }
 
@@ -125,6 +126,15 @@ pub struct MixerState {
     /// currently on for this channel and the dial-at-enable was v".
     pub pre_boost_game_vol: Option<u8>,
     pub pre_boost_chat_vol: Option<u8>,
+    /// Persisted OLED brightness (1..=10). Re-applied on every
+    /// reconnect — firmware does not remember this across power cycles.
+    pub oled_brightness: u8,
+    /// Last brightness value pushed to the device; mismatch with
+    /// `oled_brightness` triggers a re-send in `event_loop`.
+    pub applied_oled_brightness: u8,
+    /// True iff the connected hardware exposes an OLED. Lets the GUI
+    /// gate OLED controls instead of assuming connected == has OLED.
+    pub oled_present: bool,
 }
 
 impl MixerState {
@@ -143,6 +153,7 @@ impl MixerState {
         volume_boost: VolumeBoostState,
         game_vol: u8,
         chat_vol: u8,
+        oled_brightness: u8,
     ) -> Self {
         MixerState {
             connected: false,
@@ -162,6 +173,9 @@ impl MixerState {
             volume_boost,
             pre_boost_game_vol: None,
             pre_boost_chat_vol: None,
+            oled_brightness,
+            applied_oled_brightness: 0,
+            oled_present: false,
         }
     }
 }
@@ -325,16 +339,29 @@ impl Mixer {
     /// virtual sinks and OLED, announce state, and run the event loop until
     /// the user unplugs or we're told to shut down.
     fn run_session(&mut self, dev: NovaDevice, output_sink: String) -> SessionEnd {
-        let mut display = match ChatMixGauge::new() {
+        let initial_brightness = self.state.lock().unwrap().oled_brightness;
+        let (mut display, present_now) = match ChatMixGauge::new(initial_brightness) {
             Ok(d) => {
-                info!("OLED display initialized");
-                Some(d)
+                info!("OLED display initialized at brightness {initial_brightness}");
+                (Some(d), true)
             }
             Err(e) => {
                 warn!("OLED display not available: {e}");
-                None
+                (None, false)
             }
         };
+        let was_present = {
+            let mut st = self.state.lock().unwrap();
+            let prior = st.oled_present;
+            st.oled_present = present_now;
+            if present_now {
+                st.applied_oled_brightness = initial_brightness;
+            }
+            prior
+        };
+        if was_present != present_now {
+            self.broadcast(DaemonEvent::OledPresenceChanged { present: present_now });
+        }
 
         {
             let mut sinks = self.sinks.lock().unwrap();
@@ -401,9 +428,15 @@ impl Mixer {
             let mut sinks = self.sinks.lock().unwrap();
             sinks.destroy_sinks();
         }
-        {
+        let was_present = {
             let mut st = self.state.lock().unwrap();
             st.connected = false;
+            let was_present = st.oled_present;
+            st.oled_present = false;
+            was_present
+        };
+        if was_present {
+            self.broadcast(DaemonEvent::OledPresenceChanged { present: false });
         }
         self.broadcast(DaemonEvent::Disconnected);
 
@@ -428,16 +461,29 @@ impl Mixer {
         let mut last_sidetone = self.state.lock().unwrap().sidetone_level;
 
         while self.running.load(Ordering::Relaxed) {
-            // Apply any pending sidetone change from the GUI. Cheap
-            // — one mutex acquire per loop iteration, same pattern
-            // we use for chatmix updates.
-            let want_sidetone = self.state.lock().unwrap().sidetone_level;
+            // One state read per iteration covers both pending GUI
+            // writes (sidetone + OLED brightness).
+            let (want_sidetone, want_bright, applied_bright) = {
+                let st = self.state.lock().unwrap();
+                (st.sidetone_level, st.oled_brightness, st.applied_oled_brightness)
+            };
             if want_sidetone != last_sidetone {
                 if let Err(e) = dev.set_sidetone(want_sidetone) {
                     warn!("Failed to apply sidetone {want_sidetone}: {e}");
                 } else {
                     last_sidetone = want_sidetone;
                 }
+            }
+
+            // Mark applied unconditionally — on failure the firmware
+            // is silently dropping writes; retrying every 100 ms would
+            // spam HID + warn logs forever. Next reconnect re-pushes
+            // via run_session.
+            if want_bright != applied_bright {
+                if let Some(ref d) = display {
+                    d.set_brightness(want_bright);
+                }
+                self.state.lock().unwrap().applied_oled_brightness = want_bright;
             }
 
             // Short timeout keeps dial-to-update latency low; battery

@@ -21,10 +21,13 @@ pub struct ChatMixGauge {
 
 impl ChatMixGauge {
     /// Connect to the OLED display and set initial brightness.
-    pub fn new() -> Result<Self, String> {
+    /// `brightness` is clamped to 1..=10; values outside that range
+    /// are coerced to the nearest endpoint.
+    pub fn new(brightness: u8) -> Result<Self, String> {
         let device = Device::connect().map_err(|e| format!("OLED open failed: {e}"))?;
+        let level = brightness.clamp(1, 10);
         device
-            .set_brightness(5)
+            .set_brightness(level)
             .map_err(|e| format!("OLED brightness failed: {e}"))?;
         // Probe with a blank frame — wireless variants accept connect()+
         // set_brightness() but reject feature reports with EINVAL. Failing
@@ -35,6 +38,21 @@ impl ChatMixGauge {
             .map_err(|e| format!("OLED test draw failed: {e}"))?;
         info!("OLED display connected");
         Ok(ChatMixGauge { device })
+    }
+
+    /// Update brightness post-connect. Wireless variants typically
+    /// accept this even when they reject the larger draw feature
+    /// reports, so it works whether or not the gauge is being drawn.
+    /// `level` is clamped to 1..=10.
+    pub fn set_brightness(&self, level: u8) -> bool {
+        let clamped = level.clamp(1, 10);
+        match self.device.set_brightness(clamped) {
+            Ok(()) => true,
+            Err(e) => {
+                warn!("OLED set_brightness({clamped}) failed: {e}");
+                false
+            }
+        }
     }
 
     /// Draw the ChatMix gauge with current game/chat volumes (0-100).

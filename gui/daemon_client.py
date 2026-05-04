@@ -118,6 +118,10 @@ class DaemonSignals(QObject):
     mic_state_changed = Signal(dict)
     # Hardware sidetone level (0..=128 normalised on the wire).
     sidetone_changed = Signal(int)
+    # Base-station OLED brightness (1..=10).
+    oled_brightness_changed = Signal(int)
+    # True iff the connected device exposes an OLED.
+    oled_presence_changed = Signal(bool)
     # Daemon-side desktop notification toggle (separate from the GUI's
     # own minimize-to-tray toast; this one gates the connect /
     # disconnect notify-send popups emitted by the Rust daemon).
@@ -229,6 +233,10 @@ class DaemonClient:
                 self.signals.mic_state_changed.emit(_normalize_mic_state(mic))
         elif ev == "sidetone-changed":
             self.signals.sidetone_changed.emit(int(event.get("level", 0)))
+        elif ev == "oled-brightness-changed":
+            self.signals.oled_brightness_changed.emit(int(event.get("level", 5)))
+        elif ev == "oled-presence-changed":
+            self.signals.oled_presence_changed.emit(bool(event.get("present", False)))
         elif ev == "notifications-enabled-changed":
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("enabled", True))
@@ -277,6 +285,12 @@ class DaemonClient:
             if isinstance(mic, dict):
                 self.signals.mic_state_changed.emit(_normalize_mic_state(mic))
             self.signals.sidetone_changed.emit(int(event.get("sidetone_level", 0)))
+            self.signals.oled_brightness_changed.emit(
+                int(event.get("oled_brightness", 5))
+            )
+            self.signals.oled_presence_changed.emit(
+                bool(event.get("oled_present", False))
+            )
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("notifications_enabled", True))
             )

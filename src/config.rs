@@ -100,6 +100,12 @@ pub struct DaemonState {
     pub game_vol: u8,
     #[serde(default = "default_chatmix_half")]
     pub chat_vol: u8,
+    /// Base-station OLED brightness, 1..=10. Re-applied to the
+    /// device on every connect — the headset firmware does NOT
+    /// remember this across power cycles, so the daemon must push
+    /// it after each reconnect.
+    #[serde(default = "default_oled_brightness")]
+    pub oled_brightness: u8,
 }
 
 fn default_chatmix_half() -> u8 {
@@ -116,6 +122,10 @@ fn default_sidetone_level() -> u8 {
 
 fn default_notifications_enabled() -> bool {
     true
+}
+
+fn default_oled_brightness() -> u8 {
+    5
 }
 
 fn default_true() -> bool {
@@ -139,6 +149,7 @@ impl Default for DaemonState {
             volume_boost: VolumeBoostState::default(),
             game_vol: default_chatmix_half(),
             chat_vol: default_chatmix_half(),
+            oled_brightness: default_oled_brightness(),
         }
     }
 }

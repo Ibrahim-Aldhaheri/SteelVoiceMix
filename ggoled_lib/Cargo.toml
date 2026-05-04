@@ -7,4 +7,6 @@ edition = "2021"
 anyhow = "1.0"
 bit-vec = "0.9"
 hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }
+log = "0.4"
+rusb = "0.9"
 spin_sleep = "1.3"

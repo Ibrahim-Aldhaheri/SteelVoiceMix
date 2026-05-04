@@ -46,6 +46,10 @@ from PySide6.QtWidgets import (
 from ..settings import save as save_settings
 from ..widgets import NoWheelSlider, card, labelled_toggle
 
+# Hidden until the sidetone HID write is verified across wireless
+# firmware revisions — currently the device may silently ignore it.
+_SIDETONE_ENABLED = False
+
 # Daemon command + MicState key names. The daemon's MicState fields
 # are noise_gate / noise_reduction / ai_noise_cancellation; the
 # matching commands are set-mic-noise-gate / set-mic-noise-reduction
@@ -319,71 +323,10 @@ class MicrophoneTab(QWidget):
             # Strength → description.
             vs_card_layout.insertLayout(2, kind_row)
 
-        # Sidetone slider — 4 hardware levels (Off / Low / Medium /
-        # High). We expose a 0..3 slider that maps to the centre of
-        # each device-level range, so the slider stops align 1:1
-        # with what the firmware actually applies. No debounce
-        # needed (4 discrete stops, not 128 pixel positions).
-        sidetone_row = QHBoxLayout()
-        sidetone_lbl = QLabel(self.tr("Sidetone"))
-        sidetone_lbl.setFixedWidth(80)
-        sidetone_alpha = QLabel("ALPHA")
-        # Pin the badge to a tight intrinsic size so QHBoxLayout
-        # doesn't stretch it to fill leftover horizontal space.
-        sidetone_alpha.setSizePolicy(
-            QSizePolicy.Fixed, QSizePolicy.Fixed,
-        )
-        sidetone_alpha.setAlignment(Qt.AlignCenter)
-        sidetone_alpha.setStyleSheet(
-            "background: #FF9800; color: white; "
-            "font-size: 9px; font-weight: bold; "
-            "padding: 2px 6px; border-radius: 8px;"
-        )
-        sidetone_alpha.setToolTip(
-            self.tr(
-                "Sidetone may not work on the wireless variant of the "
-                "Arctis Nova Pro — slider position quantises but the "
-                "headset firmware may ignore the HID write. Confirmed "
-                "untested across all hardware revisions."
-            )
-        )
-        self.sidetone_slider = NoWheelSlider(Qt.Horizontal)
-        self.sidetone_slider.setRange(0, 3)
-        self.sidetone_slider.setSingleStep(1)
-        self.sidetone_slider.setPageStep(1)
-        self.sidetone_slider.setTickInterval(1)
-        self.sidetone_slider.setTickPosition(QSlider.TicksBelow)
-        self.sidetone_slider.setMaximumWidth(280)
-        self.sidetone_slider.setEnabled(self._daemon is not None)
-        self.sidetone_slider.valueChanged.connect(self._on_sidetone_step_changed)
-        self.sidetone_value = QLabel(self.tr("Off"))
-        self.sidetone_value.setFixedWidth(72)
-        self.sidetone_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        sidetone_row.addWidget(sidetone_lbl)
-        sidetone_row.addWidget(sidetone_alpha)
-        sidetone_row.addWidget(self.sidetone_slider, 1)
-        sidetone_row.addWidget(self.sidetone_value)
-
-        sidetone_help = QLabel(
-            self.tr(
-                "Hardware sidetone — how loudly the headset feeds your "
-                "raw mic back into your ears. The Arctis Nova Pro "
-                "Wireless has 4 internal levels (Off / Low / Medium / "
-                "High); the slider maps 1:1."
-            )
-        )
-        sidetone_help.setWordWrap(True)
-        sidetone_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
-        )
-
         # Voice-test card — a software loopback from the processed
-        # SteelMic source back into the headset. Lets the user A/B
-        # the gate / NR / AI-NC settings against their own voice
-        # without firing up Discord. We use `pactl load-module
-        # module-loopback`, capture its module id, and unload on
-        # toggle-off. latency_msec=20 keeps the round-trip from
-        # feeling laggy without taxing the scheduler.
+        # SteelMic source back into the headset. latency_msec=20
+        # keeps the round-trip from feeling laggy without taxing
+        # the scheduler.
         voice_btn_row = QHBoxLayout()
         self.voice_test_btn = QPushButton(self.tr("🎧  Hear yourself (test mic)"))
         self.voice_test_btn.setCheckable(True)
@@ -405,15 +348,72 @@ class MicrophoneTab(QWidget):
             "font-size: 10px; color: palette(placeholder-text);"
         )
 
-        layout.addWidget(
-            card(
-                self.tr("Listen + Sidetone"),
-                sidetone_row,
-                sidetone_help,
-                voice_btn_row,
-                voice_help,
+        if _SIDETONE_ENABLED:
+            sidetone_row = QHBoxLayout()
+            sidetone_lbl = QLabel(self.tr("Sidetone"))
+            sidetone_lbl.setFixedWidth(80)
+            sidetone_alpha = QLabel("ALPHA")
+            sidetone_alpha.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            sidetone_alpha.setAlignment(Qt.AlignCenter)
+            sidetone_alpha.setStyleSheet(
+                "background: #FF9800; color: white; "
+                "font-size: 9px; font-weight: bold; "
+                "padding: 2px 6px; border-radius: 8px;"
             )
-        )
+            sidetone_alpha.setToolTip(
+                self.tr(
+                    "Sidetone may not work on the wireless variant of the "
+                    "Arctis Nova Pro — slider position quantises but the "
+                    "headset firmware may ignore the HID write."
+                )
+            )
+            self.sidetone_slider = NoWheelSlider(Qt.Horizontal)
+            self.sidetone_slider.setRange(0, 3)
+            self.sidetone_slider.setSingleStep(1)
+            self.sidetone_slider.setPageStep(1)
+            self.sidetone_slider.setTickInterval(1)
+            self.sidetone_slider.setTickPosition(QSlider.TicksBelow)
+            self.sidetone_slider.setMaximumWidth(280)
+            self.sidetone_slider.setEnabled(self._daemon is not None)
+            self.sidetone_slider.valueChanged.connect(self._on_sidetone_step_changed)
+            self.sidetone_value = QLabel(self.tr("Off"))
+            self.sidetone_value.setFixedWidth(72)
+            self.sidetone_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            sidetone_row.addWidget(sidetone_lbl)
+            sidetone_row.addWidget(sidetone_alpha)
+            sidetone_row.addWidget(self.sidetone_slider, 1)
+            sidetone_row.addWidget(self.sidetone_value)
+
+            sidetone_help = QLabel(
+                self.tr(
+                    "Hardware sidetone — how loudly the headset feeds your "
+                    "raw mic back into your ears. The Arctis Nova Pro "
+                    "Wireless has 4 internal levels (Off / Low / Medium / "
+                    "High); the slider maps 1:1."
+                )
+            )
+            sidetone_help.setWordWrap(True)
+            sidetone_help.setStyleSheet(
+                "font-size: 10px; color: palette(placeholder-text);"
+            )
+
+            layout.addWidget(
+                card(
+                    self.tr("Listen + Sidetone"),
+                    sidetone_row,
+                    sidetone_help,
+                    voice_btn_row,
+                    voice_help,
+                )
+            )
+        else:
+            layout.addWidget(
+                card(
+                    self.tr("Voice Test"),
+                    voice_btn_row,
+                    voice_help,
+                )
+            )
 
         notes = QLabel(
             self.tr(
@@ -679,11 +679,8 @@ class MicrophoneTab(QWidget):
         return 3
 
     def on_sidetone_changed(self, level: int) -> None:
-        """Daemon broadcast: persisted sidetone level changed
-        (status snapshot on connect, or another GUI client set it).
-        Map the daemon level into the 4-step slider and update the
-        label. Block signals so the echo doesn't loop back as
-        another set-sidetone."""
+        if not _SIDETONE_ENABLED:
+            return
         step = self._level_to_step(level)
         was_blocked = self.sidetone_slider.blockSignals(True)
         try:
@@ -693,8 +690,6 @@ class MicrophoneTab(QWidget):
         self.sidetone_value.setText(self._sidetone_label_for(step))
 
     def _on_sidetone_step_changed(self, step: int) -> None:
-        """User moved the slider — fire the daemon command + update
-        the label. No debounce needed at 4 steps."""
         step = max(0, min(3, step))
         self.sidetone_value.setText(self._sidetone_label_for(step))
         if self._daemon is None:

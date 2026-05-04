@@ -383,6 +383,9 @@ pub enum ClientCommand {
     /// to EEPROM so it persists across power cycles.
     #[serde(rename = "set-sidetone")]
     SetSidetone { level: u8 },
+    /// Set base-station OLED brightness (clamped to 1..=10).
+    #[serde(rename = "set-oled-brightness")]
+    SetOledBrightness { level: u8 },
     /// Toggle daemon-side desktop notifications (the connect /
     /// disconnect notify-send popups). Distinct from the GUI's own
     /// minimize-to-tray toast, which is GUI-side only.
@@ -431,6 +434,10 @@ pub enum DaemonEvent {
         sidetone_level: u8,
         notifications_enabled: bool,
         volume_boost: VolumeBoostState,
+        /// Persisted OLED brightness (1..=10), re-pushed on reconnect.
+        oled_brightness: u8,
+        /// True iff the connected device exposes an OLED.
+        oled_present: bool,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -490,6 +497,17 @@ pub enum DaemonEvent {
     /// post-clamp.
     #[serde(rename = "sidetone-changed")]
     SidetoneChanged { level: u8 },
+
+    /// Fired when OLED brightness changes. Carries the post-clamp
+    /// level (1..=10). Broadcast even when the device silently drops
+    /// the write so the GUI slider stays in sync with stored state.
+    #[serde(rename = "oled-brightness-changed")]
+    OledBrightnessChanged { level: u8 },
+
+    /// Fired when the OLED-present capability flips on connect /
+    /// disconnect. GUIs gate OLED-specific controls on this.
+    #[serde(rename = "oled-presence-changed")]
+    OledPresenceChanged { present: bool },
 
     /// Fired when daemon-side desktop notifications are toggled.
     #[serde(rename = "notifications-enabled-changed")]
@@ -582,6 +600,8 @@ mod tests {
             sidetone_level: 0,
             notifications_enabled: true,
             volume_boost: VolumeBoostState::default(),
+            oled_brightness: 5,
+            oled_present: true,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -780,6 +800,34 @@ mod tests {
         match cmd {
             ClientCommand::SetSidetone { level } => assert_eq!(level, 64),
             other => panic!("expected SetSidetone, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_oled_brightness_command_parses() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-oled-brightness","level":7}"#).unwrap();
+        match cmd {
+            ClientCommand::SetOledBrightness { level } => assert_eq!(level, 7),
+            other => panic!("expected SetOledBrightness, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn oled_brightness_changed_event_shape() {
+        let ev = DaemonEvent::OledBrightnessChanged { level: 7 };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "oled-brightness-changed");
+        assert_eq!(json["level"], 7);
+    }
+
+    #[test]
+    fn oled_presence_changed_event_shape() {
+        for present in [true, false] {
+            let ev = DaemonEvent::OledPresenceChanged { present };
+            let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+            assert_eq!(json["event"], "oled-presence-changed");
+            assert_eq!(json["present"], present);
         }
     }
 

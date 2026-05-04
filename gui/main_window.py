@@ -44,6 +44,7 @@ from .settings import (
     save as save_settings,
 )
 from .theme import apply_theme, normalize_mode
+from .tabs.deck import DeckTab
 from .tabs.equalizer import EqualizerTab
 from .tabs.home import HomeTab
 from .tabs.microphone import MicrophoneTab
@@ -158,6 +159,7 @@ class MixerGUI(QMainWindow):
         self.home_tab = HomeTab(self.daemon_client)
         self.sinks_tab = SinksTab(self.daemon_client)
         self.surround_tab = SurroundTab(self.daemon_client)
+        self.deck_tab = DeckTab(self.daemon_client)
         self.mic_tab = MicrophoneTab(
             self.daemon_client, self.settings, self.voice_test,
         )
@@ -199,12 +201,14 @@ class MixerGUI(QMainWindow):
         self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.stack = QStackedWidget()
 
+        self._deck_row_index: int | None = None
         for label, widget in (
             (self.tr("🏠   Home"), self.home_tab),
             (self.tr("🔊   Sinks"), self.sinks_tab),
             (self.tr("🎛   Equalizer"), self.eq_tab),
             (self.tr("🎬   Surround"), self.surround_tab),
             (self.tr("🎙   Microphone"), self.mic_tab),
+            (self.tr("🖥   Deck"), self.deck_tab),
             (self.tr("⚙   Settings"), self.settings_tab),
         ):
             item = QListWidgetItem(label)
@@ -220,6 +224,11 @@ class MixerGUI(QMainWindow):
             scroller.setFrameShape(QScrollArea.NoFrame)
             scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.stack.addWidget(scroller)
+            if widget is self.deck_tab:
+                self._deck_row_index = self.nav.count() - 1
+        # Hidden until oled-presence-changed flips it on.
+        if self._deck_row_index is not None:
+            self.nav.setRowHidden(self._deck_row_index, True)
         self.nav.setCurrentRow(0)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
 
@@ -340,6 +349,13 @@ class MixerGUI(QMainWindow):
         self.signals.notifications_enabled_changed.connect(
             self.settings_tab.on_daemon_notifications_changed
         )
+        self.signals.oled_brightness_changed.connect(
+            self.deck_tab.on_oled_brightness_changed
+        )
+        self.signals.oled_presence_changed.connect(
+            self.deck_tab.on_oled_presence_changed
+        )
+        self.signals.oled_presence_changed.connect(self._on_deck_presence)
 
     # ----------------------------------------------------- header + chatmix
 
@@ -351,6 +367,20 @@ class MixerGUI(QMainWindow):
         self._set_status_pill(self.tr("●  Reconnecting…"), "bad")
         self.home_tab.on_disconnected()
         self._apply_redirect_on_disconnect()
+
+    def _on_deck_presence(self, present: bool) -> None:
+        if self._deck_row_index is None:
+            return
+        was_hidden = self.nav.isRowHidden(self._deck_row_index)
+        self.nav.setRowHidden(self._deck_row_index, not bool(present))
+        # Fall back to Home so the page area doesn't go blank when the
+        # currently-selected tab disappears.
+        if (
+            not present
+            and not was_hidden
+            and self.nav.currentRow() == self._deck_row_index
+        ):
+            self.nav.setCurrentRow(0)
 
     # ----------------------------------------------------- audio routing
 
