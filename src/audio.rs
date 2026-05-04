@@ -563,7 +563,7 @@ impl SinkManager {
             "module-loopback",
             &format!("source={name}.monitor"),
             &format!("sink={target}"),
-            "latency_msec=1",
+            "latency_msec=20",
         ]) {
             s.loopback_id = id;
         } else {
@@ -1201,11 +1201,19 @@ fn create_sink_pair(target: &str, name: &str, description: &str) -> Option<SinkM
         ),
     ])?;
 
+    // latency_msec=20 picks a loopback quantum (~960 samples at 48kHz)
+    // that round-trips compatibly with the filter chain's 1024-sample
+    // quantum. The earlier value of 1ms negotiated quantum=16, which
+    // was a 64x mismatch — every YouTube seek / video change forced
+    // wireplumber to retry the loopback link, audible as a brief glitch.
+    // The pw-top column for these loopback nodes used to read QUANT=16
+    // at runtime; with this value it reads QUANT=960 (or thereabouts),
+    // matching the chain.
     match load_module(&[
         "module-loopback",
         &format!("source={name}.monitor"),
         &format!("sink={target}"),
-        "latency_msec=1",
+        "latency_msec=20",
     ]) {
         Some(loopback_id) => Some(SinkModules {
             null_sink_id,
@@ -1268,7 +1276,7 @@ fn insert_eq_into_channel(
         "module-loopback",
         &format!("source={null_sink_name}.monitor"),
         &format!("sink={capture_sink}"),
-        "latency_msec=1",
+        "latency_msec=20",
     ]);
 
     match new_loopback {
@@ -1286,7 +1294,7 @@ fn insert_eq_into_channel(
                 "module-loopback",
                 &format!("source={null_sink_name}.monitor"),
                 &format!("sink={headset}"),
-                "latency_msec=1",
+                "latency_msec=20",
             ]);
             if let Some(id) = direct {
                 channel.loopback_id = id;
@@ -1316,7 +1324,7 @@ fn remove_eq_from_channel(
         "module-loopback",
         &format!("source={null_sink_name}.monitor"),
         &format!("sink={headset}"),
-        "latency_msec=1",
+        "latency_msec=20",
     ]);
     if let Some(id) = direct {
         channel.loopback_id = id;
