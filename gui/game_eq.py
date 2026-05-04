@@ -175,6 +175,26 @@ class GameWatcher(QThread):
         # the app name as well as the binary defends against
         # PipeWire variants that surface the friendlier name.
         "pw-cat", "PipeWire pw-cat",
+        # Browsers — `application.process.binary` is often empty or
+        # mangled when the browser is Flatpak / Snap / sandboxed
+        # (e.g. "chromium-bwrap"), so the binary-list check from
+        # _IGNORED_BINARIES misses. Listing the friendly application
+        # .name strings catches them before the fuzzy-match step
+        # has a chance to false-positive on a game preset that
+        # happens to share characters (e.g. "Chromium" → fuzzy
+        # match on a Horizon preset reported in the wild).
+        "Chromium", "Chromium Browser",
+        "Firefox", "Mozilla Firefox",
+        "Chrome", "Google Chrome",
+        "Brave", "Brave Browser", "Brave-browser",
+        "Vivaldi", "Opera", "Microsoft Edge",
+        "Tor Browser", "LibreWolf", "Zen Browser",
+        # Other common audio-producing non-game apps the watcher
+        # sees on SteelGame when the user hasn't routed selectively.
+        "VLC media player", "VLC", "mpv", "MPV",
+        "OBS", "OBS Studio",
+        "Telegram Desktop", "Vesktop", "WhatsApp",
+        "ALSA plug-in [pulseaudio]", "ALSA plug-in",
     })
     _IGNORED_BINARIES = frozenset({
         "firefox", "firefox-bin", "chromium", "chromium-browser",
