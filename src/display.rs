@@ -17,27 +17,46 @@ const CHAT_BAR_Y: usize = 44;
 /// ChatMix gauge rendered on the OLED display.
 pub struct ChatMixGauge {
     device: Device,
+    /// False on wireless variants whose firmware rejects the larger
+    /// Feature reports used for bitmap draws. Brightness (a small
+    /// Output report) still works in this mode, so the handle stays
+    /// alive even though `show()` becomes a no-op.
+    can_draw: bool,
 }
 
 impl ChatMixGauge {
     /// Connect to the OLED display and set initial brightness.
-    /// `brightness` is clamped to 1..=10; values outside that range
-    /// are coerced to the nearest endpoint.
+    /// `brightness` is clamped to 1..=10. Returns Ok whenever the
+    /// device opens and accepts the brightness write — even if the
+    /// gauge-draw probe fails, since brightness is the user-facing
+    /// capability the GUI gates the Deck tab on.
     pub fn new(brightness: u8) -> Result<Self, String> {
         let device = Device::connect().map_err(|e| format!("OLED open failed: {e}"))?;
         let level = brightness.clamp(1, 10);
         device
             .set_brightness(level)
             .map_err(|e| format!("OLED brightness failed: {e}"))?;
-        // Probe with a blank frame — wireless variants accept connect()+
-        // set_brightness() but reject feature reports with EINVAL. Failing
-        // here keeps the mixer event loop from stalling on every dial tick.
+        // Probe with a blank frame — wireless variants accept
+        // connect() + set_brightness() (Output report) but reject
+        // feature reports with EINVAL. Capture the verdict here so
+        // every subsequent show() short-circuits without wasting
+        // ~970 ms per attempt inside ggoled_lib.
         let blank = Bitmap::new(DISPLAY_W, DISPLAY_H, false);
-        device
-            .draw(&blank, 0, 0)
-            .map_err(|e| format!("OLED test draw failed: {e}"))?;
-        info!("OLED display connected");
-        Ok(ChatMixGauge { device })
+        let can_draw = match device.draw(&blank, 0, 0) {
+            Ok(()) => true,
+            Err(e) => {
+                warn!("OLED gauge unsupported on this firmware ({e}) — brightness still controllable");
+                false
+            }
+        };
+        info!("OLED display connected (gauge={})", if can_draw { "supported" } else { "unsupported" });
+        Ok(ChatMixGauge { device, can_draw })
+    }
+
+    /// True iff this device accepts the larger Feature reports used
+    /// for bitmap draws. Wireless variants return false here.
+    pub fn can_draw(&self) -> bool {
+        self.can_draw
     }
 
     /// Update brightness post-connect. Wireless variants typically
@@ -56,11 +75,13 @@ impl ChatMixGauge {
     }
 
     /// Draw the ChatMix gauge with current game/chat volumes (0-100).
-    /// Returns `false` if the draw failed so the caller can disable further
-    /// attempts — some firmware revisions (wireless variants) accept the
-    /// connect handshake but reject feature reports with EINVAL, and retrying
-    /// those just stalls the event loop.
+    /// Returns `false` only on a runtime draw failure (so the caller
+    /// can drop the handle); known-unsupported devices return `true`
+    /// from a fast no-op so the handle survives for brightness control.
     pub fn show(&mut self, game_vol: u8, chat_vol: u8) -> bool {
+        if !self.can_draw {
+            return true;
+        }
         let mut bmp = Bitmap::new(DISPLAY_W, DISPLAY_H, false);
 
         // Draw game bar background (outline)
@@ -118,8 +139,11 @@ impl ChatMixGauge {
         true
     }
 
-    /// Blank the display.
+    /// Blank the display. No-op on devices that don't accept draws.
     pub fn clear(&mut self) {
+        if !self.can_draw {
+            return;
+        }
         let bmp = Bitmap::new(DISPLAY_W, DISPLAY_H, false);
         if let Err(e) = self.device.draw(&bmp, 0, 0) {
             warn!("OLED clear failed: {e}");

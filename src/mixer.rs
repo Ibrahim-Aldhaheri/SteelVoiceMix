@@ -342,7 +342,10 @@ impl Mixer {
         let initial_brightness = self.state.lock().unwrap().oled_brightness;
         let (mut display, present_now) = match ChatMixGauge::new(initial_brightness) {
             Ok(d) => {
-                info!("OLED display initialized at brightness {initial_brightness}");
+                info!(
+                    "OLED display initialized at brightness {initial_brightness} (gauge {})",
+                    if d.can_draw() { "enabled" } else { "disabled" }
+                );
                 (Some(d), true)
             }
             Err(e) => {
