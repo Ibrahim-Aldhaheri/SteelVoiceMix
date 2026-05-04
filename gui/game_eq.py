@@ -373,6 +373,12 @@ class GameProfileManager(QObject):
             list(persisted_snapshot) if persisted_snapshot else None
         )
         self._active_preset: str | None = persisted_active or None
+        # On rehydration the daemon may have restarted in between and
+        # dropped the auto-applied EQ. Force a re-push the first time
+        # `_resolve_preset` confirms the same preset is still wanted —
+        # without this, `target == self._active_preset` short-circuits
+        # _reconcile and the daemon's flat EQ never gets the bands.
+        self._rehydrated_needs_reapply: bool = bool(persisted_active)
         self._current_games: dict[str, bool] = {}
         self._last_seen: dict[str, bool] = {}
         # Counts consecutive watcher ticks where no candidate-game
@@ -463,6 +469,9 @@ class GameProfileManager(QObject):
                 self._enter(games)
             elif target != self._active_preset:
                 self._switch(games)
+            elif self._rehydrated_needs_reapply:
+                self._reapply(games)
+            self._rehydrated_needs_reapply = False
         else:
             # Grace period: only declare the games gone after
             # _EXIT_GRACE_TICKS consecutive empty ticks. Until then,
@@ -508,6 +517,21 @@ class GameProfileManager(QObject):
                 return asm
         return None
 
+    def _apply_preset(
+        self, preset_name: str, bands: list, games: dict
+    ) -> None:
+        """Push bands to the daemon, sync GUI signals, fire toast.
+        Shared by _enter / _switch / _reapply."""
+        self._daemon.send_command(
+            "set-eq-channel", channel="game", bands=bands,
+        )
+        self.bands_to_load.emit(bands)
+        self.applied_changed.emit(preset_name)
+        game_label = next(iter(games), "") if games else ""
+        self._notify(
+            f"{game_label} → {preset_name}" if game_label else preset_name
+        )
+
     def _enter(self, games) -> None:
         preset_name = self._resolve_preset(games)
         log.info("Auto game-EQ enter: games=%s → preset=%r", games, preset_name)
@@ -543,19 +567,7 @@ class GameProfileManager(QObject):
             "(first band: %s)",
             len(bands), bands[0] if bands else None,
         )
-        self._daemon.send_command(
-            "set-eq-channel", channel="game", bands=bands,
-        )
-        self.bands_to_load.emit(bands)
-        self.applied_changed.emit(preset_name)
-        # Notification: "Game name → New preset". Picks the first
-        # detected game name as the user-facing label — the watcher
-        # can see multiples but typically one is the actually-running
-        # game and the others are launchers (Steam, etc.).
-        game_label = next(iter(games), "") if games else ""
-        self._notify(
-            f"{game_label} → {preset_name}" if game_label else preset_name
-        )
+        self._apply_preset(preset_name, bands, games)
 
     def _switch(self, games) -> None:
         new_preset = self._resolve_preset(games)
@@ -570,15 +582,29 @@ class GameProfileManager(QObject):
         )
         self._active_preset = new_preset
         self._persist_runtime_state()
-        self._daemon.send_command(
-            "set-eq-channel", channel="game", bands=bands,
+        self._apply_preset(new_preset, bands, games)
+
+    def _reapply(self, games) -> None:
+        """Re-push the active preset's bands to the daemon without
+        re-snapshotting. Triggered when the GUI rehydrates a prior
+        session whose daemon may have lost the EQ across a restart."""
+        preset_name = self._active_preset
+        if not preset_name:
+            return
+        bands = find_preset_bands(preset_name)
+        if not bands:
+            log.warning(
+                "Auto game-EQ: rehydrated preset %r no longer resolvable; "
+                "skipping reapply",
+                preset_name,
+            )
+            return
+        log.info(
+            "Auto game-EQ: re-applying rehydrated preset %r (daemon may "
+            "have lost it across a restart)",
+            preset_name,
         )
-        self.bands_to_load.emit(bands)
-        self.applied_changed.emit(new_preset)
-        game_label = next(iter(games), "") if games else ""
-        self._notify(
-            f"{game_label} → {new_preset}" if game_label else new_preset
-        )
+        self._apply_preset(preset_name, bands, games)
 
     def _exit(self) -> None:
         if self._snapshot_bands is None:
