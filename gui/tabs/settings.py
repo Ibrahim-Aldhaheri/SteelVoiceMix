@@ -238,52 +238,34 @@ class SettingsTab(QWidget):
         layout.addWidget(card(self.tr("Startup"), autostart_row, start_min_row))
 
         # Shortcut card -----------------------------------------------
-        # Optional QShortcut to cycle the system default sink between
-        # SteelGame / SteelChat / SteelMedia / SteelHDMI. Off by
-        # default — Qt shortcuts only fire while the GUI has focus,
-        # so this is most useful on a multi-monitor setup or with
-        # the GUI parked on a side screen. Users wanting global
-        # (system-wide) shortcuts can bind their DE's keyboard
-        # settings to a shell command — TBD whether we ship a CLI.
-        cycle_row, self.cycle_toggle = labelled_toggle(
-            self.tr("Cycle default sink shortcut"),
-        )
-        self.cycle_toggle.setChecked(
-            bool(self._settings.get("default_sink_cycle_enabled", False))
-        )
-        self.cycle_toggle.toggled.connect(self._toggle_cycle_shortcut)
-
-        from PySide6.QtGui import QKeySequence
-        from PySide6.QtWidgets import QKeySequenceEdit
-        cycle_combo_row = QHBoxLayout()
-        combo_lbl = QLabel(self.tr("Key combo"))
-        combo_lbl.setFixedWidth(80)
-        self.cycle_keyseq_edit = QKeySequenceEdit(
-            QKeySequence(
-                self._settings.get("default_sink_cycle_combo", "Ctrl+Shift+S")
-            )
-        )
-        self.cycle_keyseq_edit.setMaximumWidth(220)
-        self.register_btn = QPushButton(self.tr("Register"))
-        self.register_btn.setToolTip(
-            self.tr(
-                "Save the key combo currently shown in the field. After "
-                "registering, the shortcut takes effect immediately — no "
-                "GUI restart needed."
-            )
-        )
-        self.register_btn.clicked.connect(self._register_cycle_combo)
-        cycle_combo_row.addWidget(combo_lbl)
-        cycle_combo_row.addWidget(self.cycle_keyseq_edit, 1)
-        cycle_combo_row.addWidget(self.register_btn)
-
-        # Exclude-from-cycle multi-select. Some users want certain
-        # sinks (typically SteelChat) skipped — Discord stays put on
-        # SteelChat regardless of the system default, so cycling
-        # there mid-game is a footgun.
+        # The default-sink cycle is exposed as a CLI binary
+        # (`steelvoicemix-cli sink cycle`) the user can bind in their
+        # desktop environment's keyboard settings. Earlier versions
+        # tried registering a Qt-internal shortcut here, but Qt
+        # shortcuts only fire while the app has focus — useless when
+        # the user is in a fullscreen game. Replaced with a guide
+        # pointing at the OS-level binding, plus a copy-to-clipboard
+        # button for the command.
         from PySide6.QtWidgets import QCheckBox
         excludes = self._settings.get("default_sink_cycle_exclude") or []
         excludes_set = set(excludes)
+
+        cmd_row = QHBoxLayout()
+        cmd_lbl = QLabel("<code>steelvoicemix-cli sink cycle</code>")
+        cmd_lbl.setTextFormat(Qt.RichText)
+        cmd_lbl.setStyleSheet(
+            "font-family: monospace; padding: 4px 8px; "
+            "background: palette(base); border-radius: 4px;"
+        )
+        copy_cmd_btn = QPushButton(self.tr("📋  Copy command"))
+        copy_cmd_btn.setMaximumWidth(160)
+        copy_cmd_btn.clicked.connect(self._copy_sink_cycle_cmd)
+        cmd_row.addWidget(cmd_lbl, 1)
+        cmd_row.addWidget(copy_cmd_btn, 0)
+
+        # Exclude-from-cycle multi-select. Discord-on-SteelChat is
+        # the canonical use case — cycling away from SteelChat
+        # mid-game is a footgun.
         exclude_row = QHBoxLayout()
         exclude_lbl = QLabel(self.tr("Exclude"))
         exclude_lbl.setFixedWidth(80)
@@ -297,23 +279,30 @@ class SettingsTab(QWidget):
             self._cycle_exclude_checkboxes[sink] = cb
         exclude_row.addStretch(1)
 
-        cycle_help = QLabel(
+        guide = QLabel(
             self.tr(
-                "Qt shortcuts only fire while the GUI has focus — for "
-                "system-wide bindings, point your desktop's keyboard "
-                "settings at <code>steelvoicemix-cli sink cycle</code>. "
-                "Restart the GUI after changing the combo to apply."
+                "<b>How to bind a system-wide shortcut</b><br>"
+                "<b>KDE Plasma:</b> System Settings → Shortcuts → "
+                "Custom Shortcuts → Edit → New → Global Shortcut → "
+                "Command. Paste the command above, then under "
+                "Trigger pick your key combo.<br>"
+                "<b>GNOME:</b> Settings → Keyboard → View and "
+                "Customise Shortcuts → Custom Shortcuts → +. "
+                "Paste the command, set a name and shortcut.<br>"
+                "<b>Other DEs:</b> the equivalent menu — bind any "
+                "key combo to run that command. Fires while any "
+                "app (game, browser) has focus, unlike Qt shortcuts."
             )
         )
-        cycle_help.setWordWrap(True)
-        cycle_help.setTextFormat(Qt.RichText)
-        cycle_help.setStyleSheet(
+        guide.setWordWrap(True)
+        guide.setTextFormat(Qt.RichText)
+        guide.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
         )
 
         layout.addWidget(card(
-            self.tr("Shortcuts"),
-            cycle_row, cycle_combo_row, exclude_row, cycle_help,
+            self.tr("Default-sink Cycle Shortcut"),
+            cmd_row, exclude_row, guide,
         ))
 
         # Notifications card -------------------------------------------
@@ -573,40 +562,19 @@ class SettingsTab(QWidget):
         self._settings["start_minimized"] = checked
         save_settings(self._settings)
 
-    def _toggle_cycle_shortcut(self, checked: bool) -> None:
-        self._settings["default_sink_cycle_enabled"] = checked
-        save_settings(self._settings)
-        self._reload_shortcut_on_window()
-
-    def _register_cycle_combo(self) -> None:
-        seq = self.cycle_keyseq_edit.keySequence()
-        combo = seq.toString()
-        if not combo:
-            QMessageBox.warning(
-                self,
-                "No key combo",
-                "Click the Key combo field and press the keys you want "
-                "to assign first, then click Register.",
-            )
-            return
-        self._settings["default_sink_cycle_combo"] = combo
-        save_settings(self._settings)
-        self._reload_shortcut_on_window()
+    def _copy_sink_cycle_cmd(self) -> None:
+        """Copy the CLI binding command to the clipboard. Users paste
+        this into their DE's keyboard-shortcut command field."""
+        QApplication.clipboard().setText("steelvoicemix-cli sink cycle")
         QMessageBox.information(
-            self, "Shortcut registered",
-            f"Default-sink cycle is now bound to {combo}. The shortcut "
-            "fires while any SteelVoiceMix window has focus.",
+            self,
+            self.tr("Copied"),
+            self.tr(
+                "Copied 'steelvoicemix-cli sink cycle' to the clipboard. "
+                "Paste into your DE's keyboard-shortcut Command field, "
+                "then assign whatever key combo you want."
+            ),
         )
-
-    def _reload_shortcut_on_window(self) -> None:
-        """Ask the main window to rebuild its QShortcut so the new
-        toggle / combo takes effect without a restart."""
-        win = self.window()
-        if hasattr(win, "reload_default_sink_shortcut"):
-            try:
-                win.reload_default_sink_shortcut()
-            except Exception:
-                pass
 
     def _save_cycle_excludes(self) -> None:
         excludes = [

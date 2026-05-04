@@ -15,7 +15,7 @@ import os
 import threading
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -111,7 +111,6 @@ class MixerGUI(QMainWindow):
         self._start_daemon_client()
         self._update_checker = None
         self._start_update_check()
-        self._install_default_sink_shortcut()
 
         # Universal cleanup: aboutToQuit fires for every exit path
         # (tray Quit action, X button when no tray, SIGTERM, SIGINT,
@@ -346,10 +345,75 @@ class MixerGUI(QMainWindow):
 
     def _on_connected(self) -> None:
         self._set_status_pill(self.tr("●  Connected"), "ok")
+        self._apply_redirect_on_connect()
 
     def _on_disconnected(self) -> None:
         self._set_status_pill(self.tr("●  Reconnecting…"), "bad")
         self.home_tab.on_disconnected()
+        self._apply_redirect_on_disconnect()
+
+    # ----------------------------------------------------- audio routing
+
+    def _apply_redirect_on_connect(self) -> None:
+        """When the headset comes online, optionally promote a Steel
+        sink as the system default (and the headset's mic source).
+        Off by default — daemon's promote-SteelMic-to-default-source
+        already covers the input case for users who don't enable
+        this. Sink-side default isn't normally redirected by us."""
+        if self.settings.get("redirect_sink_on_connect_enabled", False):
+            target = self.settings.get(
+                "redirect_sink_on_connect_target", "SteelMedia"
+            )
+            self._pactl_set_default("sink", target)
+        if self.settings.get("redirect_source_on_connect_enabled", False):
+            target = self.settings.get(
+                "redirect_source_on_connect_target", ""
+            )
+            if target:
+                self._pactl_set_default("source", target)
+
+    def _apply_redirect_on_disconnect(self) -> None:
+        """When the headset is unplugged or goes offline, redirect
+        the system default sink (and source) to a user-chosen
+        fallback so audio doesn't silently die — speakers / built-in
+        mic / whatever the user picked. Off by default."""
+        if self.settings.get("redirect_sink_on_disconnect_enabled", False):
+            target = self.settings.get(
+                "redirect_sink_on_disconnect_target", ""
+            )
+            if target:
+                self._pactl_set_default("sink", target)
+        if self.settings.get("redirect_source_on_disconnect_enabled", False):
+            target = self.settings.get(
+                "redirect_source_on_disconnect_target", ""
+            )
+            if target:
+                self._pactl_set_default("source", target)
+
+    def _pactl_set_default(self, kind: str, target: str) -> None:
+        """Best-effort `pactl set-default-{sink,source} <target>`.
+        Logs on failure but doesn't surface — this is a convenience
+        feature, not load-bearing. `kind` is 'sink' or 'source'."""
+        import shutil
+        import subprocess
+        if kind not in ("sink", "source"):
+            return
+        if not target or not shutil.which("pactl"):
+            return
+        try:
+            r = subprocess.run(
+                ["pactl", f"set-default-{kind}", target],
+                capture_output=True, text=True, timeout=2,
+            )
+            if r.returncode != 0:
+                log.warning(
+                    "pactl set-default-%s %s failed: %s",
+                    kind, target, r.stderr.strip(),
+                )
+            else:
+                log.info("Redirected default %s → %s", kind, target)
+        except Exception as e:
+            log.warning("pactl set-default-%s %s: %s", kind, target, e)
 
     def _on_status_message(self, msg: str) -> None:
         # Free-form status (e.g. "Connecting to daemon…") — neutral pill,
@@ -459,60 +523,6 @@ class MixerGUI(QMainWindow):
                 self.tr("Minimized to tray"),
                 QSystemTrayIcon.Information,
                 2000,
-            )
-
-    def _install_default_sink_shortcut(self) -> None:
-        """Bind the configured key sequence to gui.sink_cycle.
-        Context = ApplicationShortcut so the shortcut fires while
-        ANY of our windows has focus (main window, tray menu open,
-        etc.) — not just the main window. Genuine system-wide
-        hotkeys (firing while the game has focus) need
-        steelvoicemix-cli bound in the DE's keyboard settings."""
-        # Always tear down the previous shortcut first so re-installs
-        # on toggle or combo change don't leak.
-        old = getattr(self, "_default_sink_shortcut", None)
-        if old is not None:
-            try:
-                old.setEnabled(False)
-                old.deleteLater()
-            except Exception:
-                pass
-            self._default_sink_shortcut = None
-        if not self.settings.get("default_sink_cycle_enabled", False):
-            return
-        combo = self.settings.get("default_sink_cycle_combo", "Ctrl+Shift+S")
-        seq = QKeySequence(combo)
-        if seq.isEmpty():
-            return
-        # Owned by self so the shortcut is GC-safe and lives as long
-        # as the window does.
-        self._default_sink_shortcut = QShortcut(seq, self)
-        self._default_sink_shortcut.setContext(Qt.ApplicationShortcut)
-        self._default_sink_shortcut.activated.connect(
-            self._on_default_sink_shortcut
-        )
-
-    def reload_default_sink_shortcut(self) -> None:
-        """Public re-entry point used by SettingsTab when the user
-        toggles the feature on/off or changes the combo. Tears down
-        and rebuilds the QShortcut so the new state takes effect
-        without restarting the app."""
-        self._install_default_sink_shortcut()
-
-    def _on_default_sink_shortcut(self) -> None:
-        from .sink_cycle import cycle_default_sink
-        prev, new = cycle_default_sink(
-            exclude=self.settings.get("default_sink_cycle_exclude") or [],
-        )
-        if not new:
-            self._show_tray_message(
-                self.tr("Cycle default sink failed"),
-                self.tr("No SteelVoiceMix sinks loaded."),
-            )
-        else:
-            self._show_tray_message(
-                self.tr("Default sink"),
-                f"{new}" if new == prev else f"{prev or '?'} → {new}",
             )
 
     def _show_tray_message(self, title: str, body: str) -> None:

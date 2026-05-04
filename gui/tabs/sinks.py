@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..settings import save as save_settings
 from ..widgets import (
     NoWheelSlider,
     ToggleSwitch,
@@ -289,7 +291,161 @@ class SinksTab(QWidget):
         )
         self._refresh_boost_avail()
 
+        # Auto-redirect card -------------------------------------------
+        # Mirrors ASM's "redirect audio on connect/disconnect" feature.
+        # When the headset comes online, optionally promote one of the
+        # Steel sinks (or a chosen mic source) to system default. When
+        # it goes offline, optionally redirect to a fallback device so
+        # audio doesn't silently die. Targets are chosen from a live
+        # `pactl list sinks/sources short` enumeration so the user
+        # picks an actual device that exists on their system.
+        layout.addWidget(self._build_redirect_card())
+
         layout.addStretch(1)
+
+    # ----------------------------------------------------- redirect card
+
+    def _build_redirect_card(self) -> QWidget:
+        """Build the connect/disconnect redirect card. Each row is a
+        toggle + a target dropdown; the target list is enumerated
+        live from pactl so it always reflects what's actually
+        plugged in. Saved as `redirect_{sink|source}_on_{connect|
+        disconnect}_{enabled,target}` in settings.json."""
+        s = self._settings if hasattr(self, "_settings") else None
+        # Daemon-tab pattern: Sinks tab gets settings via the GUI
+        # settings dict passed to the parent window. We don't have
+        # that dependency here today; we fall back to reading via
+        # gui.settings.load() each call.
+        from ..settings import load as load_settings
+        settings = load_settings()
+        self._settings_cache = settings  # keep reference
+
+        rows: list = []
+
+        for kind, label in (
+            ("sink_on_connect",
+             self.tr("On headset connect, set default sink to")),
+            ("sink_on_disconnect",
+             self.tr("On headset disconnect, set default sink to")),
+            ("source_on_connect",
+             self.tr("On headset connect, set default source to")),
+            ("source_on_disconnect",
+             self.tr("On headset disconnect, set default source to")),
+        ):
+            row = QHBoxLayout()
+            toggle = ToggleSwitch()
+            toggle.setChecked(
+                bool(settings.get(f"redirect_{kind}_enabled", False))
+            )
+            combo = QComboBox()
+            combo.setMinimumWidth(280)
+            combo.setEnabled(toggle.isChecked())
+            self._populate_redirect_combo(combo, kind, settings)
+            toggle.toggled.connect(
+                lambda checked, k=kind, c=combo:
+                self._on_redirect_toggled(k, checked, c)
+            )
+            combo.currentIndexChanged.connect(
+                lambda _i, k=kind, c=combo:
+                self._on_redirect_target_changed(k, c)
+            )
+            row.addWidget(QLabel(label), 1)
+            row.addWidget(combo)
+            row.addWidget(toggle, 0, Qt.AlignVCenter)
+            rows.append(row)
+            # Stash for later refreshes (devices change at runtime)
+            setattr(self, f"_redirect_{kind}_combo", combo)
+            setattr(self, f"_redirect_{kind}_toggle", toggle)
+
+        help_lbl = QLabel(
+            self.tr(
+                "When the Arctis is detected (or unplugged), set the "
+                "system's default sink/source as configured. Useful "
+                "for auto-switching to your speakers when the headset "
+                "comes off, or pinning a Steel sink as default while "
+                "it's connected. Target lists update automatically "
+                "when devices change."
+            )
+        )
+        help_lbl.setWordWrap(True)
+        help_lbl.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        refresh_row = QHBoxLayout()
+        refresh_btn = QPushButton(self.tr("🔄  Refresh device lists"))
+        refresh_btn.setToolTip(
+            self.tr("Re-enumerate available sinks and sources via pactl.")
+        )
+        refresh_btn.clicked.connect(self._refresh_all_redirect_combos)
+        refresh_row.addWidget(refresh_btn)
+        refresh_row.addStretch(1)
+
+        return card(
+            self.tr("Auto-Redirect on Connect / Disconnect"),
+            *rows,
+            refresh_row,
+            help_lbl,
+        )
+
+    def _populate_redirect_combo(
+        self, combo: QComboBox, kind: str, settings: dict,
+    ) -> None:
+        """Fill `combo` with available sinks or sources via pactl.
+        First entry is always '(none)' = empty target = no redirect.
+        Selects the persisted setting if it's still in the list,
+        otherwise falls back to '(none)'."""
+        import shutil
+        import subprocess
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(self.tr("(none — keep current default)"), "")
+        list_kind = "sinks" if "sink" in kind else "sources"
+        if shutil.which("pactl"):
+            try:
+                r = subprocess.run(
+                    ["pactl", "list", list_kind, "short"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                for line in r.stdout.splitlines():
+                    parts = line.split("\t")
+                    if len(parts) >= 2:
+                        combo.addItem(parts[1], parts[1])
+            except Exception:
+                pass
+        target = settings.get(f"redirect_{kind}_target", "")
+        idx = combo.findData(target)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+
+    def _on_redirect_toggled(
+        self, kind: str, checked: bool, combo: QComboBox,
+    ) -> None:
+        self._settings_cache[f"redirect_{kind}_enabled"] = bool(checked)
+        save_settings(self._settings_cache)
+        combo.setEnabled(checked)
+
+    def _on_redirect_target_changed(
+        self, kind: str, combo: QComboBox,
+    ) -> None:
+        target = combo.currentData() or ""
+        self._settings_cache[f"redirect_{kind}_target"] = str(target)
+        save_settings(self._settings_cache)
+
+    def _refresh_all_redirect_combos(self) -> None:
+        """Re-enumerate device lists for all four redirect combos.
+        Useful when the user plugs/unplugs a device and wants the
+        target dropdown to pick it up without restarting the GUI."""
+        from ..settings import load as load_settings
+        settings = load_settings()
+        self._settings_cache = settings
+        for kind in (
+            "sink_on_connect", "sink_on_disconnect",
+            "source_on_connect", "source_on_disconnect",
+        ):
+            combo = getattr(self, f"_redirect_{kind}_combo", None)
+            if combo is not None:
+                self._populate_redirect_combo(combo, kind, settings)
 
     # ------------------------------------------------- public state queries
 

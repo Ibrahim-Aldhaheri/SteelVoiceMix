@@ -36,7 +36,7 @@ def _derive_app_version() -> str:
 # Bumped manually on each beta cut; runtime derives from RPM if
 # available so this constant only matters in source-checkout /
 # manual-install scenarios.
-_APP_VERSION_FALLBACK = "0.4.2~beta12"
+_APP_VERSION_FALLBACK = "0.4.2~beta13"
 APP_VERSION = _derive_app_version()
 
 CONFIG_DIR = Path.home() / ".config" / APP_NAME
@@ -158,6 +158,23 @@ DEFAULTS: dict[str, Any] = {
     # against `pactl list sinks short` output so the names must
     # match exactly.
     "default_sink_cycle_exclude": [],
+    # Audio redirect on headset connect / disconnect. Mirrors ASM's
+    # behavior: when the Arctis comes online, optionally promote a
+    # Steel sink (or a chosen mic source) as the system default; when
+    # it drops, optionally redirect to a fallback device so audio
+    # doesn't silently die. Both halves off by default — opt-in
+    # because the right fallback varies per user (built-in speakers
+    # vs HDMI vs USB DAC). Targets are pactl sink/source names; the
+    # Sinks tab populates a dropdown from `pactl list sinks/sources
+    # short`.
+    "redirect_sink_on_connect_enabled": False,
+    "redirect_sink_on_connect_target": "SteelMedia",
+    "redirect_sink_on_disconnect_enabled": False,
+    "redirect_sink_on_disconnect_target": "",
+    "redirect_source_on_connect_enabled": False,
+    "redirect_source_on_connect_target": "",
+    "redirect_source_on_disconnect_enabled": False,
+    "redirect_source_on_disconnect_target": "",
 }
 
 # Star-tier capacity per channel. Five is enough to cover the main use
