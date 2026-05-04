@@ -24,6 +24,10 @@
         <translation>🎙   الميكروفون</translation>
     </message>
     <message>
+        <source>🖥   Deck</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>⚙   Settings</source>
         <translation>⚙   الإعدادات</translation>
     </message>
@@ -816,6 +820,10 @@
         <translation>الاستماع والصوت الجانبي</translation>
     </message>
     <message>
+        <source>Voice Test</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>🎧  Hear yourself (test mic)</source>
         <translation>🎧  استمع لنفسك (اختبار الميكروفون)</translation>
     </message>
@@ -1136,6 +1144,21 @@ Continue?</source>
     <message>
         <source>🔍 Connecting to daemon...</source>
         <translation>🔍 جارٍ الاتصال بالخدمة…</translation>
+    </message>
+</context>
+<context>
+    <name>DeckTab</name>
+    <message>
+        <source>OLED Brightness</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Deck not detected. Plug in the base station's USB cable; your selection here will apply on connect.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Base-station screen brightness. Re-applied automatically on every reconnect — the deck does not remember this across power cycles.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>
