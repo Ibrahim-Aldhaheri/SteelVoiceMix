@@ -238,12 +238,15 @@ impl NovaDevice {
     }
 
     /// Poll for battery status (sends request and reads responses until battery or timeout).
-    pub fn get_battery(&self) -> Result<Option<BatteryStatus>, HidError> {
+    /// Returns the parsed battery + the raw 0x06b0 reply so callers
+    /// can extract additional fields (ANC mode, transparent level —
+    /// see ASM nova_pro_wireless.yaml `starts_with: 0x06b0` map).
+    pub fn get_battery(&self) -> Result<Option<(BatteryStatus, Vec<u8>)>, HidError> {
         self.request_battery()?;
         for _ in 0..10 {
             if let Some(msg) = self.read(500)? {
                 if let HidEvent::Battery(b) = Self::parse_event(&msg) {
-                    return Ok(Some(b));
+                    return Ok(Some((b, msg)));
                 }
             }
         }

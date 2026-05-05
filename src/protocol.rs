@@ -416,11 +416,6 @@ pub enum ClientCommand {
     /// Set base-station OLED brightness (clamped to 1..=10).
     #[serde(rename = "set-oled-brightness")]
     SetOledBrightness { level: u8 },
-    /// Toggle whether the daemon draws the ChatMix gauge on the OLED.
-    /// `enabled=false` hands the screen back to the built-in
-    /// SteelSeries UI (battery / ChatMix / volume / EQ-mode screens).
-    #[serde(rename = "set-oled-show-gauge")]
-    SetOledShowGauge { enabled: bool },
     /// Set headset ANC mode. Off / Transparent / On.
     #[serde(rename = "set-anc-mode")]
     SetAncMode { mode: AncMode },
@@ -480,8 +475,6 @@ pub enum DaemonEvent {
         oled_brightness: u8,
         /// True iff the connected device exposes an OLED.
         oled_present: bool,
-        /// User pref: draw the ChatMix gauge on the OLED.
-        oled_show_gauge: bool,
         /// Headset ANC mode (off / transparent / on).
         anc_mode: AncMode,
         /// Transparent-mode intensity level (1..=10).
@@ -556,11 +549,6 @@ pub enum DaemonEvent {
     /// disconnect. GUIs gate OLED-specific controls on this.
     #[serde(rename = "oled-presence-changed")]
     OledPresenceChanged { present: bool },
-
-    /// Fired when the show-gauge user pref toggles. GUI updates the
-    /// Deck-tab toggle from this.
-    #[serde(rename = "oled-show-gauge-changed")]
-    OledShowGaugeChanged { enabled: bool },
 
     /// Fired when ANC mode changes (GUI command, hardware-button push,
     /// or persisted-state restore on connect).
@@ -664,7 +652,6 @@ mod tests {
             volume_boost: VolumeBoostState::default(),
             oled_brightness: 5,
             oled_present: true,
-            oled_show_gauge: true,
             anc_mode: AncMode::Off,
             anc_transparent_level: 5,
         };
@@ -893,26 +880,6 @@ mod tests {
             let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
             assert_eq!(json["event"], "oled-presence-changed");
             assert_eq!(json["present"], present);
-        }
-    }
-
-    #[test]
-    fn set_oled_show_gauge_command_parses() {
-        let cmd: ClientCommand =
-            from_str(r#"{"cmd":"set-oled-show-gauge","enabled":false}"#).unwrap();
-        match cmd {
-            ClientCommand::SetOledShowGauge { enabled } => assert!(!enabled),
-            other => panic!("expected SetOledShowGauge, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn oled_show_gauge_changed_event_shape() {
-        for enabled in [true, false] {
-            let ev = DaemonEvent::OledShowGaugeChanged { enabled };
-            let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
-            assert_eq!(json["event"], "oled-show-gauge-changed");
-            assert_eq!(json["enabled"], enabled);
         }
     }
 

@@ -13,9 +13,31 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..widgets import NoWheelSlider, card, labelled_toggle
+from ..widgets import NoWheelSlider, card
 
 _ANC_MODES = ("off", "transparent", "on")
+
+# Stylesheet for the ANC mode buttons. QPushButton's default checked
+# state is visually identical to unchecked, so we colour the active
+# mode with the app accent. Without this the user can't tell which
+# mode is selected — especially confusing on first open.
+_ANC_BUTTON_STYLE = """
+QPushButton {
+    padding: 6px 10px;
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+    background: palette(button);
+}
+QPushButton:hover {
+    border-color: palette(highlight);
+}
+QPushButton:checked {
+    background: palette(highlight);
+    color: palette(highlighted-text);
+    border-color: palette(highlight);
+    font-weight: bold;
+}
+"""
 
 
 class DeckTab(QWidget):
@@ -28,7 +50,6 @@ class DeckTab(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
 
         layout.addWidget(self._build_oled_card())
-        layout.addWidget(self._build_gauge_card())
         layout.addWidget(self._build_anc_card())
 
         self._not_connected_hint = QLabel(
@@ -101,33 +122,6 @@ class DeckTab(QWidget):
 
         return card(self.tr("OLED Brightness"), row, help_lbl)
 
-    def _build_gauge_card(self) -> QWidget:
-        gauge_row, self.gauge_toggle = labelled_toggle(
-            self.tr("Show ChatMix gauge on OLED"),
-            tooltip=self.tr(
-                "When off, the deck shows the built-in SteelSeries UI "
-                "(battery / ChatMix / volume / EQ-mode screens cycled "
-                "via the dial)."
-            ),
-        )
-        self.gauge_toggle.setChecked(True)
-        self.gauge_toggle.setEnabled(self._daemon is not None)
-        self.gauge_toggle.toggled.connect(self._on_show_gauge_toggled)
-
-        help_lbl = QLabel(
-            self.tr(
-                "Off hands the screen back to the deck's native UI. "
-                "On wireless variants the gauge can't draw anyway, so "
-                "this toggle is mostly cosmetic there — leave it on."
-            )
-        )
-        help_lbl.setWordWrap(True)
-        help_lbl.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
-        )
-
-        return card(self.tr("ChatMix Gauge"), gauge_row, help_lbl)
-
     def _build_anc_card(self) -> QWidget:
         # Mode picker — three exclusive buttons for off / transparent /
         # on. Maps 1:1 to the daemon's set-anc-mode command. The
@@ -147,6 +141,7 @@ class DeckTab(QWidget):
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setEnabled(self._daemon is not None)
+            btn.setStyleSheet(_ANC_BUTTON_STYLE)
             btn.clicked.connect(
                 lambda _checked, m=mode: self._send_anc_mode(m)
             )
@@ -212,15 +207,6 @@ class DeckTab(QWidget):
     def on_oled_presence_changed(self, present: bool) -> None:
         self._not_connected_hint.setVisible(not bool(present))
 
-    def on_oled_show_gauge_changed(self, enabled: bool) -> None:
-        # Block signals so the daemon echo doesn't loop back as another
-        # set-oled-show-gauge command.
-        was_blocked = self.gauge_toggle.blockSignals(True)
-        try:
-            self.gauge_toggle.setChecked(bool(enabled))
-        finally:
-            self.gauge_toggle.blockSignals(was_blocked)
-
     def on_anc_mode_changed(self, mode: str) -> None:
         if mode not in _ANC_MODES:
             return
@@ -260,13 +246,6 @@ class DeckTab(QWidget):
             "set-oled-brightness", level=self._oled_pending_level
         )
         self._oled_pending_level = None
-
-    def _on_show_gauge_toggled(self, checked: bool) -> None:
-        if self._daemon is None:
-            return
-        self._daemon.send_command(
-            "set-oled-show-gauge", enabled=bool(checked)
-        )
 
     def _send_anc_mode(self, mode: str) -> None:
         if self._daemon is None or mode not in _ANC_MODES:

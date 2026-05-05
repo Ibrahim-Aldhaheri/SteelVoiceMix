@@ -59,19 +59,6 @@ impl ChatMixGauge {
         self.can_draw
     }
 
-    /// Hand the OLED back to its built-in SteelSeries UI (battery /
-    /// ChatMix / volume / EQ-mode screens, cycled via the dial).
-    /// Small Output report — works on both wired and wireless.
-    pub fn return_to_native_ui(&self) -> bool {
-        match self.device.return_to_ui() {
-            Ok(()) => true,
-            Err(e) => {
-                warn!("OLED return_to_native_ui failed: {e}");
-                false
-            }
-        }
-    }
-
     /// Update brightness post-connect. Wireless variants typically
     /// accept this even when they reject the larger draw feature
     /// reports, so it works whether or not the gauge is being drawn.

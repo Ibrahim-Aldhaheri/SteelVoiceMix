@@ -54,7 +54,6 @@ fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
         game_vol: st.game_vol,
         chat_vol: st.chat_vol,
         oled_brightness: st.oled_brightness,
-        oled_show_gauge: st.oled_show_gauge,
         anc_mode: st.anc_mode,
         anc_transparent_level: st.anc_transparent_level,
     });
@@ -88,19 +87,10 @@ enum SessionEnd {
     Shutdown,
 }
 
-/// Draw the gauge (when the user has it enabled) and, if the draw fails,
-/// drop the handle so we don't retry on every dial event. Wireless firmware
-/// that rejects feature reports stays rejecting them, and retrying costs
-/// ~970 ms per attempt inside ggoled_lib.
-fn draw_or_drop(
-    display: &mut Option<ChatMixGauge>,
-    game: u8,
-    chat: u8,
-    show_gauge: bool,
-) {
-    if !show_gauge {
-        return;
-    }
+/// Draw the gauge and, if the draw fails, drop the handle so we don't retry
+/// on every dial event. Wireless firmware that rejects feature reports stays
+/// rejecting them, and retrying costs ~970 ms per attempt inside ggoled_lib.
+fn draw_or_drop(display: &mut Option<ChatMixGauge>, game: u8, chat: u8) {
     if let Some(ref mut d) = display {
         if !d.show(game, chat) {
             warn!("OLED gauge failing — disabling for this session");
@@ -149,11 +139,6 @@ pub struct MixerState {
     /// True iff the connected hardware exposes an OLED. Lets the GUI
     /// gate OLED controls instead of assuming connected == has OLED.
     pub oled_present: bool,
-    /// User pref: draw the ChatMix gauge on the OLED. When false, the
-    /// daemon hands the screen back to the built-in SteelSeries UI
-    /// (return_to_ui) and stops issuing draws on dial changes.
-    /// Persisted across reconnects.
-    pub oled_show_gauge: bool,
     /// Headset ANC mode. Persisted across reconnects; re-applied when
     /// the base station comes back. Hardware-button presses on the
     /// headset push back via OPT_NOISE_CANCELLING events; we mirror
@@ -185,7 +170,6 @@ impl MixerState {
         game_vol: u8,
         chat_vol: u8,
         oled_brightness: u8,
-        oled_show_gauge: bool,
         anc_mode: AncMode,
         anc_transparent_level: u8,
     ) -> Self {
@@ -210,7 +194,6 @@ impl MixerState {
             oled_brightness,
             applied_oled_brightness: 0,
             oled_present: false,
-            oled_show_gauge,
             anc_mode,
             anc_transparent_level,
             applied_anc_mode: u8::MAX,
@@ -464,13 +447,7 @@ impl Mixer {
             game: init_game,
             chat: init_chat,
         });
-        let initial_show_gauge = self.state.lock().unwrap().oled_show_gauge;
-        draw_or_drop(&mut display, init_game, init_chat, initial_show_gauge);
-        if !initial_show_gauge {
-            if let Some(ref d) = display {
-                d.return_to_native_ui();
-            }
-        }
+        draw_or_drop(&mut display, init_game, init_chat);
         let (media_live, hdmi_live) = {
             let sm = self.sinks.lock().unwrap();
             (sm.media_enabled(), sm.hdmi_enabled())
@@ -538,16 +515,14 @@ impl Mixer {
         // device. Initialised from current state (already applied at
         // connect) so the first iteration doesn't double-send.
         let mut last_sidetone = self.state.lock().unwrap().sidetone_level;
-        let mut last_show_gauge = self.state.lock().unwrap().oled_show_gauge;
 
         while self.running.load(Ordering::Relaxed) {
             // One state read per iteration covers all pending GUI
-            // writes (sidetone + OLED brightness + gauge toggle + ANC).
+            // writes (sidetone + OLED brightness + ANC).
             let (
                 want_sidetone,
                 want_bright,
                 applied_bright,
-                want_show_gauge,
                 want_anc_mode,
                 applied_anc_mode,
                 want_anc_trans,
@@ -558,7 +533,6 @@ impl Mixer {
                     st.sidetone_level,
                     st.oled_brightness,
                     st.applied_oled_brightness,
-                    st.oled_show_gauge,
                     st.anc_mode,
                     st.applied_anc_mode,
                     st.anc_transparent_level,
@@ -582,19 +556,6 @@ impl Mixer {
                     d.set_brightness(want_bright);
                 }
                 self.state.lock().unwrap().applied_oled_brightness = want_bright;
-            }
-
-            // Detect a transition from gauge-on to gauge-off and hand
-            // the device back to its built-in UI once. The reverse
-            // (off→on) is handled implicitly: the next dial event
-            // routes through draw_or_drop and the gauge redraws.
-            if want_show_gauge != last_show_gauge {
-                if !want_show_gauge {
-                    if let Some(ref d) = display {
-                        d.return_to_native_ui();
-                    }
-                }
-                last_show_gauge = want_show_gauge;
             }
 
             // Apply pending ANC state. Same once-per-iteration pattern
@@ -645,7 +606,7 @@ impl Mixer {
                             game: game_vol,
                             chat: chat_vol,
                         });
-                        draw_or_drop(display, game_vol, chat_vol, want_show_gauge);
+                        draw_or_drop(display, game_vol, chat_vol);
                     }
                     HidEvent::Battery(bat) => {
                         debug!("battery: {}% ({})", bat.level, bat.status);
@@ -781,8 +742,17 @@ impl Mixer {
     }
 
     /// Poll the device's battery state and fan it out to GUI subscribers.
+    /// The battery reply also carries current ANC state per ASM yaml
+    /// (offsets 10 + 8); mirror it into MixerState so the GUI tracks
+    /// reality even when the user presses the headset's ANC button
+    /// while the daemon is offline.
     fn poll_and_broadcast_battery(&self, dev: &NovaDevice) {
-        if let Ok(Some(bat)) = dev.get_battery() {
+        if let Ok(Some((bat, msg))) = dev.get_battery() {
+            if let Some((anc_byte, trans_level)) =
+                NovaDevice::anc_from_battery_reply(&msg)
+            {
+                self.sync_anc_from_device(anc_byte, trans_level);
+            }
             {
                 let mut st = self.state.lock().unwrap();
                 st.battery = Some(bat.clone());

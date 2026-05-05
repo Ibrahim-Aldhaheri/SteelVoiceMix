@@ -1161,22 +1161,6 @@ Continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>ChatMix Gauge</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Show ChatMix gauge on OLED</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>When off, the deck shows the built-in SteelSeries UI (battery / ChatMix / volume / EQ-mode screens cycled via the dial).</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Off hands the screen back to the deck's native UI. On wireless variants the gauge can't draw anyway, so this toggle is mostly cosmetic there — leave it on.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Headset ANC</source>
         <translation type="unfinished"></translation>
     </message>

@@ -122,8 +122,6 @@ class DaemonSignals(QObject):
     oled_brightness_changed = Signal(int)
     # True iff the connected device exposes an OLED.
     oled_presence_changed = Signal(bool)
-    # User pref: draw the ChatMix gauge on the OLED (vs. native UI).
-    oled_show_gauge_changed = Signal(bool)
     # Headset ANC mode — "off" / "transparent" / "on".
     anc_mode_changed = Signal(str)
     # Transparent-mode intensity level (1..10).
@@ -243,8 +241,6 @@ class DaemonClient:
             self.signals.oled_brightness_changed.emit(int(event.get("level", 5)))
         elif ev == "oled-presence-changed":
             self.signals.oled_presence_changed.emit(bool(event.get("present", False)))
-        elif ev == "oled-show-gauge-changed":
-            self.signals.oled_show_gauge_changed.emit(bool(event.get("enabled", True)))
         elif ev == "anc-mode-changed":
             self.signals.anc_mode_changed.emit(str(event.get("mode", "off")))
         elif ev == "anc-transparent-level-changed":
@@ -304,9 +300,6 @@ class DaemonClient:
             )
             self.signals.oled_presence_changed.emit(
                 bool(event.get("oled_present", False))
-            )
-            self.signals.oled_show_gauge_changed.emit(
-                bool(event.get("oled_show_gauge", True))
             )
             self.signals.anc_mode_changed.emit(
                 str(event.get("anc_mode", "off"))
