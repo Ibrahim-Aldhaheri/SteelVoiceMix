@@ -122,17 +122,16 @@ def find_preset_bands(preset_name: str) -> list[dict] | None:
 
 class GameWatcher(QThread):
     """Background thread that publishes the set of active candidate-
-    game clients seen on PipeWire. Emits `games_changed(dict)` with
-    the latest snapshot whenever it changes — keys are
-    `application.name` strings, values are booleans for whether the
-    client is on SteelGame. The orchestrator decides what to do."""
+    game clients seen on PipeWire. Emits `games_changed(dict)` on
+    every poll tick — keys are `application.name` strings, values
+    are booleans for whether the client is on SteelGame. The
+    orchestrator dedupes on its side and decides what to do."""
 
     games_changed = Signal(dict)
 
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
         self._stop = False
-        self._last: tuple[tuple[str, bool], ...] = ()
 
     def stop(self) -> None:
         self._stop = True
@@ -143,16 +142,14 @@ class GameWatcher(QThread):
             return
         while not self._stop:
             scanned = self._scan()
-            # Stable canonical key for change detection: dedupe + sort.
-            canon = tuple(sorted(set(scanned)))
-            if canon != self._last:
-                self._last = canon
-                # Convert to dict for the slot — duplicates collapse,
-                # any "on_game" win wins (sorted True > False on bool).
-                snapshot: dict[str, bool] = {}
-                for name, on_game in scanned:
-                    snapshot[name] = snapshot.get(name, False) or on_game
-                self.games_changed.emit(snapshot)
+            # Always emit so the orchestrator's exit-grace counter
+            # increments while games stay empty. Earlier change-only
+            # emission stalled `_consecutive_empty_ticks` at 1 forever
+            # because the empty→empty transitions never fired.
+            snapshot: dict[str, bool] = {}
+            for name, on_game in scanned:
+                snapshot[name] = snapshot.get(name, False) or on_game
+            self.games_changed.emit(snapshot)
             # msleep yields cooperatively so stop() flips promptly
             # rather than after a full 2-second wait.
             for _ in range(_POLL_INTERVAL_MS // 50):
