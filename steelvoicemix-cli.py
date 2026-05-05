@@ -469,6 +469,60 @@ def _cmd_diagnose(argv: list[str]) -> int:
     return 0
 
 
+# --------------------------------------------------------------- wireless-mode
+
+def _socket_path() -> Path:
+    base = (
+        os.environ.get("XDG_RUNTIME_DIR")
+        or f"/run/user/{os.getuid()}"
+    )
+    return Path(base) / "steelvoicemix.sock"
+
+
+def _send_daemon_command(payload: dict) -> int:
+    """Fire-and-forget single JSON command on the daemon socket. The
+    daemon's response (if any) is on a separate event stream we don't
+    subscribe to here, so this just confirms the message got out."""
+    import socket as _socket
+    body = (json.dumps(payload) + "\n").encode()
+    sock_path = _socket_path()
+    try:
+        with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as s:
+            s.settimeout(2)
+            s.connect(str(sock_path))
+            s.sendall(body)
+        return 0
+    except FileNotFoundError:
+        print(f"error: daemon socket {sock_path} not found — is steelvoicemix running?", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"error: failed to talk to daemon: {e}", file=sys.stderr)
+        return 1
+
+
+def _cmd_wireless_mode(argv: list[str]) -> int:
+    """Dispatch `wireless-mode {toggle|set speed|set range}`. Talks
+    to the daemon over the Unix socket; the daemon does the
+    compare-and-skip so binding `toggle` to a shortcut and tapping it
+    when already in the right mode is harmless."""
+    if not argv:
+        print("usage: steelvoicemix-cli wireless-mode {toggle|set speed|set range}", file=sys.stderr)
+        return 2
+    sub = argv[0]
+    if sub == "toggle":
+        return _send_daemon_command({"cmd": "toggle-wireless-mode"})
+    if sub == "set":
+        if len(argv) < 2 or argv[1] not in ("speed", "range"):
+            print("usage: steelvoicemix-cli wireless-mode set {speed|range}", file=sys.stderr)
+            return 2
+        return _send_daemon_command({
+            "cmd": "set-wireless-mode",
+            "mode": argv[1],
+        })
+    print(f"error: unknown wireless-mode subcommand: {sub!r}", file=sys.stderr)
+    return 2
+
+
 # --------------------------------------------------------------- dispatch
 
 _USAGE = """\
@@ -477,6 +531,10 @@ usage: steelvoicemix-cli <subcommand> [args]
 Subcommands:
   sink cycle              Advance default sink between loaded Steel sinks.
                           Bind to a DE keyboard shortcut for global hotkey.
+  wireless-mode toggle    Flip headset 2.4 GHz mode (Speed ↔ Range).
+                          Bind to a shortcut for one-press kitchen mode.
+  wireless-mode set MODE  Set explicit mode (`speed` or `range`).
+                          No-op if already in that mode.
   init [--yes|-y]         Drop a small user-side PipeWire config that
                           locks the graph rate to 48kHz. Confirms first.
   clean [--yes|-y]        Remove what `init` wrote.
@@ -488,6 +546,8 @@ Subcommands:
 def main(argv: list[str]) -> int:
     if len(argv) >= 3 and argv[1] == "sink" and argv[2] == "cycle":
         return _cmd_sink_cycle()
+    if len(argv) >= 2 and argv[1] == "wireless-mode":
+        return _cmd_wireless_mode(argv[2:])
     if len(argv) >= 2 and argv[1] == "init":
         return _cmd_init(argv[2:])
     if len(argv) >= 2 and argv[1] == "clean":

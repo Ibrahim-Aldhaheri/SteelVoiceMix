@@ -1180,5 +1180,21 @@ Continue?</source>
         <source>Active Noise Cancellation. The headset's hardware button cycles the same three modes; changes there reflect here automatically. Transparent intensity (1..10) only matters in Transparent mode.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Wireless Mode</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Speed (low latency)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Range (long distance)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Switching modes briefly drops the wireless link. Bind a keyboard shortcut to &lt;code&gt;steelvoicemix-cli wireless-mode toggle&lt;/code&gt; for a one-press flip when you walk to another room.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 </TS>

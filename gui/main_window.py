@@ -360,6 +360,9 @@ class MixerGUI(QMainWindow):
         self.signals.anc_transparent_level_changed.connect(
             self.deck_tab.on_anc_transparent_level_changed
         )
+        self.signals.wireless_mode_changed.connect(
+            self.deck_tab.on_wireless_mode_changed
+        )
 
     # ----------------------------------------------------- header + chatmix
 

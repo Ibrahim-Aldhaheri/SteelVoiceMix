@@ -126,6 +126,8 @@ class DaemonSignals(QObject):
     anc_mode_changed = Signal(str)
     # Transparent-mode intensity level (1..10).
     anc_transparent_level_changed = Signal(int)
+    # 2.4 GHz wireless mode — "speed" / "range".
+    wireless_mode_changed = Signal(str)
     # Daemon-side desktop notification toggle (separate from the GUI's
     # own minimize-to-tray toast; this one gates the connect /
     # disconnect notify-send popups emitted by the Rust daemon).
@@ -247,6 +249,8 @@ class DaemonClient:
             self.signals.anc_transparent_level_changed.emit(
                 int(event.get("level", 5))
             )
+        elif ev == "wireless-mode-changed":
+            self.signals.wireless_mode_changed.emit(str(event.get("mode", "speed")))
         elif ev == "notifications-enabled-changed":
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("enabled", True))
@@ -306,6 +310,9 @@ class DaemonClient:
             )
             self.signals.anc_transparent_level_changed.emit(
                 int(event.get("anc_transparent_level", 5))
+            )
+            self.signals.wireless_mode_changed.emit(
+                str(event.get("wireless_mode", "speed"))
             )
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("notifications_enabled", True))

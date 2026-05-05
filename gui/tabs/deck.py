@@ -16,12 +16,14 @@ from PySide6.QtWidgets import (
 from ..widgets import NoWheelSlider, card
 
 _ANC_MODES = ("off", "transparent", "on")
+_WIRELESS_MODES = ("speed", "range")
 
-# Stylesheet for the ANC mode buttons. QPushButton's default checked
-# state is visually identical to unchecked, so we colour the active
-# mode with the app accent. Without this the user can't tell which
-# mode is selected — especially confusing on first open.
-_ANC_BUTTON_STYLE = """
+# Stylesheet for the mode-picker buttons (ANC + Wireless). QPushButton's
+# default checked state is visually identical to unchecked, so we
+# colour the active mode with the app accent. Without this the user
+# can't tell which mode is selected — especially confusing on first
+# open.
+_MODE_BUTTON_STYLE = """
 QPushButton {
     padding: 6px 10px;
     border: 1px solid palette(mid);
@@ -51,6 +53,7 @@ class DeckTab(QWidget):
 
         layout.addWidget(self._build_oled_card())
         layout.addWidget(self._build_anc_card())
+        layout.addWidget(self._build_wireless_card())
 
         self._not_connected_hint = QLabel(
             self.tr(
@@ -141,7 +144,7 @@ class DeckTab(QWidget):
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setEnabled(self._daemon is not None)
-            btn.setStyleSheet(_ANC_BUTTON_STYLE)
+            btn.setStyleSheet(_MODE_BUTTON_STYLE)
             btn.clicked.connect(
                 lambda _checked, m=mode: self._send_anc_mode(m)
             )
@@ -193,6 +196,47 @@ class DeckTab(QWidget):
             self.tr("Headset ANC"), mode_row, slider_row, help_lbl,
         )
 
+    def _build_wireless_card(self) -> QWidget:
+        # Two-button picker: Speed (low latency, short range) vs Range
+        # (long distance, slightly higher latency). Each switch briefly
+        # drops the wireless link, so the daemon compares-and-skips
+        # when the user clicks the already-active mode.
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(6)
+        self._wireless_button_group = QButtonGroup(self)
+        self._wireless_button_group.setExclusive(True)
+        self._wireless_buttons: dict[str, QPushButton] = {}
+        for mode, label in (
+            ("speed", self.tr("Speed (low latency)")),
+            ("range", self.tr("Range (long distance)")),
+        ):
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setEnabled(self._daemon is not None)
+            btn.setStyleSheet(_MODE_BUTTON_STYLE)
+            btn.clicked.connect(
+                lambda _checked, m=mode: self._send_wireless_mode(m)
+            )
+            self._wireless_buttons[mode] = btn
+            self._wireless_button_group.addButton(btn)
+            mode_row.addWidget(btn, 1)
+        self._wireless_buttons["speed"].setChecked(True)
+
+        help_lbl = QLabel(
+            self.tr(
+                "Switching modes briefly drops the wireless link. "
+                "Bind a keyboard shortcut to "
+                "<code>steelvoicemix-cli wireless-mode toggle</code> "
+                "for a one-press flip when you walk to another room."
+            )
+        )
+        help_lbl.setWordWrap(True)
+        help_lbl.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        return card(self.tr("Wireless Mode"), mode_row, help_lbl)
+
     def on_oled_brightness_changed(self, level: int) -> None:
         # Block signals so the daemon echo doesn't loop back as another
         # set-oled-brightness command.
@@ -234,6 +278,18 @@ class DeckTab(QWidget):
             self.anc_transparent_slider.blockSignals(was_blocked)
         self.anc_transparent_value.setText(f"{clamped} / 10")
 
+    def on_wireless_mode_changed(self, mode: str) -> None:
+        if mode not in _WIRELESS_MODES:
+            return
+        btn = self._wireless_buttons.get(mode)
+        if btn is None:
+            return
+        was_blocked = btn.blockSignals(True)
+        try:
+            btn.setChecked(True)
+        finally:
+            btn.blockSignals(was_blocked)
+
     def _on_brightness_value_changed(self, value: int) -> None:
         self.oled_brightness_value.setText(f"{value} / 10")
         self._oled_pending_level = int(value)
@@ -267,3 +323,8 @@ class DeckTab(QWidget):
             "set-anc-transparent-level", level=self._anc_pending_level
         )
         self._anc_pending_level = None
+
+    def _send_wireless_mode(self, mode: str) -> None:
+        if self._daemon is None or mode not in _WIRELESS_MODES:
+            return
+        self._daemon.send_command("set-wireless-mode", mode=mode)

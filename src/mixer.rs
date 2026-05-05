@@ -13,7 +13,7 @@ use crate::config;
 use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
 use crate::protocol::{
-    AncMode, DaemonEvent, EqChannel, EqState, MicState, VolumeBoostState,
+    AncMode, DaemonEvent, EqChannel, EqState, MicState, VolumeBoostState, WirelessMode,
 };
 
 pub type SharedSinks = Arc<Mutex<SinkManager>>;
@@ -56,6 +56,7 @@ fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
         oled_brightness: st.oled_brightness,
         anc_mode: st.anc_mode,
         anc_transparent_level: st.anc_transparent_level,
+        wireless_mode: st.wireless_mode,
     });
 }
 
@@ -151,6 +152,14 @@ pub struct MixerState {
     pub applied_anc_mode: u8,
     /// Last-pushed transparent level; same pattern.
     pub applied_anc_transparent_level: u8,
+    /// 2.4 GHz wireless mode. Persisted; re-applied on reconnect when
+    /// the device-side value differs (battery poll syncs that).
+    pub wireless_mode: WirelessMode,
+    /// Last-pushed wireless_mode byte. Sentinel-init means the first
+    /// event-loop iteration always pushes — but only if it differs
+    /// from what the device reports back via the battery poll mirror,
+    /// preventing unnecessary radio bounces on reconnect.
+    pub applied_wireless_mode: u8,
 }
 
 impl MixerState {
@@ -172,6 +181,7 @@ impl MixerState {
         oled_brightness: u8,
         anc_mode: AncMode,
         anc_transparent_level: u8,
+        wireless_mode: WirelessMode,
     ) -> Self {
         MixerState {
             connected: false,
@@ -198,6 +208,8 @@ impl MixerState {
             anc_transparent_level,
             applied_anc_mode: u8::MAX,
             applied_anc_transparent_level: 0,
+            wireless_mode,
+            applied_wireless_mode: u8::MAX,
         }
     }
 }
@@ -251,6 +263,28 @@ impl Mixer {
     /// Broadcast an event to all subscribed GUI clients. Removes dead senders.
     fn broadcast(&self, event: DaemonEvent) {
         broadcast_event(&self.subscribers, event);
+    }
+
+    /// Mirror device-reported wireless_mode into MixerState. Called
+    /// from the battery-poll path so that on reconnect, if the device
+    /// already happens to be in the persisted mode (or some other
+    /// tool changed it), we don't unnecessarily re-write and bounce
+    /// the radio.
+    fn sync_wireless_from_device(&self, wireless_byte: u8) {
+        let new_mode = WirelessMode::from_byte(wireless_byte);
+        let changed = {
+            let mut st = self.state.lock().unwrap();
+            let prior = st.wireless_mode;
+            st.wireless_mode = new_mode;
+            // Lockstep: marks applied so the event loop won't try to
+            // push back to the device.
+            st.applied_wireless_mode = new_mode.as_byte();
+            prior != new_mode
+        };
+        if changed {
+            persist_dial_state(&self.state);
+            self.broadcast(DaemonEvent::WirelessModeChanged { mode: new_mode });
+        }
     }
 
     /// Mirror device-reported ANC state into MixerState without
@@ -518,7 +552,7 @@ impl Mixer {
 
         while self.running.load(Ordering::Relaxed) {
             // One state read per iteration covers all pending GUI
-            // writes (sidetone + OLED brightness + ANC).
+            // writes (sidetone + OLED brightness + ANC + wireless).
             let (
                 want_sidetone,
                 want_bright,
@@ -527,6 +561,8 @@ impl Mixer {
                 applied_anc_mode,
                 want_anc_trans,
                 applied_anc_trans,
+                want_wireless,
+                applied_wireless,
             ) = {
                 let st = self.state.lock().unwrap();
                 (
@@ -537,6 +573,8 @@ impl Mixer {
                     st.applied_anc_mode,
                     st.anc_transparent_level,
                     st.applied_anc_transparent_level,
+                    st.wireless_mode,
+                    st.applied_wireless_mode,
                 )
             };
             if want_sidetone != last_sidetone {
@@ -572,6 +610,23 @@ impl Mixer {
                     warn!("Failed to apply ANC transparent level {want_anc_trans}: {e}");
                 }
                 self.state.lock().unwrap().applied_anc_transparent_level = want_anc_trans;
+            }
+
+            // Wireless-mode write briefly drops the radio link, so we
+            // only push when the desired byte differs from what the
+            // device reported back (battery-poll mirror keeps applied
+            // in sync). Otherwise spamming set/toggle from a shortcut
+            // would bounce the headset every keypress.
+            if want_wireless.as_byte() != applied_wireless {
+                info!(
+                    "Wireless mode change: {:?} → {:?} (radio will briefly drop link)",
+                    WirelessMode::from_byte(applied_wireless),
+                    want_wireless,
+                );
+                if let Err(e) = dev.set_wireless_mode(want_wireless.as_byte()) {
+                    warn!("Failed to apply wireless mode {want_wireless:?}: {e}");
+                }
+                self.state.lock().unwrap().applied_wireless_mode = want_wireless.as_byte();
             }
 
             // Short timeout keeps dial-to-update latency low; battery
@@ -618,6 +673,11 @@ impl Mixer {
                             NovaDevice::anc_from_battery_reply(&msg)
                         {
                             self.sync_anc_from_device(anc_byte, trans_level);
+                        }
+                        if let Some(wireless_byte) =
+                            NovaDevice::wireless_mode_from_battery_reply(&msg)
+                        {
+                            self.sync_wireless_from_device(wireless_byte);
                         }
                         {
                             let mut st = self.state.lock().unwrap();
@@ -752,6 +812,11 @@ impl Mixer {
                 NovaDevice::anc_from_battery_reply(&msg)
             {
                 self.sync_anc_from_device(anc_byte, trans_level);
+            }
+            if let Some(wireless_byte) =
+                NovaDevice::wireless_mode_from_battery_reply(&msg)
+            {
+                self.sync_wireless_from_device(wireless_byte);
             }
             {
                 let mut st = self.state.lock().unwrap();

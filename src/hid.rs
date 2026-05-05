@@ -39,6 +39,13 @@ pub const OPT_NOISE_CANCELLING: u8 = 0xBD;
 // headset when ANC mode is `transparent`; the device accepts the
 // write regardless.
 pub const OPT_TRANSPARENT_LEVEL: u8 = 0xB9;
+// 2.4 GHz wireless mode — `[0x06, 0xc3, value]` where value is
+// 0x00 (speed: low latency, short range) or 0x01 (range: long
+// distance, slightly higher latency). Each write briefly drops
+// the wireless link while the radio reconfigures, so the daemon
+// must compare-and-skip when the value already matches the
+// applied state — both LAM and ASM lack this guard.
+pub const OPT_WIRELESS_MODE: u8 = 0xC3;
 
 /// Battery status decoded from HID response.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -174,6 +181,15 @@ impl NovaDevice {
         self.send(&[TX, OPT_TRANSPARENT_LEVEL, level])
     }
 
+    /// Set 2.4 GHz wireless mode (0x00=speed, 0x01=range). Caller is
+    /// responsible for checking that this differs from the device's
+    /// current value before invoking — the radio briefly drops the
+    /// link on every write regardless.
+    pub fn set_wireless_mode(&self, mode: u8) -> Result<(), HidError> {
+        let mode = mode.min(1);
+        self.send(&[TX, OPT_WIRELESS_MODE, mode])
+    }
+
     /// Read a HID message with timeout (milliseconds). Returns None on timeout.
     pub fn read(&self, timeout_ms: i32) -> Result<Option<Vec<u8>>, HidError> {
         let mut buf = [0u8; MSG_LEN];
@@ -230,6 +246,16 @@ impl NovaDevice {
             return None;
         }
         Some((msg[10], msg[8]))
+    }
+
+    /// Pull the current wireless_mode byte out of a battery reply.
+    /// Per ASM yaml `wireless_mode: 0x0d` (offset 13). Lets us catch
+    /// changes made via SteelSeries GG on Windows or another tool.
+    pub fn wireless_mode_from_battery_reply(msg: &[u8]) -> Option<u8> {
+        if msg.len() < 16 || msg[1] != OPT_BATTERY {
+            return None;
+        }
+        Some(msg[13])
     }
 
     /// Request battery status from the base station.

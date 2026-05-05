@@ -57,6 +57,38 @@ impl AncMode {
     }
 }
 
+/// 2.4 GHz wireless link mode. `Speed` = low latency, short range
+/// (default). `Range` = long distance, slightly higher latency. Wire
+/// byte mapping (ASM nova_pro_wireless.yaml): `Speed=0x00`, `Range=0x01`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum WirelessMode {
+    #[default]
+    Speed,
+    Range,
+}
+
+impl WirelessMode {
+    pub fn as_byte(self) -> u8 {
+        match self {
+            WirelessMode::Speed => 0,
+            WirelessMode::Range => 1,
+        }
+    }
+    pub fn from_byte(b: u8) -> Self {
+        match b {
+            1 => WirelessMode::Range,
+            _ => WirelessMode::Speed,
+        }
+    }
+    pub fn flipped(self) -> Self {
+        match self {
+            WirelessMode::Speed => WirelessMode::Range,
+            WirelessMode::Range => WirelessMode::Speed,
+        }
+    }
+}
+
 /// Number of EQ bands per channel. Common parametric-EQ preset JSONs
 /// carry exactly `parametricEQ.filter1..filter10` — 10 bands here lets
 /// those load 1:1 without padding or truncation.
@@ -423,6 +455,17 @@ pub enum ClientCommand {
     /// Only audibly affects the headset when ANC mode is `transparent`.
     #[serde(rename = "set-anc-transparent-level")]
     SetAncTransparentLevel { level: u8 },
+    /// Set 2.4 GHz wireless mode (Speed = low latency, Range = long
+    /// distance). Daemon compares against current state and skips the
+    /// HID write when they match — the radio briefly drops the link
+    /// on every write, so spamming this command from a shortcut should
+    /// not bounce the headset.
+    #[serde(rename = "set-wireless-mode")]
+    SetWirelessMode { mode: WirelessMode },
+    /// Flip wireless mode (Speed → Range or vice versa). Convenience
+    /// for keyboard-shortcut bindings; always changes state.
+    #[serde(rename = "toggle-wireless-mode")]
+    ToggleWirelessMode,
     /// Toggle daemon-side desktop notifications (the connect /
     /// disconnect notify-send popups). Distinct from the GUI's own
     /// minimize-to-tray toast, which is GUI-side only.
@@ -479,6 +522,8 @@ pub enum DaemonEvent {
         anc_mode: AncMode,
         /// Transparent-mode intensity level (1..=10).
         anc_transparent_level: u8,
+        /// 2.4 GHz wireless mode.
+        wireless_mode: WirelessMode,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -558,6 +603,11 @@ pub enum DaemonEvent {
     /// Fired when transparent-mode intensity changes.
     #[serde(rename = "anc-transparent-level-changed")]
     AncTransparentLevelChanged { level: u8 },
+
+    /// Fired when 2.4 GHz wireless mode changes (GUI command, CLI
+    /// toggle, or device-side mirror via battery poll).
+    #[serde(rename = "wireless-mode-changed")]
+    WirelessModeChanged { mode: WirelessMode },
 
     /// Fired when daemon-side desktop notifications are toggled.
     #[serde(rename = "notifications-enabled-changed")]
@@ -654,6 +704,7 @@ mod tests {
             oled_present: true,
             anc_mode: AncMode::Off,
             anc_transparent_level: 5,
+            wireless_mode: WirelessMode::Speed,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -922,6 +973,41 @@ mod tests {
         let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
         assert_eq!(json["event"], "anc-transparent-level-changed");
         assert_eq!(json["level"], 8);
+    }
+
+    #[test]
+    fn wireless_mode_round_trip() {
+        for (mode, label, byte) in [
+            (WirelessMode::Speed, "speed", 0u8),
+            (WirelessMode::Range, "range", 1u8),
+        ] {
+            let cmd_json = format!(r#"{{"cmd":"set-wireless-mode","mode":"{label}"}}"#);
+            let parsed: ClientCommand = from_str(&cmd_json).unwrap();
+            match parsed {
+                ClientCommand::SetWirelessMode { mode: m } => assert_eq!(m, mode),
+                other => panic!("expected SetWirelessMode, got {other:?}"),
+            }
+            assert_eq!(mode.as_byte(), byte);
+            assert_eq!(WirelessMode::from_byte(byte), mode);
+            assert_eq!(mode.flipped(), if byte == 0 { WirelessMode::Range } else { WirelessMode::Speed });
+        }
+    }
+
+    #[test]
+    fn toggle_wireless_mode_command_parses() {
+        let cmd: ClientCommand = from_str(r#"{"cmd":"toggle-wireless-mode"}"#).unwrap();
+        match cmd {
+            ClientCommand::ToggleWirelessMode => {}
+            other => panic!("expected ToggleWirelessMode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wireless_mode_event_shape() {
+        let ev = DaemonEvent::WirelessModeChanged { mode: WirelessMode::Range };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "wireless-mode-changed");
+        assert_eq!(json["mode"], "range");
     }
 
     #[test]

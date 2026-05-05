@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{AncMode, EqState, MicState, VolumeBoostState};
+use crate::protocol::{AncMode, EqState, MicState, VolumeBoostState, WirelessMode};
 
 /// What the daemon remembers across restarts. Most fields default to
 /// "off" so a fresh install doesn't surprise users with extra output
@@ -114,6 +114,11 @@ pub struct DaemonState {
     /// every reconnect.
     #[serde(default = "default_anc_transparent_level")]
     pub anc_transparent_level: u8,
+    /// 2.4 GHz wireless mode. Re-applied on every reconnect, but the
+    /// daemon compares-and-skips when it would re-write the same
+    /// value to avoid bouncing the wireless link unnecessarily.
+    #[serde(default)]
+    pub wireless_mode: WirelessMode,
 }
 
 fn default_chatmix_half() -> u8 {
@@ -164,6 +169,7 @@ impl Default for DaemonState {
             oled_brightness: default_oled_brightness(),
             anc_mode: AncMode::Off,
             anc_transparent_level: default_anc_transparent_level(),
+            wireless_mode: WirelessMode::Speed,
         }
     }
 }
