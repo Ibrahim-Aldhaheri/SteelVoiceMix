@@ -1176,5 +1176,25 @@ Continue?</source>
         <source>Off hands the screen back to the deck's native UI. On wireless variants the gauge can't draw anyway, so this toggle is mostly cosmetic there — leave it on.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Headset ANC</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Transparent</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>ANC On</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Active Noise Cancellation. The headset's hardware button cycles the same three modes; changes there reflect here automatically. Transparent intensity (1..10) only matters in Transparent mode.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 </TS>

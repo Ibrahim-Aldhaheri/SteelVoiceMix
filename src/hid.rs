@@ -29,6 +29,16 @@ pub const OPT_SIDETONE: u8 = 0x39;
 // "save state" command — sent after each parameter change so the
 // setting survives a power cycle.
 pub const OPT_SAVE_STATE: u8 = 0x09;
+// ANC mode (0=off, 1=transparent, 2=on) — verified byte-exact against
+// ASM's nova_pro_wireless.yaml `update_sequence: [0x06, 0xbd, 'value']`.
+// Re-applied on every reconnect; ASM does NOT send a SAVE_STATE here,
+// so we don't either.
+pub const OPT_NOISE_CANCELLING: u8 = 0xBD;
+// Transparent-mode intensity level (1..=10) — ASM yaml
+// `update_sequence: [0x06, 0xb9, 'value']`. Only audibly affects the
+// headset when ANC mode is `transparent`; the device accepts the
+// write regardless.
+pub const OPT_TRANSPARENT_LEVEL: u8 = 0xB9;
 
 /// Battery status decoded from HID response.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -44,6 +54,13 @@ pub struct BatteryStatus {
 pub enum HidEvent {
     ChatMix { game_vol: u8, chat_vol: u8 },
     Battery(BatteryStatus),
+    /// Pushed by the headset's hardware ANC mode button. Value matches
+    /// the `OPT_NOISE_CANCELLING` write contract.
+    AncMode(u8),
+    /// Pushed when the transparent-mode intensity changes via the
+    /// hardware UI (currently this only ever fires from our own write
+    /// echo on this device family, but parse it for completeness).
+    AncTransparentLevel(u8),
     Unknown,
 }
 
@@ -143,6 +160,20 @@ impl NovaDevice {
         Ok(())
     }
 
+    /// Set ANC mode. `mode` clamped to 0..=2 — 0=off, 1=transparent,
+    /// 2=on. Single Output report; ASM doesn't follow with SAVE_STATE
+    /// here, so neither do we.
+    pub fn set_anc_mode(&self, mode: u8) -> Result<(), HidError> {
+        let mode = mode.min(2);
+        self.send(&[TX, OPT_NOISE_CANCELLING, mode])
+    }
+
+    /// Set transparent-mode intensity level (1..=10).
+    pub fn set_anc_transparent_level(&self, level: u8) -> Result<(), HidError> {
+        let level = level.clamp(1, 10);
+        self.send(&[TX, OPT_TRANSPARENT_LEVEL, level])
+    }
+
     /// Read a HID message with timeout (milliseconds). Returns None on timeout.
     pub fn read(&self, timeout_ms: i32) -> Result<Option<Vec<u8>>, HidError> {
         let mut buf = [0u8; MSG_LEN];
@@ -180,8 +211,25 @@ impl NovaDevice {
                     status: status.to_string(),
                 })
             }
+            // Hardware-button-driven ANC mode change — ASM yaml maps
+            // `starts_with: 0x07bd, noise_cancelling: 0x02`. We only
+            // observe these on Output-report-aware variants, but
+            // parse them when they arrive so the GUI tracks reality.
+            OPT_NOISE_CANCELLING => HidEvent::AncMode(msg[2]),
+            OPT_TRANSPARENT_LEVEL => HidEvent::AncTransparentLevel(msg[2]),
             _ => HidEvent::Unknown,
         }
+    }
+
+    /// Pull the current ANC state out of a `[0x06, 0xb0, ...]` battery
+    /// reply. Per ASM yaml the relevant bytes are noise_cancelling at
+    /// offset 10 and transparent_level at offset 8. Returns `None` if
+    /// the message is too short or isn't a battery reply.
+    pub fn anc_from_battery_reply(msg: &[u8]) -> Option<(u8, u8)> {
+        if msg.len() < 16 || msg[1] != OPT_BATTERY {
+            return None;
+        }
+        Some((msg[10], msg[8]))
     }
 
     /// Request battery status from the base station.

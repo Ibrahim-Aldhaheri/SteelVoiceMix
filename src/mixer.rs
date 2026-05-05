@@ -12,7 +12,9 @@ use crate::audio::{SinkManager, CHAT_SINK, GAME_SINK};
 use crate::config;
 use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
-use crate::protocol::{DaemonEvent, EqChannel, EqState, MicState, VolumeBoostState};
+use crate::protocol::{
+    AncMode, DaemonEvent, EqChannel, EqState, MicState, VolumeBoostState,
+};
 
 pub type SharedSinks = Arc<Mutex<SinkManager>>;
 
@@ -53,6 +55,8 @@ fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
         chat_vol: st.chat_vol,
         oled_brightness: st.oled_brightness,
         oled_show_gauge: st.oled_show_gauge,
+        anc_mode: st.anc_mode,
+        anc_transparent_level: st.anc_transparent_level,
     });
 }
 
@@ -150,6 +154,18 @@ pub struct MixerState {
     /// (return_to_ui) and stops issuing draws on dial changes.
     /// Persisted across reconnects.
     pub oled_show_gauge: bool,
+    /// Headset ANC mode. Persisted across reconnects; re-applied when
+    /// the base station comes back. Hardware-button presses on the
+    /// headset push back via OPT_NOISE_CANCELLING events; we mirror
+    /// those into state without re-sending.
+    pub anc_mode: AncMode,
+    /// Transparent-mode intensity level (1..=10). Persisted.
+    pub anc_transparent_level: u8,
+    /// Last-pushed ANC-mode byte; mismatch with `anc_mode` triggers a
+    /// re-send in `event_loop`.
+    pub applied_anc_mode: u8,
+    /// Last-pushed transparent level; same pattern.
+    pub applied_anc_transparent_level: u8,
 }
 
 impl MixerState {
@@ -170,6 +186,8 @@ impl MixerState {
         chat_vol: u8,
         oled_brightness: u8,
         oled_show_gauge: bool,
+        anc_mode: AncMode,
+        anc_transparent_level: u8,
     ) -> Self {
         MixerState {
             connected: false,
@@ -193,6 +211,10 @@ impl MixerState {
             applied_oled_brightness: 0,
             oled_present: false,
             oled_show_gauge,
+            anc_mode,
+            anc_transparent_level,
+            applied_anc_mode: u8::MAX,
+            applied_anc_transparent_level: 0,
         }
     }
 }
@@ -246,6 +268,37 @@ impl Mixer {
     /// Broadcast an event to all subscribed GUI clients. Removes dead senders.
     fn broadcast(&self, event: DaemonEvent) {
         broadcast_event(&self.subscribers, event);
+    }
+
+    /// Mirror device-reported ANC state into MixerState without
+    /// re-pushing to the device. Called when the periodic battery
+    /// reply carries fresh ANC bytes — covers the case where the
+    /// user presses the headset's ANC button while we weren't
+    /// listening for an OPT_NOISE_CANCELLING push event.
+    fn sync_anc_from_device(&self, anc_byte: u8, trans_level: u8) {
+        let new_mode = AncMode::from_byte(anc_byte);
+        let new_trans = trans_level.clamp(1, 10);
+        let (mode_changed, trans_changed) = {
+            let mut st = self.state.lock().unwrap();
+            let mode_changed = st.anc_mode != new_mode;
+            let trans_changed = st.anc_transparent_level != new_trans;
+            st.anc_mode = new_mode;
+            st.anc_transparent_level = new_trans;
+            st.applied_anc_mode = new_mode.as_byte();
+            st.applied_anc_transparent_level = new_trans;
+            (mode_changed, trans_changed)
+        };
+        if mode_changed || trans_changed {
+            persist_dial_state(&self.state);
+        }
+        if mode_changed {
+            self.broadcast(DaemonEvent::AncModeChanged { mode: new_mode });
+        }
+        if trans_changed {
+            self.broadcast(DaemonEvent::AncTransparentLevelChanged {
+                level: new_trans,
+            });
+        }
     }
 
     /// Send a desktop notification via notify-send. Two gates:
@@ -489,14 +542,27 @@ impl Mixer {
 
         while self.running.load(Ordering::Relaxed) {
             // One state read per iteration covers all pending GUI
-            // writes (sidetone + OLED brightness + gauge toggle).
-            let (want_sidetone, want_bright, applied_bright, want_show_gauge) = {
+            // writes (sidetone + OLED brightness + gauge toggle + ANC).
+            let (
+                want_sidetone,
+                want_bright,
+                applied_bright,
+                want_show_gauge,
+                want_anc_mode,
+                applied_anc_mode,
+                want_anc_trans,
+                applied_anc_trans,
+            ) = {
                 let st = self.state.lock().unwrap();
                 (
                     st.sidetone_level,
                     st.oled_brightness,
                     st.applied_oled_brightness,
                     st.oled_show_gauge,
+                    st.anc_mode,
+                    st.applied_anc_mode,
+                    st.anc_transparent_level,
+                    st.applied_anc_transparent_level,
                 )
             };
             if want_sidetone != last_sidetone {
@@ -529,6 +595,22 @@ impl Mixer {
                     }
                 }
                 last_show_gauge = want_show_gauge;
+            }
+
+            // Apply pending ANC state. Same once-per-iteration pattern
+            // as brightness: write, then mark applied unconditionally
+            // so a silently-failed firmware write doesn't loop forever.
+            if want_anc_mode.as_byte() != applied_anc_mode {
+                if let Err(e) = dev.set_anc_mode(want_anc_mode.as_byte()) {
+                    warn!("Failed to apply ANC mode {want_anc_mode:?}: {e}");
+                }
+                self.state.lock().unwrap().applied_anc_mode = want_anc_mode.as_byte();
+            }
+            if want_anc_trans != applied_anc_trans {
+                if let Err(e) = dev.set_anc_transparent_level(want_anc_trans) {
+                    warn!("Failed to apply ANC transparent level {want_anc_trans}: {e}");
+                }
+                self.state.lock().unwrap().applied_anc_transparent_level = want_anc_trans;
             }
 
             // Short timeout keeps dial-to-update latency low; battery
@@ -567,6 +649,15 @@ impl Mixer {
                     }
                     HidEvent::Battery(bat) => {
                         debug!("battery: {}% ({})", bat.level, bat.status);
+                        // Battery reply also carries current ANC state per
+                        // ASM yaml — mirror it into our state so the GUI
+                        // tracks reality (e.g. user pressed the headset's
+                        // ANC button while we weren't looking).
+                        if let Some((anc_byte, trans_level)) =
+                            NovaDevice::anc_from_battery_reply(&msg)
+                        {
+                            self.sync_anc_from_device(anc_byte, trans_level);
+                        }
                         {
                             let mut st = self.state.lock().unwrap();
                             st.battery = Some(bat.clone());
@@ -575,6 +666,41 @@ impl Mixer {
                             level: bat.level,
                             status: bat.status,
                         });
+                    }
+                    HidEvent::AncMode(byte) => {
+                        debug!("anc-mode push: byte=0x{byte:02x}");
+                        let mode = AncMode::from_byte(byte);
+                        let changed = {
+                            let mut st = self.state.lock().unwrap();
+                            let prior = st.anc_mode;
+                            st.anc_mode = mode;
+                            // Mark applied in lockstep so the event
+                            // loop doesn't echo this back to the
+                            // device on the next iteration.
+                            st.applied_anc_mode = mode.as_byte();
+                            prior != mode
+                        };
+                        if changed {
+                            persist_dial_state(&self.state);
+                            self.broadcast(DaemonEvent::AncModeChanged { mode });
+                        }
+                    }
+                    HidEvent::AncTransparentLevel(level) => {
+                        debug!("anc-transparent-level push: {level}");
+                        let clamped = level.clamp(1, 10);
+                        let changed = {
+                            let mut st = self.state.lock().unwrap();
+                            let prior = st.anc_transparent_level;
+                            st.anc_transparent_level = clamped;
+                            st.applied_anc_transparent_level = clamped;
+                            prior != clamped
+                        };
+                        if changed {
+                            persist_dial_state(&self.state);
+                            self.broadcast(DaemonEvent::AncTransparentLevelChanged {
+                                level: clamped,
+                            });
+                        }
                     }
                     HidEvent::Unknown => {}
                 },

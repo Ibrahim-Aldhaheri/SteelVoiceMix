@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{EqState, MicState, VolumeBoostState};
+use crate::protocol::{AncMode, EqState, MicState, VolumeBoostState};
 
 /// What the daemon remembers across restarts. Most fields default to
 /// "off" so a fresh install doesn't surprise users with extra output
@@ -111,6 +111,14 @@ pub struct DaemonState {
     /// Defaults to true so first-run users see the gauge.
     #[serde(default = "default_true")]
     pub oled_show_gauge: bool,
+    /// Headset ANC mode (off / transparent / on). Re-applied on
+    /// every reconnect.
+    #[serde(default)]
+    pub anc_mode: AncMode,
+    /// Transparent-mode intensity level (1..=10). Re-applied on
+    /// every reconnect.
+    #[serde(default = "default_anc_transparent_level")]
+    pub anc_transparent_level: u8,
 }
 
 fn default_chatmix_half() -> u8 {
@@ -130,6 +138,10 @@ fn default_notifications_enabled() -> bool {
 }
 
 fn default_oled_brightness() -> u8 {
+    5
+}
+
+fn default_anc_transparent_level() -> u8 {
     5
 }
 
@@ -156,6 +168,8 @@ impl Default for DaemonState {
             chat_vol: default_chatmix_half(),
             oled_brightness: default_oled_brightness(),
             oled_show_gauge: true,
+            anc_mode: AncMode::Off,
+            anc_transparent_level: default_anc_transparent_level(),
         }
     }
 }

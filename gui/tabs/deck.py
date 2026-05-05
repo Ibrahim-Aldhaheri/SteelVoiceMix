@@ -1,17 +1,21 @@
-"""Deck tab — base-station hardware controls (OLED brightness today)."""
+"""Deck tab — base-station + headset hardware controls (OLED + ANC today)."""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
 
 from ..widgets import NoWheelSlider, card, labelled_toggle
+
+_ANC_MODES = ("off", "transparent", "on")
 
 
 class DeckTab(QWidget):
@@ -25,6 +29,7 @@ class DeckTab(QWidget):
 
         layout.addWidget(self._build_oled_card())
         layout.addWidget(self._build_gauge_card())
+        layout.addWidget(self._build_anc_card())
 
         self._not_connected_hint = QLabel(
             self.tr(
@@ -49,6 +54,12 @@ class DeckTab(QWidget):
         self._oled_send_timer.setInterval(120)
         self._oled_send_timer.timeout.connect(self._send_oled_brightness)
         self._oled_pending_level: int | None = None
+
+        self._anc_send_timer = QTimer(self)
+        self._anc_send_timer.setSingleShot(True)
+        self._anc_send_timer.setInterval(120)
+        self._anc_send_timer.timeout.connect(self._send_anc_transparent_level)
+        self._anc_pending_level: int | None = None
 
     def _build_oled_card(self) -> QWidget:
         row = QHBoxLayout()
@@ -117,6 +128,76 @@ class DeckTab(QWidget):
 
         return card(self.tr("ChatMix Gauge"), gauge_row, help_lbl)
 
+    def _build_anc_card(self) -> QWidget:
+        # Mode picker — three exclusive buttons for off / transparent /
+        # on. Maps 1:1 to the daemon's set-anc-mode command. The
+        # headset's own hardware button cycles through the same three
+        # states; the daemon's hardware-event listener pushes back into
+        # this widget via on_anc_mode_changed.
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(6)
+        self._anc_button_group = QButtonGroup(self)
+        self._anc_button_group.setExclusive(True)
+        self._anc_buttons: dict[str, QPushButton] = {}
+        for mode, label in (
+            ("off", self.tr("Off")),
+            ("transparent", self.tr("Transparent")),
+            ("on", self.tr("ANC On")),
+        ):
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setEnabled(self._daemon is not None)
+            btn.clicked.connect(
+                lambda _checked, m=mode: self._send_anc_mode(m)
+            )
+            self._anc_buttons[mode] = btn
+            self._anc_button_group.addButton(btn)
+            mode_row.addWidget(btn, 1)
+        self._anc_buttons["off"].setChecked(True)
+
+        # Transparent intensity slider — only audibly affects the
+        # headset when mode == transparent, but the daemon accepts the
+        # write regardless. Disabled visually outside transparent mode
+        # to make the dependency obvious.
+        slider_row = QHBoxLayout()
+        slider_icon = QLabel("🎚")
+        slider_icon.setFixedWidth(36)
+        slider_icon.setStyleSheet("font-size: 16px;")
+        self.anc_transparent_slider = NoWheelSlider(Qt.Horizontal)
+        self.anc_transparent_slider.setRange(1, 10)
+        self.anc_transparent_slider.setSingleStep(1)
+        self.anc_transparent_slider.setPageStep(1)
+        self.anc_transparent_slider.setTickInterval(1)
+        self.anc_transparent_slider.setTickPosition(QSlider.TicksBelow)
+        self.anc_transparent_slider.setValue(5)
+        self.anc_transparent_slider.setEnabled(False)
+        self.anc_transparent_slider.valueChanged.connect(
+            self._on_anc_transparent_value_changed
+        )
+        self.anc_transparent_value = QLabel("5 / 10")
+        self.anc_transparent_value.setFixedWidth(64)
+        self.anc_transparent_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        slider_row.addWidget(slider_icon)
+        slider_row.addWidget(self.anc_transparent_slider, 1)
+        slider_row.addWidget(self.anc_transparent_value)
+
+        help_lbl = QLabel(
+            self.tr(
+                "Active Noise Cancellation. The headset's hardware "
+                "button cycles the same three modes; changes there "
+                "reflect here automatically. Transparent intensity "
+                "(1..10) only matters in Transparent mode."
+            )
+        )
+        help_lbl.setWordWrap(True)
+        help_lbl.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        return card(
+            self.tr("Headset ANC"), mode_row, slider_row, help_lbl,
+        )
+
     def on_oled_brightness_changed(self, level: int) -> None:
         # Block signals so the daemon echo doesn't loop back as another
         # set-oled-brightness command.
@@ -140,6 +221,33 @@ class DeckTab(QWidget):
         finally:
             self.gauge_toggle.blockSignals(was_blocked)
 
+    def on_anc_mode_changed(self, mode: str) -> None:
+        if mode not in _ANC_MODES:
+            return
+        btn = self._anc_buttons.get(mode)
+        if btn is None:
+            return
+        # Block both the button's own signal and the group's so the
+        # round-trip from daemon doesn't fire another set-anc-mode.
+        was_blocked = btn.blockSignals(True)
+        try:
+            btn.setChecked(True)
+        finally:
+            btn.blockSignals(was_blocked)
+        # Slider only useful in transparent mode.
+        self.anc_transparent_slider.setEnabled(
+            self._daemon is not None and mode == "transparent"
+        )
+
+    def on_anc_transparent_level_changed(self, level: int) -> None:
+        clamped = max(1, min(10, int(level)))
+        was_blocked = self.anc_transparent_slider.blockSignals(True)
+        try:
+            self.anc_transparent_slider.setValue(clamped)
+        finally:
+            self.anc_transparent_slider.blockSignals(was_blocked)
+        self.anc_transparent_value.setText(f"{clamped} / 10")
+
     def _on_brightness_value_changed(self, value: int) -> None:
         self.oled_brightness_value.setText(f"{value} / 10")
         self._oled_pending_level = int(value)
@@ -159,3 +267,24 @@ class DeckTab(QWidget):
         self._daemon.send_command(
             "set-oled-show-gauge", enabled=bool(checked)
         )
+
+    def _send_anc_mode(self, mode: str) -> None:
+        if self._daemon is None or mode not in _ANC_MODES:
+            return
+        self._daemon.send_command("set-anc-mode", mode=mode)
+        # Local UI update — the daemon will broadcast back, but we
+        # don't want the slider's enabled state to lag the click.
+        self.anc_transparent_slider.setEnabled(mode == "transparent")
+
+    def _on_anc_transparent_value_changed(self, value: int) -> None:
+        self.anc_transparent_value.setText(f"{value} / 10")
+        self._anc_pending_level = int(value)
+        self._anc_send_timer.start()
+
+    def _send_anc_transparent_level(self) -> None:
+        if self._daemon is None or self._anc_pending_level is None:
+            return
+        self._daemon.send_command(
+            "set-anc-transparent-level", level=self._anc_pending_level
+        )
+        self._anc_pending_level = None

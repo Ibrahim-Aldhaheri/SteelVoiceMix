@@ -124,6 +124,10 @@ class DaemonSignals(QObject):
     oled_presence_changed = Signal(bool)
     # User pref: draw the ChatMix gauge on the OLED (vs. native UI).
     oled_show_gauge_changed = Signal(bool)
+    # Headset ANC mode — "off" / "transparent" / "on".
+    anc_mode_changed = Signal(str)
+    # Transparent-mode intensity level (1..10).
+    anc_transparent_level_changed = Signal(int)
     # Daemon-side desktop notification toggle (separate from the GUI's
     # own minimize-to-tray toast; this one gates the connect /
     # disconnect notify-send popups emitted by the Rust daemon).
@@ -241,6 +245,12 @@ class DaemonClient:
             self.signals.oled_presence_changed.emit(bool(event.get("present", False)))
         elif ev == "oled-show-gauge-changed":
             self.signals.oled_show_gauge_changed.emit(bool(event.get("enabled", True)))
+        elif ev == "anc-mode-changed":
+            self.signals.anc_mode_changed.emit(str(event.get("mode", "off")))
+        elif ev == "anc-transparent-level-changed":
+            self.signals.anc_transparent_level_changed.emit(
+                int(event.get("level", 5))
+            )
         elif ev == "notifications-enabled-changed":
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("enabled", True))
@@ -297,6 +307,12 @@ class DaemonClient:
             )
             self.signals.oled_show_gauge_changed.emit(
                 bool(event.get("oled_show_gauge", True))
+            )
+            self.signals.anc_mode_changed.emit(
+                str(event.get("anc_mode", "off"))
+            )
+            self.signals.anc_transparent_level_changed.emit(
+                int(event.get("anc_transparent_level", 5))
             )
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("notifications_enabled", True))

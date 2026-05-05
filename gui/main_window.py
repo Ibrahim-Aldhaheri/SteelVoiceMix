@@ -359,6 +359,10 @@ class MixerGUI(QMainWindow):
         self.signals.oled_show_gauge_changed.connect(
             self.deck_tab.on_oled_show_gauge_changed
         )
+        self.signals.anc_mode_changed.connect(self.deck_tab.on_anc_mode_changed)
+        self.signals.anc_transparent_level_changed.connect(
+            self.deck_tab.on_anc_transparent_level_changed
+        )
 
     # ----------------------------------------------------- header + chatmix
 

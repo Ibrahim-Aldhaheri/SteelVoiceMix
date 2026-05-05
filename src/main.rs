@@ -22,7 +22,7 @@ use audio::SinkManager;
 use filter_chain::{FilterChainHandle, FilterChainSpec};
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
 use protocol::{
-    default_channel_bands, ClientCommand, DaemonEvent, EqChannel, EqState, MicFeature,
+    default_channel_bands, AncMode, ClientCommand, DaemonEvent, EqChannel, EqState, MicFeature,
     MicState, VolumeBoost,
 };
 use routing::{spawn_router, RouterState};
@@ -63,6 +63,8 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         oled_brightness: st.oled_brightness,
         oled_present: st.oled_present,
         oled_show_gauge: st.oled_show_gauge,
+        anc_mode: st.anc_mode,
+        anc_transparent_level: st.anc_transparent_level,
     }
 }
 
@@ -129,6 +131,8 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         chat_vol: st.chat_vol,
         oled_brightness: st.oled_brightness,
         oled_show_gauge: st.oled_show_gauge,
+        anc_mode: st.anc_mode,
+        anc_transparent_level: st.anc_transparent_level,
     });
 }
 
@@ -350,6 +354,8 @@ fn handle_client(
                     st.notifications_enabled = true;
                     st.oled_brightness = 5;
                     st.oled_show_gauge = true;
+                    st.anc_mode = AncMode::Off;
+                    st.anc_transparent_level = 5;
                 }
                 router
                     .enabled
@@ -424,6 +430,14 @@ fn handle_client(
                 broadcast_event(
                     &subscribers,
                     DaemonEvent::OledShowGaugeChanged { enabled: true },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::AncModeChanged { mode: AncMode::Off },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::AncTransparentLevelChanged { level: 5 },
                 );
             }
             ClientCommand::SetSurroundEnabled { enabled } => {
@@ -672,6 +686,31 @@ fn handle_client(
                     DaemonEvent::OledShowGaugeChanged { enabled },
                 );
             }
+            ClientCommand::SetAncMode { mode } => {
+                {
+                    let mut st = state.lock().unwrap();
+                    st.anc_mode = mode;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: set-anc-mode mode={mode:?}");
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::AncModeChanged { mode },
+                );
+            }
+            ClientCommand::SetAncTransparentLevel { level } => {
+                let clamped = level.clamp(1, 10);
+                {
+                    let mut st = state.lock().unwrap();
+                    st.anc_transparent_level = clamped;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: set-anc-transparent-level level={clamped}");
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::AncTransparentLevelChanged { level: clamped },
+                );
+            }
             ClientCommand::SetNotificationsEnabled { enabled } => {
                 {
                     let mut st = state.lock().unwrap();
@@ -852,6 +891,8 @@ fn main() {
     let persisted_chat_vol = persisted.chat_vol;
     let oled_brightness = persisted.oled_brightness.clamp(1, 10);
     let oled_show_gauge = persisted.oled_show_gauge;
+    let anc_mode = persisted.anc_mode;
+    let anc_transparent_level = persisted.anc_transparent_level.clamp(1, 10);
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -881,8 +922,9 @@ fn main() {
         mic_state.ai_noise_cancellation.enabled,
     );
     info!(
-        "Sidetone level: {} | Daemon notifications: {} | OLED brightness: {} | OLED gauge: {}",
+        "Sidetone level: {} | Daemon notifications: {} | OLED brightness: {} | OLED gauge: {} | ANC: {:?} (transparent level {})",
         sidetone_level, notifications_enabled, oled_brightness, oled_show_gauge,
+        anc_mode, anc_transparent_level,
     );
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(
@@ -901,6 +943,8 @@ fn main() {
         persisted_chat_vol,
         oled_brightness,
         oled_show_gauge,
+        anc_mode,
+        anc_transparent_level,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));

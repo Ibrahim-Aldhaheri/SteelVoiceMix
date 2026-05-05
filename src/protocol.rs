@@ -27,6 +27,36 @@ pub enum EqChannel {
     Mic,
 }
 
+/// Headset ANC (Active Noise Cancellation) mode. Wire byte mapping
+/// (verified byte-exact against ASM nova_pro_wireless.yaml):
+/// `Off=0x00`, `Transparent=0x01`, `On=0x02`. JSON encoding is
+/// lowercase strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AncMode {
+    #[default]
+    Off,
+    Transparent,
+    On,
+}
+
+impl AncMode {
+    pub fn as_byte(self) -> u8 {
+        match self {
+            AncMode::Off => 0,
+            AncMode::Transparent => 1,
+            AncMode::On => 2,
+        }
+    }
+    pub fn from_byte(b: u8) -> Self {
+        match b {
+            1 => AncMode::Transparent,
+            2 => AncMode::On,
+            _ => AncMode::Off,
+        }
+    }
+}
+
 /// Number of EQ bands per channel. Common parametric-EQ preset JSONs
 /// carry exactly `parametricEQ.filter1..filter10` — 10 bands here lets
 /// those load 1:1 without padding or truncation.
@@ -391,6 +421,13 @@ pub enum ClientCommand {
     /// SteelSeries UI (battery / ChatMix / volume / EQ-mode screens).
     #[serde(rename = "set-oled-show-gauge")]
     SetOledShowGauge { enabled: bool },
+    /// Set headset ANC mode. Off / Transparent / On.
+    #[serde(rename = "set-anc-mode")]
+    SetAncMode { mode: AncMode },
+    /// Set transparent-mode intensity level (clamped to 1..=10).
+    /// Only audibly affects the headset when ANC mode is `transparent`.
+    #[serde(rename = "set-anc-transparent-level")]
+    SetAncTransparentLevel { level: u8 },
     /// Toggle daemon-side desktop notifications (the connect /
     /// disconnect notify-send popups). Distinct from the GUI's own
     /// minimize-to-tray toast, which is GUI-side only.
@@ -445,6 +482,10 @@ pub enum DaemonEvent {
         oled_present: bool,
         /// User pref: draw the ChatMix gauge on the OLED.
         oled_show_gauge: bool,
+        /// Headset ANC mode (off / transparent / on).
+        anc_mode: AncMode,
+        /// Transparent-mode intensity level (1..=10).
+        anc_transparent_level: u8,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -520,6 +561,15 @@ pub enum DaemonEvent {
     /// Deck-tab toggle from this.
     #[serde(rename = "oled-show-gauge-changed")]
     OledShowGaugeChanged { enabled: bool },
+
+    /// Fired when ANC mode changes (GUI command, hardware-button push,
+    /// or persisted-state restore on connect).
+    #[serde(rename = "anc-mode-changed")]
+    AncModeChanged { mode: AncMode },
+
+    /// Fired when transparent-mode intensity changes.
+    #[serde(rename = "anc-transparent-level-changed")]
+    AncTransparentLevelChanged { level: u8 },
 
     /// Fired when daemon-side desktop notifications are toggled.
     #[serde(rename = "notifications-enabled-changed")]
@@ -615,6 +665,8 @@ mod tests {
             oled_brightness: 5,
             oled_present: true,
             oled_show_gauge: true,
+            anc_mode: AncMode::Off,
+            anc_transparent_level: 5,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -862,6 +914,47 @@ mod tests {
             assert_eq!(json["event"], "oled-show-gauge-changed");
             assert_eq!(json["enabled"], enabled);
         }
+    }
+
+    #[test]
+    fn anc_mode_round_trip() {
+        for (mode, label, byte) in [
+            (AncMode::Off, "off", 0u8),
+            (AncMode::Transparent, "transparent", 1u8),
+            (AncMode::On, "on", 2u8),
+        ] {
+            let cmd_json = format!(r#"{{"cmd":"set-anc-mode","mode":"{label}"}}"#);
+            let parsed: ClientCommand = from_str(&cmd_json).unwrap();
+            match parsed {
+                ClientCommand::SetAncMode { mode: m } => assert_eq!(m, mode),
+                other => panic!("expected SetAncMode, got {other:?}"),
+            }
+            assert_eq!(mode.as_byte(), byte);
+            assert_eq!(AncMode::from_byte(byte), mode);
+        }
+    }
+
+    #[test]
+    fn anc_transparent_level_command_parses() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-anc-transparent-level","level":7}"#).unwrap();
+        match cmd {
+            ClientCommand::SetAncTransparentLevel { level } => assert_eq!(level, 7),
+            other => panic!("expected SetAncTransparentLevel, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn anc_events_shape() {
+        let ev = DaemonEvent::AncModeChanged { mode: AncMode::Transparent };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "anc-mode-changed");
+        assert_eq!(json["mode"], "transparent");
+
+        let ev = DaemonEvent::AncTransparentLevelChanged { level: 8 };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "anc-transparent-level-changed");
+        assert_eq!(json["level"], 8);
     }
 
     #[test]
