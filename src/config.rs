@@ -106,6 +106,11 @@ pub struct DaemonState {
     /// it after each reconnect.
     #[serde(default = "default_oled_brightness")]
     pub oled_brightness: u8,
+    /// Whether the daemon draws the ChatMix gauge on the OLED (vs.
+    /// handing the screen back to the built-in SteelSeries UI).
+    /// Defaults to true so first-run users see the gauge.
+    #[serde(default = "default_true")]
+    pub oled_show_gauge: bool,
 }
 
 fn default_chatmix_half() -> u8 {
@@ -150,6 +155,7 @@ impl Default for DaemonState {
             game_vol: default_chatmix_half(),
             chat_vol: default_chatmix_half(),
             oled_brightness: default_oled_brightness(),
+            oled_show_gauge: true,
         }
     }
 }

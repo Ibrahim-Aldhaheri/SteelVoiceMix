@@ -122,6 +122,8 @@ class DaemonSignals(QObject):
     oled_brightness_changed = Signal(int)
     # True iff the connected device exposes an OLED.
     oled_presence_changed = Signal(bool)
+    # User pref: draw the ChatMix gauge on the OLED (vs. native UI).
+    oled_show_gauge_changed = Signal(bool)
     # Daemon-side desktop notification toggle (separate from the GUI's
     # own minimize-to-tray toast; this one gates the connect /
     # disconnect notify-send popups emitted by the Rust daemon).
@@ -237,6 +239,8 @@ class DaemonClient:
             self.signals.oled_brightness_changed.emit(int(event.get("level", 5)))
         elif ev == "oled-presence-changed":
             self.signals.oled_presence_changed.emit(bool(event.get("present", False)))
+        elif ev == "oled-show-gauge-changed":
+            self.signals.oled_show_gauge_changed.emit(bool(event.get("enabled", True)))
         elif ev == "notifications-enabled-changed":
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("enabled", True))
@@ -290,6 +294,9 @@ class DaemonClient:
             )
             self.signals.oled_presence_changed.emit(
                 bool(event.get("oled_present", False))
+            )
+            self.signals.oled_show_gauge_changed.emit(
+                bool(event.get("oled_show_gauge", True))
             )
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("notifications_enabled", True))

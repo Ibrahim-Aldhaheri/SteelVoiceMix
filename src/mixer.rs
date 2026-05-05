@@ -52,6 +52,7 @@ fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
         game_vol: st.game_vol,
         chat_vol: st.chat_vol,
         oled_brightness: st.oled_brightness,
+        oled_show_gauge: st.oled_show_gauge,
     });
 }
 
@@ -83,10 +84,19 @@ enum SessionEnd {
     Shutdown,
 }
 
-/// Draw the gauge and, if the draw fails, drop the handle so we don't retry
-/// on every dial event. Wireless firmware that rejects feature reports stays
-/// rejecting them, and retrying costs ~970 ms per attempt inside ggoled_lib.
-fn draw_or_drop(display: &mut Option<ChatMixGauge>, game: u8, chat: u8) {
+/// Draw the gauge (when the user has it enabled) and, if the draw fails,
+/// drop the handle so we don't retry on every dial event. Wireless firmware
+/// that rejects feature reports stays rejecting them, and retrying costs
+/// ~970 ms per attempt inside ggoled_lib.
+fn draw_or_drop(
+    display: &mut Option<ChatMixGauge>,
+    game: u8,
+    chat: u8,
+    show_gauge: bool,
+) {
+    if !show_gauge {
+        return;
+    }
     if let Some(ref mut d) = display {
         if !d.show(game, chat) {
             warn!("OLED gauge failing — disabling for this session");
@@ -135,6 +145,11 @@ pub struct MixerState {
     /// True iff the connected hardware exposes an OLED. Lets the GUI
     /// gate OLED controls instead of assuming connected == has OLED.
     pub oled_present: bool,
+    /// User pref: draw the ChatMix gauge on the OLED. When false, the
+    /// daemon hands the screen back to the built-in SteelSeries UI
+    /// (return_to_ui) and stops issuing draws on dial changes.
+    /// Persisted across reconnects.
+    pub oled_show_gauge: bool,
 }
 
 impl MixerState {
@@ -154,6 +169,7 @@ impl MixerState {
         game_vol: u8,
         chat_vol: u8,
         oled_brightness: u8,
+        oled_show_gauge: bool,
     ) -> Self {
         MixerState {
             connected: false,
@@ -176,6 +192,7 @@ impl MixerState {
             oled_brightness,
             applied_oled_brightness: 0,
             oled_present: false,
+            oled_show_gauge,
         }
     }
 }
@@ -394,7 +411,13 @@ impl Mixer {
             game: init_game,
             chat: init_chat,
         });
-        draw_or_drop(&mut display, init_game, init_chat);
+        let initial_show_gauge = self.state.lock().unwrap().oled_show_gauge;
+        draw_or_drop(&mut display, init_game, init_chat, initial_show_gauge);
+        if !initial_show_gauge {
+            if let Some(ref d) = display {
+                d.return_to_native_ui();
+            }
+        }
         let (media_live, hdmi_live) = {
             let sm = self.sinks.lock().unwrap();
             (sm.media_enabled(), sm.hdmi_enabled())
@@ -462,13 +485,19 @@ impl Mixer {
         // device. Initialised from current state (already applied at
         // connect) so the first iteration doesn't double-send.
         let mut last_sidetone = self.state.lock().unwrap().sidetone_level;
+        let mut last_show_gauge = self.state.lock().unwrap().oled_show_gauge;
 
         while self.running.load(Ordering::Relaxed) {
-            // One state read per iteration covers both pending GUI
-            // writes (sidetone + OLED brightness).
-            let (want_sidetone, want_bright, applied_bright) = {
+            // One state read per iteration covers all pending GUI
+            // writes (sidetone + OLED brightness + gauge toggle).
+            let (want_sidetone, want_bright, applied_bright, want_show_gauge) = {
                 let st = self.state.lock().unwrap();
-                (st.sidetone_level, st.oled_brightness, st.applied_oled_brightness)
+                (
+                    st.sidetone_level,
+                    st.oled_brightness,
+                    st.applied_oled_brightness,
+                    st.oled_show_gauge,
+                )
             };
             if want_sidetone != last_sidetone {
                 if let Err(e) = dev.set_sidetone(want_sidetone) {
@@ -487,6 +516,19 @@ impl Mixer {
                     d.set_brightness(want_bright);
                 }
                 self.state.lock().unwrap().applied_oled_brightness = want_bright;
+            }
+
+            // Detect a transition from gauge-on to gauge-off and hand
+            // the device back to its built-in UI once. The reverse
+            // (off→on) is handled implicitly: the next dial event
+            // routes through draw_or_drop and the gauge redraws.
+            if want_show_gauge != last_show_gauge {
+                if !want_show_gauge {
+                    if let Some(ref d) = display {
+                        d.return_to_native_ui();
+                    }
+                }
+                last_show_gauge = want_show_gauge;
             }
 
             // Short timeout keeps dial-to-update latency low; battery
@@ -521,7 +563,7 @@ impl Mixer {
                             game: game_vol,
                             chat: chat_vol,
                         });
-                        draw_or_drop(display, game_vol, chat_vol);
+                        draw_or_drop(display, game_vol, chat_vol, want_show_gauge);
                     }
                     HidEvent::Battery(bat) => {
                         debug!("battery: {}% ({})", bat.level, bat.status);

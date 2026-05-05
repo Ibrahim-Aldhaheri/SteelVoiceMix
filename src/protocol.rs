@@ -386,6 +386,11 @@ pub enum ClientCommand {
     /// Set base-station OLED brightness (clamped to 1..=10).
     #[serde(rename = "set-oled-brightness")]
     SetOledBrightness { level: u8 },
+    /// Toggle whether the daemon draws the ChatMix gauge on the OLED.
+    /// `enabled=false` hands the screen back to the built-in
+    /// SteelSeries UI (battery / ChatMix / volume / EQ-mode screens).
+    #[serde(rename = "set-oled-show-gauge")]
+    SetOledShowGauge { enabled: bool },
     /// Toggle daemon-side desktop notifications (the connect /
     /// disconnect notify-send popups). Distinct from the GUI's own
     /// minimize-to-tray toast, which is GUI-side only.
@@ -438,6 +443,8 @@ pub enum DaemonEvent {
         oled_brightness: u8,
         /// True iff the connected device exposes an OLED.
         oled_present: bool,
+        /// User pref: draw the ChatMix gauge on the OLED.
+        oled_show_gauge: bool,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -508,6 +515,11 @@ pub enum DaemonEvent {
     /// disconnect. GUIs gate OLED-specific controls on this.
     #[serde(rename = "oled-presence-changed")]
     OledPresenceChanged { present: bool },
+
+    /// Fired when the show-gauge user pref toggles. GUI updates the
+    /// Deck-tab toggle from this.
+    #[serde(rename = "oled-show-gauge-changed")]
+    OledShowGaugeChanged { enabled: bool },
 
     /// Fired when daemon-side desktop notifications are toggled.
     #[serde(rename = "notifications-enabled-changed")]
@@ -602,6 +614,7 @@ mod tests {
             volume_boost: VolumeBoostState::default(),
             oled_brightness: 5,
             oled_present: true,
+            oled_show_gauge: true,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -828,6 +841,26 @@ mod tests {
             let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
             assert_eq!(json["event"], "oled-presence-changed");
             assert_eq!(json["present"], present);
+        }
+    }
+
+    #[test]
+    fn set_oled_show_gauge_command_parses() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-oled-show-gauge","enabled":false}"#).unwrap();
+        match cmd {
+            ClientCommand::SetOledShowGauge { enabled } => assert!(!enabled),
+            other => panic!("expected SetOledShowGauge, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn oled_show_gauge_changed_event_shape() {
+        for enabled in [true, false] {
+            let ev = DaemonEvent::OledShowGaugeChanged { enabled };
+            let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+            assert_eq!(json["event"], "oled-show-gauge-changed");
+            assert_eq!(json["enabled"], enabled);
         }
     }
 

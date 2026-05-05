@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..widgets import NoWheelSlider, card
+from ..widgets import NoWheelSlider, card, labelled_toggle
 
 
 class DeckTab(QWidget):
@@ -24,6 +24,7 @@ class DeckTab(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
 
         layout.addWidget(self._build_oled_card())
+        layout.addWidget(self._build_gauge_card())
 
         self._not_connected_hint = QLabel(
             self.tr(
@@ -89,6 +90,33 @@ class DeckTab(QWidget):
 
         return card(self.tr("OLED Brightness"), row, help_lbl)
 
+    def _build_gauge_card(self) -> QWidget:
+        gauge_row, self.gauge_toggle = labelled_toggle(
+            self.tr("Show ChatMix gauge on OLED"),
+            tooltip=self.tr(
+                "When off, the deck shows the built-in SteelSeries UI "
+                "(battery / ChatMix / volume / EQ-mode screens cycled "
+                "via the dial)."
+            ),
+        )
+        self.gauge_toggle.setChecked(True)
+        self.gauge_toggle.setEnabled(self._daemon is not None)
+        self.gauge_toggle.toggled.connect(self._on_show_gauge_toggled)
+
+        help_lbl = QLabel(
+            self.tr(
+                "Off hands the screen back to the deck's native UI. "
+                "On wireless variants the gauge can't draw anyway, so "
+                "this toggle is mostly cosmetic there — leave it on."
+            )
+        )
+        help_lbl.setWordWrap(True)
+        help_lbl.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        return card(self.tr("ChatMix Gauge"), gauge_row, help_lbl)
+
     def on_oled_brightness_changed(self, level: int) -> None:
         # Block signals so the daemon echo doesn't loop back as another
         # set-oled-brightness command.
@@ -103,6 +131,15 @@ class DeckTab(QWidget):
     def on_oled_presence_changed(self, present: bool) -> None:
         self._not_connected_hint.setVisible(not bool(present))
 
+    def on_oled_show_gauge_changed(self, enabled: bool) -> None:
+        # Block signals so the daemon echo doesn't loop back as another
+        # set-oled-show-gauge command.
+        was_blocked = self.gauge_toggle.blockSignals(True)
+        try:
+            self.gauge_toggle.setChecked(bool(enabled))
+        finally:
+            self.gauge_toggle.blockSignals(was_blocked)
+
     def _on_brightness_value_changed(self, value: int) -> None:
         self.oled_brightness_value.setText(f"{value} / 10")
         self._oled_pending_level = int(value)
@@ -115,3 +152,10 @@ class DeckTab(QWidget):
             "set-oled-brightness", level=self._oled_pending_level
         )
         self._oled_pending_level = None
+
+    def _on_show_gauge_toggled(self, checked: bool) -> None:
+        if self._daemon is None:
+            return
+        self._daemon.send_command(
+            "set-oled-show-gauge", enabled=bool(checked)
+        )

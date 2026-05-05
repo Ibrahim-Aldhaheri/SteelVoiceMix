@@ -62,6 +62,7 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         volume_boost: st.volume_boost,
         oled_brightness: st.oled_brightness,
         oled_present: st.oled_present,
+        oled_show_gauge: st.oled_show_gauge,
     }
 }
 
@@ -127,6 +128,7 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         game_vol: st.game_vol,
         chat_vol: st.chat_vol,
         oled_brightness: st.oled_brightness,
+        oled_show_gauge: st.oled_show_gauge,
     });
 }
 
@@ -347,6 +349,7 @@ fn handle_client(
                     st.sidetone_level = 0;
                     st.notifications_enabled = true;
                     st.oled_brightness = 5;
+                    st.oled_show_gauge = true;
                 }
                 router
                     .enabled
@@ -417,6 +420,10 @@ fn handle_client(
                 broadcast_event(
                     &subscribers,
                     DaemonEvent::OledBrightnessChanged { level: 5 },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::OledShowGaugeChanged { enabled: true },
                 );
             }
             ClientCommand::SetSurroundEnabled { enabled } => {
@@ -653,6 +660,18 @@ fn handle_client(
                     DaemonEvent::OledBrightnessChanged { level: clamped },
                 );
             }
+            ClientCommand::SetOledShowGauge { enabled } => {
+                {
+                    let mut st = state.lock().unwrap();
+                    st.oled_show_gauge = enabled;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: set-oled-show-gauge enabled={enabled}");
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::OledShowGaugeChanged { enabled },
+                );
+            }
             ClientCommand::SetNotificationsEnabled { enabled } => {
                 {
                     let mut st = state.lock().unwrap();
@@ -832,6 +851,7 @@ fn main() {
     let persisted_game_vol = persisted.game_vol;
     let persisted_chat_vol = persisted.chat_vol;
     let oled_brightness = persisted.oled_brightness.clamp(1, 10);
+    let oled_show_gauge = persisted.oled_show_gauge;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -861,8 +881,8 @@ fn main() {
         mic_state.ai_noise_cancellation.enabled,
     );
     info!(
-        "Sidetone level: {} | Daemon notifications: {} | OLED brightness: {}",
-        sidetone_level, notifications_enabled, oled_brightness,
+        "Sidetone level: {} | Daemon notifications: {} | OLED brightness: {} | OLED gauge: {}",
+        sidetone_level, notifications_enabled, oled_brightness, oled_show_gauge,
     );
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(
@@ -880,6 +900,7 @@ fn main() {
         persisted_game_vol,
         persisted_chat_vol,
         oled_brightness,
+        oled_show_gauge,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
