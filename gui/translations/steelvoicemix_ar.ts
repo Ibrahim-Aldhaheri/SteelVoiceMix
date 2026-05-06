@@ -1196,5 +1196,33 @@ Continue?</source>
         <source>Switching modes briefly drops the wireless link. Bind a keyboard shortcut to &lt;code&gt;steelvoicemix-cli wireless-mode toggle&lt;/code&gt; for a one-press flip when you walk to another room.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Microphone (hardware)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Gain</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Volume</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Mute LED</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hardware mic settings on the headset itself, written via the base-station HID. Distinct from the Microphone tab which controls software-side capture processing (gate, noise reduction, AI noise cancellation).</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 </TS>

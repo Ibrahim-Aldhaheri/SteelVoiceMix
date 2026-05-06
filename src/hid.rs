@@ -46,6 +46,17 @@ pub const OPT_TRANSPARENT_LEVEL: u8 = 0xB9;
 // must compare-and-skip when the value already matches the
 // applied state — both LAM and ASM lack this guard.
 pub const OPT_WIRELESS_MODE: u8 = 0xC3;
+// Audio gain — `[0x06, 0x27, value]` where 0x01 = low, 0x02 = high.
+pub const OPT_MIC_GAIN: u8 = 0x27;
+// Mic volume — `[0x06, 0x37, value]`, value 0x01..=0x0a (1=mute,
+// 10=100%). Slider settings; despite a typo in ASM's startup-sequence
+// comment claiming "01..a0" the slider definition (min/max/step) is
+// authoritative — confirmed against ASM `nova_pro_wireless.yaml:141`.
+pub const OPT_MIC_VOLUME: u8 = 0x37;
+// Mic-mute LED brightness — `[0x06, 0xbf, value]`, value 0x01..=0x0a.
+// Brightness of the red ring around the mic when muted. Status
+// readback at offset 11 of the battery reply.
+pub const OPT_MIC_LED_BRIGHTNESS: u8 = 0xBF;
 
 /// Battery status decoded from HID response.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -190,6 +201,25 @@ impl NovaDevice {
         self.send(&[TX, OPT_WIRELESS_MODE, mode])
     }
 
+    /// Set audio gain — 0x01 low, 0x02 high. Anything else clamps to
+    /// the nearest endpoint.
+    pub fn set_mic_gain(&self, gain: u8) -> Result<(), HidError> {
+        let gain = gain.clamp(1, 2);
+        self.send(&[TX, OPT_MIC_GAIN, gain])
+    }
+
+    /// Set mic volume (1..=10). 1 = mute, 10 = 100%.
+    pub fn set_mic_volume(&self, level: u8) -> Result<(), HidError> {
+        let level = level.clamp(1, 10);
+        self.send(&[TX, OPT_MIC_VOLUME, level])
+    }
+
+    /// Set mic-mute LED brightness (1..=10).
+    pub fn set_mic_led_brightness(&self, level: u8) -> Result<(), HidError> {
+        let level = level.clamp(1, 10);
+        self.send(&[TX, OPT_MIC_LED_BRIGHTNESS, level])
+    }
+
     /// Read a HID message with timeout (milliseconds). Returns None on timeout.
     pub fn read(&self, timeout_ms: i32) -> Result<Option<Vec<u8>>, HidError> {
         let mut buf = [0u8; MSG_LEN];
@@ -256,6 +286,14 @@ impl NovaDevice {
             return None;
         }
         Some(msg[13])
+    }
+
+    /// Pull mic LED brightness (offset 11) out of a battery reply.
+    pub fn mic_led_brightness_from_battery_reply(msg: &[u8]) -> Option<u8> {
+        if msg.len() < 16 || msg[1] != OPT_BATTERY {
+            return None;
+        }
+        Some(msg[11])
     }
 
     /// Request battery status from the base station.

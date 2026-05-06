@@ -363,6 +363,11 @@ class MixerGUI(QMainWindow):
         self.signals.wireless_mode_changed.connect(
             self.deck_tab.on_wireless_mode_changed
         )
+        self.signals.mic_gain_changed.connect(self.deck_tab.on_mic_gain_changed)
+        self.signals.mic_volume_changed.connect(self.deck_tab.on_mic_volume_changed)
+        self.signals.mic_led_brightness_changed.connect(
+            self.deck_tab.on_mic_led_brightness_changed
+        )
 
     # ----------------------------------------------------- header + chatmix
 

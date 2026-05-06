@@ -17,6 +17,7 @@ from ..widgets import NoWheelSlider, card
 
 _ANC_MODES = ("off", "transparent", "on")
 _WIRELESS_MODES = ("speed", "range")
+_MIC_GAINS = ("low", "high")
 
 # Stylesheet for the mode-picker buttons (ANC + Wireless). QPushButton's
 # default checked state is visually identical to unchecked, so we
@@ -54,6 +55,7 @@ class DeckTab(QWidget):
         layout.addWidget(self._build_oled_card())
         layout.addWidget(self._build_anc_card())
         layout.addWidget(self._build_wireless_card())
+        layout.addWidget(self._build_mic_hw_card())
 
         self._not_connected_hint = QLabel(
             self.tr(
@@ -84,6 +86,18 @@ class DeckTab(QWidget):
         self._anc_send_timer.setInterval(120)
         self._anc_send_timer.timeout.connect(self._send_anc_transparent_level)
         self._anc_pending_level: int | None = None
+
+        self._mic_volume_send_timer = QTimer(self)
+        self._mic_volume_send_timer.setSingleShot(True)
+        self._mic_volume_send_timer.setInterval(120)
+        self._mic_volume_send_timer.timeout.connect(self._send_mic_volume)
+        self._mic_volume_pending: int | None = None
+
+        self._mic_led_send_timer = QTimer(self)
+        self._mic_led_send_timer.setSingleShot(True)
+        self._mic_led_send_timer.setInterval(120)
+        self._mic_led_send_timer.timeout.connect(self._send_mic_led_brightness)
+        self._mic_led_pending: int | None = None
 
     def _build_oled_card(self) -> QWidget:
         row = QHBoxLayout()
@@ -237,6 +251,96 @@ class DeckTab(QWidget):
 
         return card(self.tr("Wireless Mode"), mode_row, help_lbl)
 
+    def _build_mic_hw_card(self) -> QWidget:
+        # Audio gain — Low / High picker. Same _MODE_BUTTON_STYLE as
+        # ANC and Wireless, so the visual idiom is consistent across
+        # the deck.
+        gain_row = QHBoxLayout()
+        gain_row.setSpacing(6)
+        gain_label = QLabel(self.tr("Gain"))
+        gain_label.setFixedWidth(64)
+        gain_row.addWidget(gain_label)
+        self._mic_gain_button_group = QButtonGroup(self)
+        self._mic_gain_button_group.setExclusive(True)
+        self._mic_gain_buttons: dict[str, QPushButton] = {}
+        for gain, label in (
+            ("low", self.tr("Low")),
+            ("high", self.tr("High")),
+        ):
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setEnabled(self._daemon is not None)
+            btn.setStyleSheet(_MODE_BUTTON_STYLE)
+            btn.clicked.connect(
+                lambda _checked, g=gain: self._send_mic_gain(g)
+            )
+            self._mic_gain_buttons[gain] = btn
+            self._mic_gain_button_group.addButton(btn)
+            gain_row.addWidget(btn, 1)
+        self._mic_gain_buttons["high"].setChecked(True)
+
+        # Mic volume — 1..10 slider (1 = mute). Per ASM yaml: 0x01 is
+        # mute, 0x0a is 100%.
+        vol_row = QHBoxLayout()
+        vol_label = QLabel(self.tr("Volume"))
+        vol_label.setFixedWidth(64)
+        self.mic_volume_slider = NoWheelSlider(Qt.Horizontal)
+        self.mic_volume_slider.setRange(1, 10)
+        self.mic_volume_slider.setSingleStep(1)
+        self.mic_volume_slider.setPageStep(1)
+        self.mic_volume_slider.setTickInterval(1)
+        self.mic_volume_slider.setTickPosition(QSlider.TicksBelow)
+        self.mic_volume_slider.setValue(10)
+        self.mic_volume_slider.setEnabled(self._daemon is not None)
+        self.mic_volume_slider.valueChanged.connect(
+            self._on_mic_volume_value_changed
+        )
+        self.mic_volume_value = QLabel("10 / 10")
+        self.mic_volume_value.setFixedWidth(64)
+        self.mic_volume_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        vol_row.addWidget(vol_label)
+        vol_row.addWidget(self.mic_volume_slider, 1)
+        vol_row.addWidget(self.mic_volume_value)
+
+        # Mic-mute LED brightness — 1..10 slider for the red ring on
+        # the headset's mic.
+        led_row = QHBoxLayout()
+        led_label = QLabel(self.tr("Mute LED"))
+        led_label.setFixedWidth(64)
+        self.mic_led_slider = NoWheelSlider(Qt.Horizontal)
+        self.mic_led_slider.setRange(1, 10)
+        self.mic_led_slider.setSingleStep(1)
+        self.mic_led_slider.setPageStep(1)
+        self.mic_led_slider.setTickInterval(1)
+        self.mic_led_slider.setTickPosition(QSlider.TicksBelow)
+        self.mic_led_slider.setValue(10)
+        self.mic_led_slider.setEnabled(self._daemon is not None)
+        self.mic_led_slider.valueChanged.connect(self._on_mic_led_value_changed)
+        self.mic_led_value = QLabel("10 / 10")
+        self.mic_led_value.setFixedWidth(64)
+        self.mic_led_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        led_row.addWidget(led_label)
+        led_row.addWidget(self.mic_led_slider, 1)
+        led_row.addWidget(self.mic_led_value)
+
+        help_lbl = QLabel(
+            self.tr(
+                "Hardware mic settings on the headset itself, written "
+                "via the base-station HID. Distinct from the Microphone "
+                "tab which controls software-side capture processing "
+                "(gate, noise reduction, AI noise cancellation)."
+            )
+        )
+        help_lbl.setWordWrap(True)
+        help_lbl.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        return card(
+            self.tr("Microphone (hardware)"),
+            gain_row, vol_row, led_row, help_lbl,
+        )
+
     def on_oled_brightness_changed(self, level: int) -> None:
         # Block signals so the daemon echo doesn't loop back as another
         # set-oled-brightness command.
@@ -290,6 +394,36 @@ class DeckTab(QWidget):
         finally:
             btn.blockSignals(was_blocked)
 
+    def on_mic_gain_changed(self, gain: str) -> None:
+        if gain not in _MIC_GAINS:
+            return
+        btn = self._mic_gain_buttons.get(gain)
+        if btn is None:
+            return
+        was_blocked = btn.blockSignals(True)
+        try:
+            btn.setChecked(True)
+        finally:
+            btn.blockSignals(was_blocked)
+
+    def on_mic_volume_changed(self, level: int) -> None:
+        clamped = max(1, min(10, int(level)))
+        was_blocked = self.mic_volume_slider.blockSignals(True)
+        try:
+            self.mic_volume_slider.setValue(clamped)
+        finally:
+            self.mic_volume_slider.blockSignals(was_blocked)
+        self.mic_volume_value.setText(f"{clamped} / 10")
+
+    def on_mic_led_brightness_changed(self, level: int) -> None:
+        clamped = max(1, min(10, int(level)))
+        was_blocked = self.mic_led_slider.blockSignals(True)
+        try:
+            self.mic_led_slider.setValue(clamped)
+        finally:
+            self.mic_led_slider.blockSignals(was_blocked)
+        self.mic_led_value.setText(f"{clamped} / 10")
+
     def _on_brightness_value_changed(self, value: int) -> None:
         self.oled_brightness_value.setText(f"{value} / 10")
         self._oled_pending_level = int(value)
@@ -328,3 +462,34 @@ class DeckTab(QWidget):
         if self._daemon is None or mode not in _WIRELESS_MODES:
             return
         self._daemon.send_command("set-wireless-mode", mode=mode)
+
+    def _send_mic_gain(self, gain: str) -> None:
+        if self._daemon is None or gain not in _MIC_GAINS:
+            return
+        self._daemon.send_command("set-mic-gain", gain=gain)
+
+    def _on_mic_volume_value_changed(self, value: int) -> None:
+        self.mic_volume_value.setText(f"{value} / 10")
+        self._mic_volume_pending = int(value)
+        self._mic_volume_send_timer.start()
+
+    def _send_mic_volume(self) -> None:
+        if self._daemon is None or self._mic_volume_pending is None:
+            return
+        self._daemon.send_command(
+            "set-mic-volume", level=self._mic_volume_pending
+        )
+        self._mic_volume_pending = None
+
+    def _on_mic_led_value_changed(self, value: int) -> None:
+        self.mic_led_value.setText(f"{value} / 10")
+        self._mic_led_pending = int(value)
+        self._mic_led_send_timer.start()
+
+    def _send_mic_led_brightness(self) -> None:
+        if self._daemon is None or self._mic_led_pending is None:
+            return
+        self._daemon.send_command(
+            "set-mic-led-brightness", level=self._mic_led_pending
+        )
+        self._mic_led_pending = None

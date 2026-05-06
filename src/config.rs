@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{AncMode, EqState, MicState, VolumeBoostState, WirelessMode};
+use crate::protocol::{AncMode, EqState, MicGain, MicState, VolumeBoostState, WirelessMode};
 
 /// What the daemon remembers across restarts. Most fields default to
 /// "off" so a fresh install doesn't surprise users with extra output
@@ -119,6 +119,15 @@ pub struct DaemonState {
     /// value to avoid bouncing the wireless link unnecessarily.
     #[serde(default)]
     pub wireless_mode: WirelessMode,
+    /// Audio gain (Low/High). Re-applied on every reconnect.
+    #[serde(default)]
+    pub mic_gain: MicGain,
+    /// Mic volume 1..=10 (1 = mute, 10 = 100%).
+    #[serde(default = "default_mic_level")]
+    pub mic_volume: u8,
+    /// Mic-mute LED brightness 1..=10.
+    #[serde(default = "default_mic_level")]
+    pub mic_led_brightness: u8,
 }
 
 fn default_chatmix_half() -> u8 {
@@ -143,6 +152,10 @@ fn default_oled_brightness() -> u8 {
 
 fn default_anc_transparent_level() -> u8 {
     5
+}
+
+fn default_mic_level() -> u8 {
+    10
 }
 
 fn default_true() -> bool {
@@ -170,6 +183,9 @@ impl Default for DaemonState {
             anc_mode: AncMode::Off,
             anc_transparent_level: default_anc_transparent_level(),
             wireless_mode: WirelessMode::Speed,
+            mic_gain: MicGain::High,
+            mic_volume: default_mic_level(),
+            mic_led_brightness: default_mic_level(),
         }
     }
 }

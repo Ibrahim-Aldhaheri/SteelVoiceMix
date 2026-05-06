@@ -13,7 +13,7 @@ use crate::config;
 use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
 use crate::protocol::{
-    AncMode, DaemonEvent, EqChannel, EqState, MicState, VolumeBoostState, WirelessMode,
+    AncMode, DaemonEvent, EqChannel, EqState, MicGain, MicState, VolumeBoostState, WirelessMode,
 };
 
 pub type SharedSinks = Arc<Mutex<SinkManager>>;
@@ -57,6 +57,9 @@ fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
         anc_mode: st.anc_mode,
         anc_transparent_level: st.anc_transparent_level,
         wireless_mode: st.wireless_mode,
+        mic_gain: st.mic_gain,
+        mic_volume: st.mic_volume,
+        mic_led_brightness: st.mic_led_brightness,
     });
 }
 
@@ -160,6 +163,15 @@ pub struct MixerState {
     /// from what the device reports back via the battery poll mirror,
     /// preventing unnecessary radio bounces on reconnect.
     pub applied_wireless_mode: u8,
+    /// Audio gain (Low/High). Persisted; re-applied on reconnect.
+    pub mic_gain: MicGain,
+    pub applied_mic_gain: u8,
+    /// Mic volume (1..=10). Persisted; re-applied on reconnect.
+    pub mic_volume: u8,
+    pub applied_mic_volume: u8,
+    /// Mic-mute LED brightness (1..=10). Persisted.
+    pub mic_led_brightness: u8,
+    pub applied_mic_led_brightness: u8,
 }
 
 impl MixerState {
@@ -182,6 +194,9 @@ impl MixerState {
         anc_mode: AncMode,
         anc_transparent_level: u8,
         wireless_mode: WirelessMode,
+        mic_gain: MicGain,
+        mic_volume: u8,
+        mic_led_brightness: u8,
     ) -> Self {
         MixerState {
             connected: false,
@@ -210,6 +225,12 @@ impl MixerState {
             applied_anc_transparent_level: 0,
             wireless_mode,
             applied_wireless_mode: u8::MAX,
+            mic_gain,
+            applied_mic_gain: u8::MAX,
+            mic_volume,
+            applied_mic_volume: 0,
+            mic_led_brightness,
+            applied_mic_led_brightness: 0,
         }
     }
 }
@@ -263,6 +284,24 @@ impl Mixer {
     /// Broadcast an event to all subscribed GUI clients. Removes dead senders.
     fn broadcast(&self, event: DaemonEvent) {
         broadcast_event(&self.subscribers, event);
+    }
+
+    /// Mirror device-reported mic LED brightness into MixerState.
+    /// Used so the GUI tracks whatever value the device actually has
+    /// after suspend/reconnect or after another tool changes it.
+    fn sync_mic_led_from_device(&self, level: u8) {
+        let clamped = level.clamp(1, 10);
+        let changed = {
+            let mut st = self.state.lock().unwrap();
+            let prior = st.mic_led_brightness;
+            st.mic_led_brightness = clamped;
+            st.applied_mic_led_brightness = clamped;
+            prior != clamped
+        };
+        if changed {
+            persist_dial_state(&self.state);
+            self.broadcast(DaemonEvent::MicLedBrightnessChanged { level: clamped });
+        }
     }
 
     /// Mirror device-reported wireless_mode into MixerState. Called
@@ -552,18 +591,9 @@ impl Mixer {
 
         while self.running.load(Ordering::Relaxed) {
             // One state read per iteration covers all pending GUI
-            // writes (sidetone + OLED brightness + ANC + wireless).
-            let (
-                want_sidetone,
-                want_bright,
-                applied_bright,
-                want_anc_mode,
-                applied_anc_mode,
-                want_anc_trans,
-                applied_anc_trans,
-                want_wireless,
-                applied_wireless,
-            ) = {
+            // writes (sidetone + OLED brightness + ANC + wireless +
+            // mic gain/volume/LED).
+            let snap = {
                 let st = self.state.lock().unwrap();
                 (
                     st.sidetone_level,
@@ -575,8 +605,31 @@ impl Mixer {
                     st.applied_anc_transparent_level,
                     st.wireless_mode,
                     st.applied_wireless_mode,
+                    st.mic_gain,
+                    st.applied_mic_gain,
+                    st.mic_volume,
+                    st.applied_mic_volume,
+                    st.mic_led_brightness,
+                    st.applied_mic_led_brightness,
                 )
             };
+            let (
+                want_sidetone,
+                want_bright,
+                applied_bright,
+                want_anc_mode,
+                applied_anc_mode,
+                want_anc_trans,
+                applied_anc_trans,
+                want_wireless,
+                applied_wireless,
+                want_mic_gain,
+                applied_mic_gain,
+                want_mic_vol,
+                applied_mic_vol,
+                want_mic_led,
+                applied_mic_led,
+            ) = snap;
             if want_sidetone != last_sidetone {
                 if let Err(e) = dev.set_sidetone(want_sidetone) {
                     warn!("Failed to apply sidetone {want_sidetone}: {e}");
@@ -627,6 +680,32 @@ impl Mixer {
                     warn!("Failed to apply wireless mode {want_wireless:?}: {e}");
                 }
                 self.state.lock().unwrap().applied_wireless_mode = want_wireless.as_byte();
+            }
+
+            // Mic gain / volume / LED brightness — same once-per-iter
+            // mark-applied-unconditionally pattern. None of these
+            // disconnect the device on write, so no compare-and-skip
+            // safety needed at the daemon-command layer.
+            if want_mic_gain.as_byte() != applied_mic_gain {
+                debug!("mic gain → {:?}", want_mic_gain);
+                if let Err(e) = dev.set_mic_gain(want_mic_gain.as_byte()) {
+                    warn!("Failed to apply mic gain {want_mic_gain:?}: {e}");
+                }
+                self.state.lock().unwrap().applied_mic_gain = want_mic_gain.as_byte();
+            }
+            if want_mic_vol != applied_mic_vol {
+                debug!("mic volume → {want_mic_vol}");
+                if let Err(e) = dev.set_mic_volume(want_mic_vol) {
+                    warn!("Failed to apply mic volume {want_mic_vol}: {e}");
+                }
+                self.state.lock().unwrap().applied_mic_volume = want_mic_vol;
+            }
+            if want_mic_led != applied_mic_led {
+                debug!("mic LED brightness → {want_mic_led}");
+                if let Err(e) = dev.set_mic_led_brightness(want_mic_led) {
+                    warn!("Failed to apply mic LED brightness {want_mic_led}: {e}");
+                }
+                self.state.lock().unwrap().applied_mic_led_brightness = want_mic_led;
             }
 
             // Short timeout keeps dial-to-update latency low; battery
@@ -817,6 +896,11 @@ impl Mixer {
                 NovaDevice::wireless_mode_from_battery_reply(&msg)
             {
                 self.sync_wireless_from_device(wireless_byte);
+            }
+            if let Some(led) =
+                NovaDevice::mic_led_brightness_from_battery_reply(&msg)
+            {
+                self.sync_mic_led_from_device(led);
             }
             {
                 let mut st = self.state.lock().unwrap();

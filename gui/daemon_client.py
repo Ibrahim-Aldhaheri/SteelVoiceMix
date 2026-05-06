@@ -128,6 +128,12 @@ class DaemonSignals(QObject):
     anc_transparent_level_changed = Signal(int)
     # 2.4 GHz wireless mode — "speed" / "range".
     wireless_mode_changed = Signal(str)
+    # Audio gain — "low" / "high".
+    mic_gain_changed = Signal(str)
+    # Mic volume (1..10).
+    mic_volume_changed = Signal(int)
+    # Mic-mute LED brightness (1..10).
+    mic_led_brightness_changed = Signal(int)
     # Daemon-side desktop notification toggle (separate from the GUI's
     # own minimize-to-tray toast; this one gates the connect /
     # disconnect notify-send popups emitted by the Rust daemon).
@@ -251,6 +257,12 @@ class DaemonClient:
             )
         elif ev == "wireless-mode-changed":
             self.signals.wireless_mode_changed.emit(str(event.get("mode", "speed")))
+        elif ev == "mic-gain-changed":
+            self.signals.mic_gain_changed.emit(str(event.get("gain", "high")))
+        elif ev == "mic-volume-changed":
+            self.signals.mic_volume_changed.emit(int(event.get("level", 10)))
+        elif ev == "mic-led-brightness-changed":
+            self.signals.mic_led_brightness_changed.emit(int(event.get("level", 10)))
         elif ev == "notifications-enabled-changed":
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("enabled", True))
@@ -313,6 +325,13 @@ class DaemonClient:
             )
             self.signals.wireless_mode_changed.emit(
                 str(event.get("wireless_mode", "speed"))
+            )
+            self.signals.mic_gain_changed.emit(
+                str(event.get("mic_gain", "high"))
+            )
+            self.signals.mic_volume_changed.emit(int(event.get("mic_volume", 10)))
+            self.signals.mic_led_brightness_changed.emit(
+                int(event.get("mic_led_brightness", 10))
             )
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("notifications_enabled", True))

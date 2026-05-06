@@ -57,6 +57,36 @@ impl AncMode {
     }
 }
 
+/// Audio gain — Low (0x01) or High (0x02). High is the device default.
+/// JSON encoding is lowercase strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MicGain {
+    Low,
+    #[default]
+    High,
+}
+
+impl MicGain {
+    pub fn as_byte(self) -> u8 {
+        match self {
+            MicGain::Low => 0x01,
+            MicGain::High => 0x02,
+        }
+    }
+    /// Inverse of `as_byte`. Currently only used in tests since
+    /// audio gain isn't in the battery-reply response_mapping, but
+    /// kept for symmetry + future device-side sync if SteelSeries
+    /// ever exposes a gain readback path.
+    #[cfg(test)]
+    pub fn from_byte(b: u8) -> Self {
+        match b {
+            0x01 => MicGain::Low,
+            _ => MicGain::High,
+        }
+    }
+}
+
 /// 2.4 GHz wireless link mode. `Speed` = low latency, short range
 /// (default). `Range` = long distance, slightly higher latency. Wire
 /// byte mapping (ASM nova_pro_wireless.yaml): `Speed=0x00`, `Range=0x01`.
@@ -466,6 +496,15 @@ pub enum ClientCommand {
     /// for keyboard-shortcut bindings; always changes state.
     #[serde(rename = "toggle-wireless-mode")]
     ToggleWirelessMode,
+    /// Set audio gain (Low / High).
+    #[serde(rename = "set-mic-gain")]
+    SetMicGain { gain: MicGain },
+    /// Set mic volume (1..=10, where 1 = mute, 10 = 100%).
+    #[serde(rename = "set-mic-volume")]
+    SetMicVolume { level: u8 },
+    /// Set mic-mute LED brightness (1..=10).
+    #[serde(rename = "set-mic-led-brightness")]
+    SetMicLedBrightness { level: u8 },
     /// Toggle daemon-side desktop notifications (the connect /
     /// disconnect notify-send popups). Distinct from the GUI's own
     /// minimize-to-tray toast, which is GUI-side only.
@@ -524,6 +563,12 @@ pub enum DaemonEvent {
         anc_transparent_level: u8,
         /// 2.4 GHz wireless mode.
         wireless_mode: WirelessMode,
+        /// Audio gain (Low / High).
+        mic_gain: MicGain,
+        /// Mic volume (1..=10).
+        mic_volume: u8,
+        /// Mic-mute LED brightness (1..=10).
+        mic_led_brightness: u8,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -608,6 +653,18 @@ pub enum DaemonEvent {
     /// toggle, or device-side mirror via battery poll).
     #[serde(rename = "wireless-mode-changed")]
     WirelessModeChanged { mode: WirelessMode },
+
+    /// Fired when audio gain changes.
+    #[serde(rename = "mic-gain-changed")]
+    MicGainChanged { gain: MicGain },
+
+    /// Fired when mic volume changes (1..=10).
+    #[serde(rename = "mic-volume-changed")]
+    MicVolumeChanged { level: u8 },
+
+    /// Fired when mic-mute LED brightness changes (1..=10).
+    #[serde(rename = "mic-led-brightness-changed")]
+    MicLedBrightnessChanged { level: u8 },
 
     /// Fired when daemon-side desktop notifications are toggled.
     #[serde(rename = "notifications-enabled-changed")]
@@ -705,6 +762,9 @@ mod tests {
             anc_mode: AncMode::Off,
             anc_transparent_level: 5,
             wireless_mode: WirelessMode::Speed,
+            mic_gain: MicGain::High,
+            mic_volume: 10,
+            mic_led_brightness: 10,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -1008,6 +1068,60 @@ mod tests {
         let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
         assert_eq!(json["event"], "wireless-mode-changed");
         assert_eq!(json["mode"], "range");
+    }
+
+    #[test]
+    fn mic_gain_round_trip() {
+        for (gain, label, byte) in [
+            (MicGain::Low, "low", 0x01u8),
+            (MicGain::High, "high", 0x02u8),
+        ] {
+            let cmd_json = format!(r#"{{"cmd":"set-mic-gain","gain":"{label}"}}"#);
+            let parsed: ClientCommand = from_str(&cmd_json).unwrap();
+            match parsed {
+                ClientCommand::SetMicGain { gain: g } => assert_eq!(g, gain),
+                other => panic!("expected SetMicGain, got {other:?}"),
+            }
+            assert_eq!(gain.as_byte(), byte);
+            assert_eq!(MicGain::from_byte(byte), gain);
+        }
+    }
+
+    #[test]
+    fn mic_volume_command_parses() {
+        let cmd: ClientCommand = from_str(r#"{"cmd":"set-mic-volume","level":7}"#).unwrap();
+        match cmd {
+            ClientCommand::SetMicVolume { level } => assert_eq!(level, 7),
+            other => panic!("expected SetMicVolume, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mic_led_brightness_command_parses() {
+        let cmd: ClientCommand =
+            from_str(r#"{"cmd":"set-mic-led-brightness","level":3}"#).unwrap();
+        match cmd {
+            ClientCommand::SetMicLedBrightness { level } => assert_eq!(level, 3),
+            other => panic!("expected SetMicLedBrightness, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mic_events_shape() {
+        let ev = DaemonEvent::MicGainChanged { gain: MicGain::Low };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "mic-gain-changed");
+        assert_eq!(json["gain"], "low");
+
+        let ev = DaemonEvent::MicVolumeChanged { level: 7 };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "mic-volume-changed");
+        assert_eq!(json["level"], 7);
+
+        let ev = DaemonEvent::MicLedBrightnessChanged { level: 3 };
+        let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+        assert_eq!(json["event"], "mic-led-brightness-changed");
+        assert_eq!(json["level"], 3);
     }
 
     #[test]

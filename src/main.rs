@@ -23,7 +23,7 @@ use filter_chain::{FilterChainHandle, FilterChainSpec};
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
 use protocol::{
     default_channel_bands, AncMode, ClientCommand, DaemonEvent, EqChannel, EqState, MicFeature,
-    MicState, VolumeBoost, WirelessMode,
+    MicGain, MicState, VolumeBoost, WirelessMode,
 };
 use routing::{spawn_router, RouterState};
 
@@ -65,6 +65,9 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         anc_mode: st.anc_mode,
         anc_transparent_level: st.anc_transparent_level,
         wireless_mode: st.wireless_mode,
+        mic_gain: st.mic_gain,
+        mic_volume: st.mic_volume,
+        mic_led_brightness: st.mic_led_brightness,
     }
 }
 
@@ -133,6 +136,9 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         anc_mode: st.anc_mode,
         anc_transparent_level: st.anc_transparent_level,
         wireless_mode: st.wireless_mode,
+        mic_gain: st.mic_gain,
+        mic_volume: st.mic_volume,
+        mic_led_brightness: st.mic_led_brightness,
     });
 }
 
@@ -356,6 +362,9 @@ fn handle_client(
                     st.anc_mode = AncMode::Off;
                     st.anc_transparent_level = 5;
                     st.wireless_mode = WirelessMode::Speed;
+                    st.mic_gain = MicGain::High;
+                    st.mic_volume = 10;
+                    st.mic_led_brightness = 10;
                 }
                 router
                     .enabled
@@ -440,6 +449,18 @@ fn handle_client(
                     DaemonEvent::WirelessModeChanged {
                         mode: WirelessMode::Speed,
                     },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::MicGainChanged { gain: MicGain::High },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::MicVolumeChanged { level: 10 },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::MicLedBrightnessChanged { level: 10 },
                 );
             }
             ClientCommand::SetSurroundEnabled { enabled } => {
@@ -743,6 +764,41 @@ fn handle_client(
                     DaemonEvent::WirelessModeChanged { mode: new_mode },
                 );
             }
+            ClientCommand::SetMicGain { gain } => {
+                {
+                    let mut st = state.lock().unwrap();
+                    st.mic_gain = gain;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: set-mic-gain {gain:?}");
+                broadcast_event(&subscribers, DaemonEvent::MicGainChanged { gain });
+            }
+            ClientCommand::SetMicVolume { level } => {
+                let clamped = level.clamp(1, 10);
+                {
+                    let mut st = state.lock().unwrap();
+                    st.mic_volume = clamped;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: set-mic-volume level={clamped}");
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::MicVolumeChanged { level: clamped },
+                );
+            }
+            ClientCommand::SetMicLedBrightness { level } => {
+                let clamped = level.clamp(1, 10);
+                {
+                    let mut st = state.lock().unwrap();
+                    st.mic_led_brightness = clamped;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: set-mic-led-brightness level={clamped}");
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::MicLedBrightnessChanged { level: clamped },
+                );
+            }
             ClientCommand::SetNotificationsEnabled { enabled } => {
                 {
                     let mut st = state.lock().unwrap();
@@ -925,6 +981,9 @@ fn main() {
     let anc_mode = persisted.anc_mode;
     let anc_transparent_level = persisted.anc_transparent_level.clamp(1, 10);
     let wireless_mode = persisted.wireless_mode;
+    let mic_gain = persisted.mic_gain;
+    let mic_volume = persisted.mic_volume.clamp(1, 10);
+    let mic_led_brightness = persisted.mic_led_brightness.clamp(1, 10);
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
         media_sink_enabled, persisted.media_sink_enabled, no_media_sink
@@ -954,9 +1013,10 @@ fn main() {
         mic_state.ai_noise_cancellation.enabled,
     );
     info!(
-        "Sidetone level: {} | Daemon notifications: {} | OLED brightness: {} | ANC: {:?} (transparent level {}) | Wireless mode: {:?}",
+        "Sidetone level: {} | Daemon notifications: {} | OLED brightness: {} | ANC: {:?} (transparent level {}) | Wireless mode: {:?} | Mic gain: {:?} | Mic vol: {} | Mic LED: {}",
         sidetone_level, notifications_enabled, oled_brightness,
         anc_mode, anc_transparent_level, wireless_mode,
+        mic_gain, mic_volume, mic_led_brightness,
     );
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(
@@ -977,6 +1037,9 @@ fn main() {
         anc_mode,
         anc_transparent_level,
         wireless_mode,
+        mic_gain,
+        mic_volume,
+        mic_led_brightness,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =
         Arc::new(Mutex::new(Vec::new()));
