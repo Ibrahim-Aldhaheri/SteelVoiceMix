@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "steelvoicemix"
-version = "0.4.2-beta.23"
+version = "0.4.2-beta.24"
 dependencies = [
  "ctrlc",
  "env_logger",
@@ -461,6 +461,7 @@ dependencies = [
  "hidapi",
  "libc",
  "log",
+ "rusb",
  "serde",
  "serde_json",
  "thiserror",

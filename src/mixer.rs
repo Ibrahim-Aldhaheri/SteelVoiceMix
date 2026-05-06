@@ -259,6 +259,11 @@ pub struct Mixer {
     sinks: SharedSinks,
     notify_enabled: bool,
     notify_available: bool,
+    /// True iff the libusb hotplug watcher last saw the Nova Pro
+    /// Wireless on the bus. The event loop polls this each iteration
+    /// so a USB-level disconnect (typical on PC suspend/resume) shows
+    /// up instantly instead of waiting on the battery-poll watchdog.
+    device_present: Arc<AtomicBool>,
 }
 
 impl Mixer {
@@ -268,6 +273,7 @@ impl Mixer {
         subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
         sinks: SharedSinks,
         notify_enabled: bool,
+        device_present: Arc<AtomicBool>,
     ) -> Self {
         // Probe notify-send once. Missing on headless servers and some
         // minimal DEs — we skip silently rather than spawning a failing
@@ -294,6 +300,7 @@ impl Mixer {
             sinks,
             notify_enabled,
             notify_available,
+            device_present,
         }
     }
 
@@ -612,6 +619,13 @@ impl Mixer {
         let mut last_sidetone = self.state.lock().unwrap().sidetone_level;
 
         while self.running.load(Ordering::Relaxed) {
+            // Hotplug-driven fast disconnect. libusb just told us the
+            // device left the bus (typical on PC suspend/resume),
+            // so don't waste 3 minutes waiting for the watchdog.
+            if !self.device_present.load(Ordering::Relaxed) {
+                info!("USB hotplug: device left the bus, ending session");
+                return SessionEnd::Disconnected;
+            }
             // One state read per iteration covers all pending GUI
             // writes (sidetone + OLED brightness + ANC + wireless +
             // mic gain/volume/LED).
@@ -970,10 +984,18 @@ impl Mixer {
         }
     }
 
-    /// Wait for a duration, checking `running` every second.
+    /// Wait for a duration, checking `running` every second. Bails
+    /// out early if the hotplug watcher reports the device returned
+    /// to the bus mid-wait — turns post-suspend reconnect from
+    /// "wait the full backoff window" into "retry as soon as the
+    /// kernel re-enumerates the device".
     fn wait(&self, duration: Duration) {
         let start = Instant::now();
         while self.running.load(Ordering::Relaxed) && start.elapsed() < duration {
+            if self.device_present.load(Ordering::Relaxed) {
+                info!("USB hotplug: device back on bus during reconnect wait — retrying immediately");
+                return;
+            }
             thread::sleep(Duration::from_secs(1));
         }
     }

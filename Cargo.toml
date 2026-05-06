@@ -1,6 +1,6 @@
 [package]
 name = "steelvoicemix"
-version = "0.4.2-beta.23"
+version = "0.4.2-beta.24"
 edition = "2021"
 description = "ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux"
 license = "GPL-3.0-only"
@@ -18,6 +18,11 @@ env_logger = "0.11"
 ctrlc = "3.4"
 libc = "0.2"
 thiserror = "2"
+# rusb provides libusb's hotplug callback API. We use it only for
+# USB add/remove events (VID 0x1038 + PID 0x12E0); hidapi still owns
+# the actual HID I/O. The watcher gives instant post-suspend reconnect
+# instead of waiting for the battery-poll watchdog to fire.
+rusb = "0.9"
 
 [dependencies.ggoled_lib]
 path = "ggoled_lib"

@@ -10,12 +10,14 @@ Source0:        {{{ git_dir_pack }}}
 BuildRequires:  rust >= 1.70
 BuildRequires:  cargo
 BuildRequires:  hidapi-devel
+BuildRequires:  libusb1-devel
 BuildRequires:  systemd-rpm-macros
 BuildRequires:  qt6-linguist
 
 Requires:       pipewire
 Requires:       pulseaudio-utils
 Requires:       pipewire-utils
+Requires:       libusb1
 # wmctrl powers the Auto Game-EQ Add Binding dialog's 'open
 # windowed apps' suggestion list. Recommends so dnf doesn't break
 # the install when wmctrl isn't available (e.g. transient repo

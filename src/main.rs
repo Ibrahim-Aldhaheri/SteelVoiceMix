@@ -3,6 +3,7 @@ mod config;
 mod display;
 mod filter_chain;
 mod hid;
+mod hotplug;
 mod mic_chain;
 mod mixer;
 mod protocol;
@@ -1065,6 +1066,14 @@ fn main() {
         .expect("Failed to set signal handler");
     }
 
+    // USB hotplug watcher — gives us instant disconnect/reconnect
+    // signals via libusb's hotplug API, instead of relying entirely
+    // on the slower battery-poll watchdog. The flag starts at false
+    // (we don't yet know) and gets set once libusb's `enumerate`
+    // pass fires `device_arrived` for an already-connected device.
+    let device_present = Arc::new(AtomicBool::new(false));
+    let _hotplug_watcher = hotplug::start(device_present.clone());
+
     // Start mixer thread
     let mut mixer = Mixer::new(
         running.clone(),
@@ -1072,6 +1081,7 @@ fn main() {
         subscribers.clone(),
         sinks.clone(),
         !no_notify,
+        device_present.clone(),
     );
     let mixer_thread = thread::spawn(move || mixer.run());
 

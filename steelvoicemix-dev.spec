@@ -37,7 +37,7 @@
 # stable release.
 
 Name:           steelvoicemix
-Version:        0.4.2~beta23
+Version:        0.4.2~beta24
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta / dev channel)
 
@@ -48,6 +48,7 @@ Source0:        {{{ git_dir_pack }}}
 BuildRequires:  rust >= 1.70
 BuildRequires:  cargo
 BuildRequires:  hidapi-devel
+BuildRequires:  libusb1-devel
 BuildRequires:  systemd-rpm-macros
 # qt6-linguist provides lrelease-qt6, used in %build to compile
 # the bundled .ts translation sources into .qm files. The runtime
@@ -57,6 +58,7 @@ BuildRequires:  qt6-linguist
 Requires:       pipewire
 Requires:       pulseaudio-utils
 Requires:       pipewire-utils
+Requires:       libusb1
 # wmctrl powers the Auto Game-EQ Add Binding dialog's 'open
 # windowed apps' suggestion list. Recommends — keeps installs
 # robust against transient repo issues, and dnf still pulls it
