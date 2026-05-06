@@ -63,6 +63,22 @@ fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
     });
 }
 
+/// After this many consecutive battery polls return no answer
+/// (without an outright HID write error), assume the HID fd has gone
+/// stale — usually post-system-suspend where hidapi still thinks the
+/// fd is open but the kernel re-enumerated USB underneath us.
+/// At BATTERY_POLL_INTERVAL=60s, this means ~3 minutes of silence
+/// before forcing a reconnect, which leaves room for a one-off
+/// firmware quirk to recover on the next poll.
+const HID_WATCHDOG_FAIL_THRESHOLD: u32 = 3;
+
+/// Outcome of a battery poll. Drives the post-suspend HID watchdog.
+enum BatteryPollResult {
+    Got,
+    NoReply,
+    WriteFailed,
+}
+
 const RECONNECT_BASE: Duration = Duration::from_secs(3);
 const RECONNECT_MAX: Duration = Duration::from_secs(30);
 const BATTERY_POLL_INTERVAL: Duration = Duration::from_secs(60);
@@ -542,7 +558,7 @@ impl Mixer {
         };
         self.notify("🎧 ChatMix Active", &notify_body);
 
-        self.poll_and_broadcast_battery(&dev);
+        let _ = self.poll_and_broadcast_battery(&dev);
 
         info!("Listening for ChatMix dial events...");
         let end = self.event_loop(&dev, &mut display);
@@ -583,6 +599,12 @@ impl Mixer {
         let mut last_battery_poll = Instant::now();
         let mut last_mic_health = Instant::now();
         let mut last_sink_health = Instant::now();
+        // Counts consecutive battery polls that returned no answer.
+        // After HID_WATCHDOG_FAIL_THRESHOLD silent polls (or one
+        // outright write error) we force a reconnect — the kernel
+        // typically re-enumerated the device under suspend without
+        // hidapi noticing.
+        let mut consecutive_failed_polls: u32 = 0;
         // Track the last-applied sidetone level so we can detect
         // GUI-driven changes from MixerState and push them to the
         // device. Initialised from current state (already applied at
@@ -711,7 +733,13 @@ impl Mixer {
             // Short timeout keeps dial-to-update latency low; battery
             // polling still triggers every BATTERY_POLL_INTERVAL.
             match dev.read(100) {
-                Ok(Some(msg)) => match NovaDevice::parse_event(&msg) {
+                Ok(Some(msg)) => {
+                    // Any successful read proves the fd is alive —
+                    // reset the post-suspend watchdog counter so a
+                    // single one-off silent battery poll doesn't
+                    // accumulate toward a false-positive disconnect.
+                    consecutive_failed_polls = 0;
+                    match NovaDevice::parse_event(&msg) {
                     HidEvent::ChatMix { game_vol, chat_vol } => {
                         debug!("dial: game={game_vol}% chat={chat_vol}%");
                         let (game_boost, chat_boost) = {
@@ -803,10 +831,34 @@ impl Mixer {
                         }
                     }
                     HidEvent::Unknown => {}
-                },
+                    }
+                }
                 Ok(None) => {
                     if last_battery_poll.elapsed() >= BATTERY_POLL_INTERVAL {
-                        self.poll_and_broadcast_battery(dev);
+                        match self.poll_and_broadcast_battery(dev) {
+                            BatteryPollResult::Got => {
+                                consecutive_failed_polls = 0;
+                            }
+                            BatteryPollResult::NoReply => {
+                                consecutive_failed_polls += 1;
+                                warn!(
+                                    "Battery poll {}/{}: no reply from device — possible stale HID fd post-suspend",
+                                    consecutive_failed_polls,
+                                    HID_WATCHDOG_FAIL_THRESHOLD,
+                                );
+                                if consecutive_failed_polls >= HID_WATCHDOG_FAIL_THRESHOLD {
+                                    warn!(
+                                        "HID watchdog: {} consecutive silent polls, forcing reconnect",
+                                        consecutive_failed_polls,
+                                    );
+                                    return SessionEnd::Disconnected;
+                                }
+                            }
+                            BatteryPollResult::WriteFailed => {
+                                warn!("HID write failed during battery poll — forcing reconnect (definitive sign of stale fd)");
+                                return SessionEnd::Disconnected;
+                            }
+                        }
                         last_battery_poll = Instant::now();
                     }
                     if last_mic_health.elapsed() >= MIC_HEALTH_INTERVAL {
@@ -880,36 +932,41 @@ impl Mixer {
         }
     }
 
-    /// Poll the device's battery state and fan it out to GUI subscribers.
-    /// The battery reply also carries current ANC state per ASM yaml
-    /// (offsets 10 + 8); mirror it into MixerState so the GUI tracks
-    /// reality even when the user presses the headset's ANC button
-    /// while the daemon is offline.
-    fn poll_and_broadcast_battery(&self, dev: &NovaDevice) {
-        if let Ok(Some((bat, msg))) = dev.get_battery() {
-            if let Some((anc_byte, trans_level)) =
-                NovaDevice::anc_from_battery_reply(&msg)
-            {
-                self.sync_anc_from_device(anc_byte, trans_level);
+    /// Result of a battery poll, used by the event-loop watchdog to
+    /// detect post-suspend stale HID fds. `Got` means the device
+    /// answered; `NoReply` means request went out but no answer (may
+    /// be a transient firmware quirk); `WriteFailed` means the HID
+    /// write itself errored (definitive sign the fd is dead).
+    fn poll_and_broadcast_battery(&self, dev: &NovaDevice) -> BatteryPollResult {
+        match dev.get_battery() {
+            Err(_) => BatteryPollResult::WriteFailed,
+            Ok(None) => BatteryPollResult::NoReply,
+            Ok(Some((bat, msg))) => {
+                if let Some((anc_byte, trans_level)) =
+                    NovaDevice::anc_from_battery_reply(&msg)
+                {
+                    self.sync_anc_from_device(anc_byte, trans_level);
+                }
+                if let Some(wireless_byte) =
+                    NovaDevice::wireless_mode_from_battery_reply(&msg)
+                {
+                    self.sync_wireless_from_device(wireless_byte);
+                }
+                if let Some(led) =
+                    NovaDevice::mic_led_brightness_from_battery_reply(&msg)
+                {
+                    self.sync_mic_led_from_device(led);
+                }
+                {
+                    let mut st = self.state.lock().unwrap();
+                    st.battery = Some(bat.clone());
+                }
+                self.broadcast(DaemonEvent::Battery {
+                    level: bat.level,
+                    status: bat.status,
+                });
+                BatteryPollResult::Got
             }
-            if let Some(wireless_byte) =
-                NovaDevice::wireless_mode_from_battery_reply(&msg)
-            {
-                self.sync_wireless_from_device(wireless_byte);
-            }
-            if let Some(led) =
-                NovaDevice::mic_led_brightness_from_battery_reply(&msg)
-            {
-                self.sync_mic_led_from_device(led);
-            }
-            {
-                let mut st = self.state.lock().unwrap();
-                st.battery = Some(bat.clone());
-            }
-            self.broadcast(DaemonEvent::Battery {
-                level: bat.level,
-                status: bat.status,
-            });
         }
     }
 
