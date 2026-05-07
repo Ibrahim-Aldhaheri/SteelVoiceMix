@@ -201,7 +201,6 @@ class MixerGUI(QMainWindow):
         self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.stack = QStackedWidget()
 
-        self._deck_row_index: int | None = None
         for label, widget in (
             (self.tr("🏠   Home"), self.home_tab),
             (self.tr("🔊   Sinks"), self.sinks_tab),
@@ -224,11 +223,6 @@ class MixerGUI(QMainWindow):
             scroller.setFrameShape(QScrollArea.NoFrame)
             scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self.stack.addWidget(scroller)
-            if widget is self.deck_tab:
-                self._deck_row_index = self.nav.count() - 1
-        # Hidden until oled-presence-changed flips it on.
-        if self._deck_row_index is not None:
-            self.nav.setRowHidden(self._deck_row_index, True)
         self.nav.setCurrentRow(0)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
 
@@ -355,7 +349,9 @@ class MixerGUI(QMainWindow):
         self.signals.oled_presence_changed.connect(
             self.deck_tab.on_oled_presence_changed
         )
-        self.signals.oled_presence_changed.connect(self._on_deck_presence)
+        self.signals.oled_presence_changed.connect(
+            self.home_tab.on_oled_presence_changed
+        )
         self.signals.anc_mode_changed.connect(self.deck_tab.on_anc_mode_changed)
         self.signals.anc_transparent_level_changed.connect(
             self.deck_tab.on_anc_transparent_level_changed
@@ -385,20 +381,6 @@ class MixerGUI(QMainWindow):
         self._set_status_pill(self.tr("●  Reconnecting…"), "bad")
         self.home_tab.on_disconnected()
         self._apply_redirect_on_disconnect()
-
-    def _on_deck_presence(self, present: bool) -> None:
-        if self._deck_row_index is None:
-            return
-        was_hidden = self.nav.isRowHidden(self._deck_row_index)
-        self.nav.setRowHidden(self._deck_row_index, not bool(present))
-        # Fall back to Home so the page area doesn't go blank when the
-        # currently-selected tab disappears.
-        if (
-            not present
-            and not was_hidden
-            and self.nav.currentRow() == self._deck_row_index
-        ):
-            self.nav.setCurrentRow(0)
 
     # ----------------------------------------------------- audio routing
 

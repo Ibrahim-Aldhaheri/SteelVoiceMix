@@ -77,15 +77,41 @@ class DeckTab(QWidget):
     def __init__(self, daemon_client=None, parent=None):
         super().__init__(parent)
         self._daemon = daemon_client
+        # Two independent gates control whether the knob set is
+        # interactive: oled_present (USB-side: deck plugged in?) and
+        # deck_control_enabled (user-side: am I authorising daemon
+        # writes?). Both must be true for the controls to fire.
+        self._oled_present = False
+        self._deck_control_enabled = False
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         layout.setContentsMargins(16, 16, 16, 16)
 
+        # Status banner shown when the deck is not detected on USB.
+        # Sits above the master toggle so the user sees it first.
+        self._status_banner = QLabel(
+            self.tr(
+                "⚠ Deck not detected. Plug in the base station's USB cable; "
+                "controls below stay disabled until the device shows up on the bus."
+            )
+        )
+        self._status_banner.setWordWrap(True)
+        self._status_banner.setAlignment(Qt.AlignCenter)
+        self._status_banner.setStyleSheet(
+            "background: rgba(255, 152, 0, 0.18);"
+            "border: 1px solid rgba(255, 152, 0, 0.6);"
+            "border-radius: 4px;"
+            "color: palette(text);"
+            "font-size: 11px;"
+            "padding: 8px;"
+        )
+        layout.addWidget(self._status_banner)
+
         layout.addWidget(self._build_master_toggle_card())
         # Container so we can disable() the entire knob set in one
-        # call when the master toggle is off — visually greyed and
-        # unclickable, no jumpy reflow.
+        # call when either gate (presence / control toggle) is off —
+        # visually greyed and unclickable, no jumpy reflow.
         self._controls_container = QWidget()
         controls_layout = QVBoxLayout(self._controls_container)
         controls_layout.setContentsMargins(0, 0, 0, 0)
@@ -97,19 +123,6 @@ class DeckTab(QWidget):
         controls_layout.addWidget(self._build_pm_shutdown_card())
         self._controls_container.setEnabled(False)
         layout.addWidget(self._controls_container)
-
-        self._not_connected_hint = QLabel(
-            self.tr(
-                "Deck not detected. Plug in the base station's USB cable; "
-                "your selection here will apply on connect."
-            )
-        )
-        self._not_connected_hint.setWordWrap(True)
-        self._not_connected_hint.setAlignment(Qt.AlignCenter)
-        self._not_connected_hint.setStyleSheet(
-            "color: palette(placeholder-text); font-size: 11px; padding: 8px;"
-        )
-        layout.addWidget(self._not_connected_hint)
 
         layout.addStretch(1)
 
@@ -147,7 +160,11 @@ class DeckTab(QWidget):
             ),
         )
         self.deck_control_toggle.setChecked(False)
-        self.deck_control_toggle.setEnabled(self._daemon is not None)
+        # Stays disabled until on_oled_presence_changed(True) confirms
+        # the deck is on the bus. Pure preference toggle — keeping it
+        # disabled when there's no device prevents the user from
+        # flipping it expecting an immediate effect.
+        self.deck_control_toggle.setEnabled(False)
         self.deck_control_toggle.toggled.connect(self._on_deck_control_toggled)
         return card(
             self.tr("Deck Control"),
@@ -363,7 +380,15 @@ class DeckTab(QWidget):
         self.oled_brightness_value.setText(f"{clamped} / 10")
 
     def on_oled_presence_changed(self, present: bool) -> None:
-        self._not_connected_hint.setVisible(not bool(present))
+        self._oled_present = bool(present)
+        self._status_banner.setVisible(not self._oled_present)
+        # Master toggle stays clickable so the user can change their
+        # preference even with the device offline; daemon will apply
+        # on the next reconnect.
+        self.deck_control_toggle.setEnabled(
+            self._daemon is not None and self._oled_present
+        )
+        self._refresh_controls_enabled()
 
     def on_anc_mode_changed(self, mode: str) -> None:
         if mode not in ANC_MODES:
@@ -425,7 +450,8 @@ class DeckTab(QWidget):
             self.deck_control_toggle.setChecked(bool(enabled))
         finally:
             self.deck_control_toggle.blockSignals(was_blocked)
-        self._controls_container.setEnabled(bool(enabled))
+        self._deck_control_enabled = bool(enabled)
+        self._refresh_controls_enabled()
 
     # ------------------------------------------------------------ internals
 
@@ -446,5 +472,14 @@ class DeckTab(QWidget):
         # Local UI update happens immediately; the daemon echo is
         # idempotent under the blockSignals guard in
         # on_deck_control_enabled_changed.
-        self._controls_container.setEnabled(bool(checked))
+        self._deck_control_enabled = bool(checked)
+        self._refresh_controls_enabled()
         self._send("set-deck-control-enabled", enabled=bool(checked))
+
+    def _refresh_controls_enabled(self) -> None:
+        # Both gates must be true for the knobs to fire daemon
+        # commands. Setting the container un-enabled blocks all
+        # children's signals as a side-effect.
+        self._controls_container.setEnabled(
+            self._oled_present and self._deck_control_enabled
+        )

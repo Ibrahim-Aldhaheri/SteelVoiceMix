@@ -58,6 +58,10 @@ class HomeTab(QWidget):
     def __init__(self, daemon_client=None, parent=None):
         super().__init__(parent)
         self._daemon = daemon_client
+        # Track deck presence so the battery card prioritises a
+        # "Deck not detected" message (USB-side) over the battery /
+        # headset-offline messages (audio side).
+        self._oled_present = False
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -167,7 +171,22 @@ class HomeTab(QWidget):
         self.chat_bar.setValue(0)
         self.dial_label.setText(self.tr("⚖️  —"))
 
+    def on_oled_presence_changed(self, present: bool) -> None:
+        self._oled_present = bool(present)
+        if not self._oled_present:
+            # USB-side disconnect (cable unplugged, post-suspend stale
+            # fd, etc.) — strongest "device not ready" signal.
+            self.battery_bar.setValue(0)
+            self.battery_bar.setFormat(self.tr("—"))
+            self._set_battery_chunk("#FF9800")
+            self.battery_status.setText(self.tr("Deck not detected"))
+
     def on_battery(self, level: int, status: str) -> None:
+        # If the deck isn't on the bus, the daemon shouldn't be
+        # broadcasting fresh battery anyway — but double-check so a
+        # stale event can't overwrite the "Deck not detected" message.
+        if not self._oled_present:
+            return
         self.battery_bar.setValue(level)
         if status == "charging":
             self.battery_bar.setFormat(f"⚡ {level}%")

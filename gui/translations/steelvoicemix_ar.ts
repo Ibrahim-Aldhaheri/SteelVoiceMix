@@ -127,6 +127,14 @@
         <translation>سماعة الرأس غير متصلة</translation>
     </message>
     <message>
+        <source>Deck not detected</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>—</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Battery good</source>
         <translation>البطارية جيدة</translation>
     </message>
@@ -1154,6 +1162,10 @@ Continue?</source>
     </message>
     <message>
         <source>Deck not detected. Plug in the base station's USB cable; your selection here will apply on connect.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>⚠ Deck not detected. Plug in the base station's USB cable; controls below stay disabled until the device shows up on the bus.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
