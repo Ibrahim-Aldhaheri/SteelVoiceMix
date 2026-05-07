@@ -731,6 +731,11 @@ impl Mixer {
             // toggle. State still mutates freely client-side (so the
             // GUI can preview future changes), but nothing reaches
             // the firmware until the user opts in.
+            //
+            // For each knob: write, then mark applied unconditionally.
+            // Marking on failure too prevents a silently-failed firmware
+            // write from looping forever at 100 ms cadence — the next
+            // reconnect's run_session re-pushes from `applied_*` reset.
             if deck_control_enabled {
                 if want_sidetone != last_sidetone {
                     if let Err(e) = dev.set_sidetone(want_sidetone) {
@@ -739,24 +744,12 @@ impl Mixer {
                         last_sidetone = want_sidetone;
                     }
                 }
-
-                // Mark applied unconditionally — on failure the firmware
-                // is silently dropping writes; retrying every 100 ms would
-                // spam HID + warn logs forever. Next reconnect re-pushes
-                // via run_session.
                 if want_bright != applied_bright {
                     if let Some(ref d) = display {
                         d.set_brightness(want_bright);
                     }
                     self.state.lock().unwrap().applied_oled_brightness = want_bright;
                 }
-            }
-
-            // Apply pending ANC state (same gate). Same once-per-iter
-            // mark-applied pattern: write, then mark applied
-            // unconditionally so a silently-failed firmware write
-            // doesn't loop forever.
-            if deck_control_enabled {
                 if want_anc_mode.as_byte() != applied_anc_mode {
                     if let Err(e) = dev.set_anc_mode(want_anc_mode.as_byte()) {
                         warn!("Failed to apply ANC mode {want_anc_mode:?}: {e}");
@@ -769,14 +762,9 @@ impl Mixer {
                     }
                     self.state.lock().unwrap().applied_anc_transparent_level = want_anc_trans;
                 }
-            }
-
-            if deck_control_enabled {
-                // Wireless-mode write briefly drops the radio link, so we
-                // only push when the desired byte differs from what the
-                // device reported back (battery-poll mirror keeps applied
-                // in sync). Otherwise spamming set/toggle from a shortcut
-                // would bounce the headset every keypress.
+                // Wireless mode write briefly drops the radio link;
+                // the compare-and-skip above is what protects against
+                // a spam-bound shortcut bouncing the headset.
                 if want_wireless.as_byte() != applied_wireless {
                     info!(
                         "Wireless mode change: {:?} → {:?} (radio will briefly drop link)",
@@ -788,11 +776,6 @@ impl Mixer {
                     }
                     self.state.lock().unwrap().applied_wireless_mode = want_wireless.as_byte();
                 }
-
-                // Mic gain / volume / LED brightness — same once-per-iter
-                // mark-applied-unconditionally pattern. None of these
-                // disconnect the device on write, so no compare-and-skip
-                // safety needed at the daemon-command layer.
                 if want_mic_gain.as_byte() != applied_mic_gain {
                     debug!("mic gain → {:?}", want_mic_gain);
                     if let Err(e) = dev.set_mic_gain(want_mic_gain.as_byte()) {
@@ -869,25 +852,11 @@ impl Mixer {
                         // for several knobs per ASM yaml — mirror them so
                         // the GUI tracks reality (e.g. user pressed the
                         // headset's ANC button while we weren't looking).
-                        if let Some((anc_byte, trans_level)) =
-                            NovaDevice::anc_from_battery_reply(&msg)
-                        {
-                            self.sync_anc_from_device(anc_byte, trans_level);
-                        }
-                        if let Some(wireless_byte) =
-                            NovaDevice::wireless_mode_from_battery_reply(&msg)
-                        {
-                            self.sync_wireless_from_device(wireless_byte);
-                        }
-                        if let Some(led) =
-                            NovaDevice::mic_led_brightness_from_battery_reply(&msg)
-                        {
-                            self.sync_mic_led_from_device(led);
-                        }
-                        if let Some(pm) =
-                            NovaDevice::pm_shutdown_from_battery_reply(&msg)
-                        {
-                            self.sync_pm_shutdown_from_device(pm);
+                        if let Some(extras) = NovaDevice::parse_battery_extras(&msg) {
+                            self.sync_anc_from_device(extras.anc_mode, extras.transparent_level);
+                            self.sync_wireless_from_device(extras.wireless_mode);
+                            self.sync_mic_led_from_device(extras.mic_led_brightness);
+                            self.sync_pm_shutdown_from_device(extras.pm_shutdown);
                         }
                         {
                             let mut st = self.state.lock().unwrap();
@@ -1045,25 +1014,11 @@ impl Mixer {
             Err(_) => BatteryPollResult::WriteFailed,
             Ok(None) => BatteryPollResult::NoReply,
             Ok(Some((bat, msg))) => {
-                if let Some((anc_byte, trans_level)) =
-                    NovaDevice::anc_from_battery_reply(&msg)
-                {
-                    self.sync_anc_from_device(anc_byte, trans_level);
-                }
-                if let Some(wireless_byte) =
-                    NovaDevice::wireless_mode_from_battery_reply(&msg)
-                {
-                    self.sync_wireless_from_device(wireless_byte);
-                }
-                if let Some(led) =
-                    NovaDevice::mic_led_brightness_from_battery_reply(&msg)
-                {
-                    self.sync_mic_led_from_device(led);
-                }
-                if let Some(pm) =
-                    NovaDevice::pm_shutdown_from_battery_reply(&msg)
-                {
-                    self.sync_pm_shutdown_from_device(pm);
+                if let Some(extras) = NovaDevice::parse_battery_extras(&msg) {
+                    self.sync_anc_from_device(extras.anc_mode, extras.transparent_level);
+                    self.sync_wireless_from_device(extras.wireless_mode);
+                    self.sync_mic_led_from_device(extras.mic_led_brightness);
+                    self.sync_pm_shutdown_from_device(extras.pm_shutdown);
                 }
                 {
                     let mut st = self.state.lock().unwrap();

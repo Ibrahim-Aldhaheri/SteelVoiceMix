@@ -58,6 +58,15 @@ _MIC_FEATURE_KEYS = (
 # to "broadcast" — matches the Rust Default impl.
 _VOLUME_STABILIZER_KINDS = ("broadcast", "soft")
 
+# Wire enums for deck-side knobs. Daemon-side encoding is authoritative
+# (matches the Rust serde rename_all). Centralised here so GUI tabs
+# import these instead of re-typing the literal strings — catches
+# typo drift at one site instead of N.
+ANC_MODES = ("off", "transparent", "on")
+WIRELESS_MODES = ("speed", "range")
+MIC_GAINS = ("low", "high")
+PM_SHUTDOWN_VALUES = ("never", "1m", "5m", "10m", "15m", "30m", "60m")
+
 
 def _normalize_mic_state(raw: dict) -> dict:
     """Coerce the daemon's MicState JSON into a uniform GUI-side

@@ -8,17 +8,22 @@ animated ToggleSwitch.
 
 from __future__ import annotations
 
+from typing import Callable, Iterable
+
 from PySide6.QtCore import (
     Property,
     QEasingCurve,
+    QObject,
     QPointF,
     QPropertyAnimation,
     QRectF,
     QSize,
     Qt,
+    QTimer,
 )
 from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -26,6 +31,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLayout,
     QProgressBar,
+    QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -416,6 +422,87 @@ class NoWheelSlider(QSlider):
 
     def wheelEvent(self, event) -> None:
         event.ignore()
+
+
+# Stylesheet for exclusive-mode picker buttons. QPushButton's default
+# :checked state is visually identical to unchecked, so we paint the
+# active mode with the app accent.
+MODE_BUTTON_STYLE = """
+QPushButton {
+    padding: 6px 10px;
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+    background: palette(button);
+}
+QPushButton:hover {
+    border-color: palette(highlight);
+}
+QPushButton:checked {
+    background: palette(highlight);
+    color: palette(highlighted-text);
+    border-color: palette(highlight);
+    font-weight: bold;
+}
+"""
+
+
+def mode_picker(
+    parent: QObject,
+    options: Iterable[tuple[str, str]],
+    initial: str,
+    on_select: Callable[[str], None],
+    enabled: bool = True,
+) -> tuple[QHBoxLayout, dict[str, QPushButton], QButtonGroup]:
+    """Build an exclusive button-group picker (e.g. Off / Transparent /
+    On for ANC). Returns the row layout, a key→button dict for echo
+    handlers, and the QButtonGroup (caller stashes a reference so it
+    isn't GC'd). All buttons share MODE_BUTTON_STYLE so the active
+    one is visually distinct."""
+    row = QHBoxLayout()
+    row.setSpacing(6)
+    group = QButtonGroup(parent)
+    group.setExclusive(True)
+    buttons: dict[str, QPushButton] = {}
+    for key, label in options:
+        btn = QPushButton(label)
+        btn.setCheckable(True)
+        btn.setEnabled(enabled)
+        btn.setStyleSheet(MODE_BUTTON_STYLE)
+        btn.clicked.connect(lambda _checked, k=key: on_select(k))
+        buttons[key] = btn
+        group.addButton(btn)
+        row.addWidget(btn, 1)
+    if initial in buttons:
+        buttons[initial].setChecked(True)
+    return row, buttons, group
+
+
+def bind_debounced_slider(
+    parent: QObject,
+    slider: QSlider,
+    value_label: QLabel,
+    label_format: Callable[[int], str],
+    send_fn: Callable[[int], None],
+    interval_ms: int = 120,
+) -> QTimer:
+    """Wire a slider to a debounced send. The label updates instantly
+    on every value change; the send callback fires `interval_ms` after
+    the last change. Returns the timer so the caller can stash a
+    reference (otherwise Qt GC's it the moment this returns)."""
+    timer = QTimer(parent)
+    timer.setSingleShot(True)
+    timer.setInterval(interval_ms)
+
+    def on_change(value: int) -> None:
+        value_label.setText(label_format(int(value)))
+        timer.start()
+
+    def on_fire() -> None:
+        send_fn(int(slider.value()))
+
+    slider.valueChanged.connect(on_change)
+    timer.timeout.connect(on_fire)
+    return timer
 
 
 def labelled_toggle(

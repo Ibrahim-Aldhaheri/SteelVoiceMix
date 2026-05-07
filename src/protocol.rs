@@ -122,17 +122,6 @@ impl MicGain {
             MicGain::High => 0x02,
         }
     }
-    /// Inverse of `as_byte`. Currently only used in tests since
-    /// audio gain isn't in the battery-reply response_mapping, but
-    /// kept for symmetry + future device-side sync if SteelSeries
-    /// ever exposes a gain readback path.
-    #[cfg(test)]
-    pub fn from_byte(b: u8) -> Self {
-        match b {
-            0x01 => MicGain::Low,
-            _ => MicGain::High,
-        }
-    }
 }
 
 /// 2.4 GHz wireless link mode. `Speed` = low latency, short range
@@ -1157,7 +1146,6 @@ mod tests {
                 other => panic!("expected SetMicGain, got {other:?}"),
             }
             assert_eq!(gain.as_byte(), byte);
-            assert_eq!(MicGain::from_byte(byte), gain);
         }
     }
 

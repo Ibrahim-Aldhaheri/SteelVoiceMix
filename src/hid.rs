@@ -72,6 +72,17 @@ pub struct BatteryStatus {
     pub status: String,
 }
 
+/// Device-state fields carried alongside the battery in `0x06b0` replies
+/// (offsets per ASM nova_pro_wireless.yaml `response_mapping`).
+#[derive(Debug, Clone, Copy)]
+pub struct BatteryExtras {
+    pub transparent_level: u8,
+    pub anc_mode: u8,
+    pub mic_led_brightness: u8,
+    pub pm_shutdown: u8,
+    pub wireless_mode: u8,
+}
+
 /// A HID message received from the base station.
 #[derive(Debug)]
 pub enum HidEvent {
@@ -280,42 +291,21 @@ impl NovaDevice {
         }
     }
 
-    /// Pull the current ANC state out of a `[0x06, 0xb0, ...]` battery
-    /// reply. Per ASM yaml the relevant bytes are noise_cancelling at
-    /// offset 10 and transparent_level at offset 8. Returns `None` if
-    /// the message is too short or isn't a battery reply.
-    pub fn anc_from_battery_reply(msg: &[u8]) -> Option<(u8, u8)> {
+    /// All device-state extras carried by a `[0x06, 0xb0, ...]`
+    /// battery reply, per ASM nova_pro_wireless.yaml `response_mapping`.
+    /// Single parse so callers don't redo the length+opcode check
+    /// once per field.
+    pub fn parse_battery_extras(msg: &[u8]) -> Option<BatteryExtras> {
         if msg.len() < 16 || msg[1] != OPT_BATTERY {
             return None;
         }
-        Some((msg[10], msg[8]))
-    }
-
-    /// Pull the current wireless_mode byte out of a battery reply.
-    /// Per ASM yaml `wireless_mode: 0x0d` (offset 13). Lets us catch
-    /// changes made via SteelSeries GG on Windows or another tool.
-    pub fn wireless_mode_from_battery_reply(msg: &[u8]) -> Option<u8> {
-        if msg.len() < 16 || msg[1] != OPT_BATTERY {
-            return None;
-        }
-        Some(msg[13])
-    }
-
-    /// Pull mic LED brightness (offset 11) out of a battery reply.
-    pub fn mic_led_brightness_from_battery_reply(msg: &[u8]) -> Option<u8> {
-        if msg.len() < 16 || msg[1] != OPT_BATTERY {
-            return None;
-        }
-        Some(msg[11])
-    }
-
-    /// Pull auto power-off timer raw byte (offset 12) out of a
-    /// battery reply.
-    pub fn pm_shutdown_from_battery_reply(msg: &[u8]) -> Option<u8> {
-        if msg.len() < 16 || msg[1] != OPT_BATTERY {
-            return None;
-        }
-        Some(msg[12])
+        Some(BatteryExtras {
+            transparent_level: msg[8],
+            anc_mode: msg[10],
+            mic_led_brightness: msg[11],
+            pm_shutdown: msg[12],
+            wireless_mode: msg[13],
+        })
     }
 
     /// Request battery status from the base station.
