@@ -25,6 +25,7 @@ whether any of this runs.
 from __future__ import annotations
 
 import difflib
+import json
 import logging
 import re
 import shlex
@@ -88,14 +89,65 @@ def _bundled_asm_index() -> dict[str, Path]:
     return out
 
 
+def _runtime_aliases(channel: str) -> dict[str, str]:
+    """Load runtime application name → preset display name map for
+    `channel` from gui/presets/runtime_aliases.json. Returns
+    case-insensitive lookup dict (lowercased keys). Returns empty
+    dict if the file is missing or malformed — fuzzy match still
+    runs as fallback either way."""
+    path = Path(__file__).resolve().parent / "presets" / "runtime_aliases.json"
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        log.debug("runtime_aliases.json unavailable: %s", e)
+        return {}
+    raw = data.get(channel)
+    if not isinstance(raw, dict):
+        return {}
+    # Lowercase keys for case-insensitive lookup. Conflicts (rare —
+    # only if the JSON itself has two case-variant entries pointing at
+    # different presets) take last-write-wins; log a warning so the
+    # contributor notices.
+    out: dict[str, str] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        lk = key.lower()
+        if lk in out and out[lk] != value:
+            log.warning(
+                "runtime_aliases.json: %r case-collision picks %r over %r",
+                key, value, out[lk],
+            )
+        out[lk] = value
+    return out
+
+
 def match_asm_preset(game_name: str) -> str | None:
-    """Return the display name of the ASM Game preset that best
-    matches `game_name`, or None if none clears the threshold. The
-    returned name is the one the EQ tab shows in its dropdown
+    """Return the display name of the ASM Game preset that matches
+    `game_name`, or None if no match.
+
+    Match order:
+      1. Exact case-insensitive lookup in runtime_aliases.json. This
+         is the explicit-overrides path — used to fix false positives
+         (e.g. fuzzy match accidentally picking 'Podcast' for 'Pod')
+         and to map runtime names that don't share the preset's
+         filename (e.g. `EldenRing.exe` → `[ASM] Elden Ring`).
+      2. Fall back to fuzzy filename match against bundled ASM
+         presets (cutoff 0.62). Catches new games we haven't aliased
+         yet.
+
+    The returned name is the one the EQ tab shows in its dropdown
     (i.e. with the `[ASM] ` prefix), so callers can pass it straight
     to the existing apply path."""
     if not game_name:
         return None
+
+    aliases = _runtime_aliases("game")
+    explicit = aliases.get(game_name.lower())
+    if explicit:
+        return explicit
+
     target = _normalise(game_name)
     if not target:
         return None

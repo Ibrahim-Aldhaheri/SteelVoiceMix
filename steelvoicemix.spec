@@ -72,8 +72,11 @@ install -Dm644 gui/*.py %{buildroot}%{_datadir}/%{name}/gui/
 install -d %{buildroot}%{_datadir}/%{name}/gui/tabs
 install -Dm644 gui/tabs/*.py %{buildroot}%{_datadir}/%{name}/gui/tabs/
 
-# Bundled ASM preset library (~400 game/chat tunings) — read-only,
-# refreshed by the maintainer via scripts/fetch_asm_presets.py.
+# Bundled ASM preset library (~400 game/chat tunings) + runtime-name
+# alias map — read-only, refreshed by the maintainer via
+# scripts/fetch_asm_presets.py and edited by hand respectively.
+install -Dm644 gui/presets/runtime_aliases.json \
+    %{buildroot}%{_datadir}/%{name}/gui/presets/runtime_aliases.json
 install -d %{buildroot}%{_datadir}/%{name}/gui/presets/asm/game
 install -Dm644 gui/presets/asm/game/*.json \
     %{buildroot}%{_datadir}/%{name}/gui/presets/asm/game/

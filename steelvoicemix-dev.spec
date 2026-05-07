@@ -37,7 +37,7 @@
 # stable release.
 
 Name:           steelvoicemix
-Version:        0.4.2~beta33
+Version:        0.4.2~beta34
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux (beta / dev channel)
 
@@ -102,7 +102,9 @@ install -Dm644 gui/*.py %{buildroot}%{_datadir}/%{name}/gui/
 install -d %{buildroot}%{_datadir}/%{name}/gui/tabs
 install -Dm644 gui/tabs/*.py %{buildroot}%{_datadir}/%{name}/gui/tabs/
 
-# Bundled ASM preset library + default HRIR
+# Bundled ASM preset library + runtime-name → preset alias map + default HRIR
+install -Dm644 gui/presets/runtime_aliases.json \
+    %{buildroot}%{_datadir}/%{name}/gui/presets/runtime_aliases.json
 install -d %{buildroot}%{_datadir}/%{name}/gui/presets/asm/game
 install -Dm644 gui/presets/asm/game/*.json \
     %{buildroot}%{_datadir}/%{name}/gui/presets/asm/game/

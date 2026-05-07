@@ -806,11 +806,18 @@ class EqualizerTab(QWidget):
         # Re-render to refresh the priority column numbers.
         self._refresh_bindings_table()
 
-    def _collect_binding_candidates(self) -> list[str]:
-        """Build a deduped, ordered list of binding suggestions.
-        Audio clients first (proven to match PipeWire's
-        application.name), then windowed apps via wmctrl. Free-text
-        input is still allowed — the combo is editable."""
+    def _collect_binding_candidates(self) -> tuple[list[str], bool]:
+        """Build a deduped, ordered list of binding suggestions plus a
+        flag for whether wmctrl was available. Audio clients first
+        (proven to match PipeWire's application.name), then windowed
+        apps via wmctrl. Free-text input is still allowed — the combo
+        is editable.
+
+        Returns (candidates, wmctrl_available). The dialog uses the
+        flag to surface a warning when the windowed-apps suggestion
+        source is unavailable, so the user knows to type a name
+        manually instead of expecting their open Steam/game window
+        to appear."""
         seen: set[str] = set()
         out: list[str] = []
         # Active audio clients from the watcher — reuse what's
@@ -820,12 +827,14 @@ class EqualizerTab(QWidget):
                 if name and name not in seen:
                     seen.add(name)
                     out.append(name)
-        # Windowed applications via wmctrl. Optional — if wmctrl
-        # isn't installed we just skip this source (no error,
-        # the audio-clients list is enough for most users).
+        # Windowed applications via wmctrl. If wmctrl isn't installed
+        # the dialog still works (audio-clients + free-text), but the
+        # user gets a warning so they understand why their open game
+        # window isn't in the dropdown.
         import shutil
         import subprocess
-        if shutil.which("wmctrl"):
+        wmctrl_available = bool(shutil.which("wmctrl"))
+        if wmctrl_available:
             try:
                 r = subprocess.run(
                     ["wmctrl", "-l"],
@@ -850,7 +859,7 @@ class EqualizerTab(QWidget):
                             out.append(title)
             except Exception:
                 pass
-        return out
+        return out, wmctrl_available
 
     def _add_binding(self) -> None:
         # Custom dialog (not QInputDialog.getItem) — the editable=True
@@ -858,7 +867,7 @@ class EqualizerTab(QWidget):
         # themes and the field reads as a plain text-edit, which the
         # user reported as 'no dropdown'. Building one ourselves lets
         # us show a real combo with explicit dropdown UI.
-        active = self._collect_binding_candidates()
+        active, wmctrl_available = self._collect_binding_candidates()
         from PySide6.QtCore import Qt as _Qt
         from PySide6.QtWidgets import (
             QComboBox as _QComboBox,
@@ -889,6 +898,30 @@ class EqualizerTab(QWidget):
         )
         prompt_lbl.setWordWrap(True)
         dlg_layout.addWidget(prompt_lbl)
+
+        # If wmctrl is missing the dropdown only shows audio clients
+        # (no open-windows source). Surface that explicitly so the
+        # user knows their open game-launcher window won't appear in
+        # the list — they have to type the name manually.
+        if not wmctrl_available:
+            warn_lbl = _QLabel(self.tr(
+                "⚠ <code>wmctrl</code> not installed — open windows are "
+                "not in the dropdown. Install <code>wmctrl</code> "
+                "(<code>dnf install wmctrl</code>) to get window-title "
+                "suggestions, or type the app name manually."
+            ))
+            warn_lbl.setWordWrap(True)
+            warn_lbl.setTextFormat(_Qt.RichText)
+            warn_lbl.setStyleSheet(
+                "background: rgba(255, 152, 0, 0.18);"
+                "border: 1px solid rgba(255, 152, 0, 0.6);"
+                "border-radius: 4px;"
+                "color: palette(text);"
+                "font-size: 11px;"
+                "padding: 6px;"
+            )
+            dlg_layout.addWidget(warn_lbl)
+
         combo = _QComboBox()
         combo.setEditable(True)
         combo.addItems(active)

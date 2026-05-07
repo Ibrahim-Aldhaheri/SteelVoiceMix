@@ -375,6 +375,11 @@
 <context>
     <name>EqualizerTab</name>
     <message>
+        <source>⚠ &lt;code&gt;wmctrl&lt;/code&gt; not installed — open windows are not in the dropdown. Install &lt;code&gt;wmctrl&lt;/code&gt; (&lt;code&gt;dnf install wmctrl&lt;/code&gt;) to get window-title suggestions, or type the app name manually.</source>
+        <extracomment>Warning shown in the Auto Game-EQ "Bind app to preset" dialog when wmctrl is missing. Tells the user the open-windows source is unavailable but they can still type the app name. Preserve the &lt;code&gt; tags and the ⚠ character.</extracomment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Equalizer</source>
         <translation>موازن الصوت</translation>
     </message>
