@@ -86,7 +86,13 @@ def parse_filename(name: str) -> tuple[str, str] | None:
 
 def write_preset(target: Path, name: str, channel: str, bands: list[dict]) -> None:
     payload = {"name": name, "channel": channel, "bands": bands}
-    target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    # ensure_ascii=False keeps game names with ™ / ® / accented chars
+    # readable in the file instead of being \uXXXX escaped — matters
+    # for diff review on auto-PRs.
+    target.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 def main() -> int:

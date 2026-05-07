@@ -68,6 +68,53 @@ jobs:
             python3 -c "import json; json.load(open('$f'))"
           done
 
+      - name: Compute diff summary
+        # Counts what changed in `gui/presets/` so the PR body can
+        # show high-level stats above the per-file diff. Reviewer
+        # sees scope at a glance ("12 added, 3 modified, 5 aliases")
+        # instead of scrolling through the file list to count.
+        id: diff_summary
+        run: |
+          set -e
+          # `git status --porcelain` lines: XY <path>
+          #   A  = added (staged) — but we haven't staged yet, so:
+          #   ?? = untracked (new file)
+          #    M = modified, unstaged
+          #    D = deleted, unstaged
+          presets_added=$(git status --porcelain gui/presets/asm/ | grep -c '^??' || true)
+          presets_modified=$(git status --porcelain gui/presets/asm/ | grep -c '^ M' || true)
+          presets_removed=$(git status --porcelain gui/presets/asm/ | grep -c '^ D' || true)
+          # Alias delta: count how many keys were added across all
+          # channels by diffing the JSON in-memory (more reliable
+          # than line-counting a sorted file).
+          alias_delta=$(python3 - <<'PY'
+          import json, subprocess
+          path = "gui/presets/runtime_aliases.json"
+          new = json.load(open(path))
+          # Compare against HEAD's version of the file. If git show
+          # fails (file is brand new), fall back to empty baseline.
+          try:
+              old_raw = subprocess.check_output(
+                  ["git", "show", f"HEAD:{path}"], text=True,
+              )
+              old = json.loads(old_raw)
+          except Exception:
+              old = {}
+          delta = 0
+          for ch in ("game", "chat", "mic"):
+              before = set((old.get(ch) or {}).keys())
+              after = set((new.get(ch) or {}).keys())
+              delta += len(after - before)
+          print(delta)
+          PY
+          )
+          {
+            echo "presets_added=$presets_added"
+            echo "presets_modified=$presets_modified"
+            echo "presets_removed=$presets_removed"
+            echo "alias_delta=$alias_delta"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Open PR if anything changed
         # Pull-requests action handles the "no changes → no PR"
         # decision automatically. Branch is reused across runs so
@@ -89,6 +136,15 @@ jobs:
           title: "deps(presets): weekly ASM preset refresh + alias stubs"
           body: |
             Automated by `.github/workflows/refresh-asm-presets.yml`.
+
+            ## Summary
+
+            | Change | Count |
+            |---|---:|
+            | Presets added | ${{ steps.diff_summary.outputs.presets_added }} |
+            | Presets modified | ${{ steps.diff_summary.outputs.presets_modified }} |
+            | Presets removed | ${{ steps.diff_summary.outputs.presets_removed }} |
+            | New aliases | ${{ steps.diff_summary.outputs.alias_delta }} |
 
             ## What changed
             - Pulled latest preset snapshot from
