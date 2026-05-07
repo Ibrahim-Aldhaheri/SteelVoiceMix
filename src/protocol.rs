@@ -57,6 +57,19 @@ impl AncMode {
     }
 }
 
+/// Which Nova Pro variant the daemon is connected to. Drives feature
+/// gating in both the daemon (skip wireless-only writes on Wired)
+/// and the GUI (hide ANC / Wireless mode / PM shutdown cards on
+/// Wired). Defaults to Wireless so existing-install state files
+/// rehydrate to current behaviour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DeviceVariant {
+    #[default]
+    Wireless,
+    Wired,
+}
+
 /// Auto power-off timer for the headset. Wire byte mapping (verified
 /// byte-exact against ASM nova_pro_wireless.yaml `values_mapping`):
 /// 0=never, 1=1m, 2=5m, 3=10m, 4=15m, 5=30m (device default), 6=60m.
@@ -620,6 +633,8 @@ pub enum DaemonEvent {
         pm_shutdown: PmShutdown,
         /// Master deck-control switch.
         deck_control_enabled: bool,
+        /// Currently-connected Nova Pro variant.
+        device_variant: DeviceVariant,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -727,6 +742,12 @@ pub enum DaemonEvent {
     #[serde(rename = "deck-control-enabled-changed")]
     DeckControlEnabledChanged { enabled: bool },
 
+    /// Fired when the daemon detects a different Nova Pro variant
+    /// (Wireless ↔ Wired). GUI uses this to hide wireless-only cards
+    /// on Wired (ANC, Wireless mode, PM shutdown).
+    #[serde(rename = "device-variant-changed")]
+    DeviceVariantChanged { variant: DeviceVariant },
+
     /// Fired when daemon-side desktop notifications are toggled.
     #[serde(rename = "notifications-enabled-changed")]
     NotificationsEnabledChanged { enabled: bool },
@@ -828,6 +849,7 @@ mod tests {
             mic_led_brightness: 10,
             pm_shutdown: PmShutdown::ThirtyMinutes,
             deck_control_enabled: false,
+            device_variant: DeviceVariant::Wireless,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -1192,6 +1214,19 @@ mod tests {
             let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
             assert_eq!(json["event"], "pm-shutdown-changed");
             assert_eq!(json["value"], label);
+        }
+    }
+
+    #[test]
+    fn device_variant_event_shape() {
+        for (variant, label) in [
+            (DeviceVariant::Wireless, "wireless"),
+            (DeviceVariant::Wired, "wired"),
+        ] {
+            let ev = DaemonEvent::DeviceVariantChanged { variant };
+            let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+            assert_eq!(json["event"], "device-variant-changed");
+            assert_eq!(json["variant"], label);
         }
     }
 

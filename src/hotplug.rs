@@ -25,7 +25,7 @@ use std::time::Duration;
 use log::{info, warn};
 use rusb::{Context, Device, Hotplug, HotplugBuilder, UsbContext};
 
-use crate::hid::{PRODUCT_ID, VENDOR_ID};
+use crate::hid::{PRODUCT_IDS, VENDOR_ID};
 
 /// Background watcher of USB add/remove events for the Nova Pro
 /// Wireless base station. Maintains the `device_present` flag the
@@ -45,14 +45,32 @@ struct Callback {
     device_present: Arc<AtomicBool>,
 }
 
+fn matches_nova_pro(device: &Device<Context>) -> bool {
+    device
+        .device_descriptor()
+        .map(|desc| {
+            desc.vendor_id() == VENDOR_ID && PRODUCT_IDS.contains(&desc.product_id())
+        })
+        .unwrap_or(false)
+}
+
 impl Hotplug<Context> for Callback {
-    fn device_arrived(&mut self, _device: Device<Context>) {
-        info!("USB hotplug: Nova Pro Wireless arrived");
+    fn device_arrived(&mut self, device: Device<Context>) {
+        // libusb fires for every SteelSeries device on the bus
+        // because we filter by VID only (the builder doesn't take
+        // a PID list). Drop events for non-Nova-Pro PIDs.
+        if !matches_nova_pro(&device) {
+            return;
+        }
+        info!("USB hotplug: Nova Pro arrived");
         self.device_present.store(true, Ordering::Relaxed);
     }
 
-    fn device_left(&mut self, _device: Device<Context>) {
-        info!("USB hotplug: Nova Pro Wireless left");
+    fn device_left(&mut self, device: Device<Context>) {
+        if !matches_nova_pro(&device) {
+            return;
+        }
+        info!("USB hotplug: Nova Pro left");
         self.device_present.store(false, Ordering::Relaxed);
     }
 }
@@ -81,23 +99,20 @@ pub fn start(device_present: Arc<AtomicBool>) -> Option<HotplugWatcher> {
     // devices, but that runs on a separate thread; without this
     // seed, the mixer can flap connect/disconnect on startup.
     if let Ok(devices) = ctx.devices() {
-        let already_present = devices.iter().any(|d| {
-            d.device_descriptor()
-                .map(|desc| desc.vendor_id() == VENDOR_ID && desc.product_id() == PRODUCT_ID)
-                .unwrap_or(false)
-        });
+        let already_present = devices.iter().any(|d| matches_nova_pro(&d));
         if already_present {
             device_present.store(true, Ordering::Relaxed);
         }
     }
 
-    // `enumerate=true` fires `device_arrived` for the device if it's
-    // already plugged in at start-up — so the flag is always seeded
-    // correctly even if no plug event happens during the daemon's
-    // lifetime.
+    // Filter by VID only — the builder takes one PID at a time and
+    // we want to catch all three Nova Pro variants (Wireless +
+    // Wired-USB + Wired-Xbox). The callback re-checks the PID via
+    // matches_nova_pro() to ignore unrelated SteelSeries devices.
+    // `enumerate=true` fires `device_arrived` for already-present
+    // devices too, so the flag is always seeded correctly.
     let registration = match HotplugBuilder::new()
         .vendor_id(VENDOR_ID)
-        .product_id(PRODUCT_ID)
         .enumerate(true)
         .register(
             &ctx,
@@ -128,8 +143,8 @@ pub fn start(device_present: Arc<AtomicBool>) -> Option<HotplugWatcher> {
     });
 
     info!(
-        "USB hotplug watcher armed for VID 0x{:04x} PID 0x{:04x}",
-        VENDOR_ID, PRODUCT_ID
+        "USB hotplug watcher armed for VID 0x{:04x} PIDs {:?}",
+        VENDOR_ID, PRODUCT_IDS
     );
     Some(HotplugWatcher {
         _registration: registration,

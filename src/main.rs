@@ -71,6 +71,7 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         mic_led_brightness: st.mic_led_brightness,
         pm_shutdown: st.pm_shutdown,
         deck_control_enabled: st.deck_control_enabled,
+        device_variant: st.device_variant,
     }
 }
 

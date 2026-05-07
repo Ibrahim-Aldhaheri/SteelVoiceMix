@@ -370,6 +370,9 @@ class MixerGUI(QMainWindow):
         self.signals.pm_shutdown_changed.connect(
             self.deck_tab.on_pm_shutdown_changed
         )
+        self.signals.device_variant_changed.connect(
+            self.deck_tab.on_device_variant_changed
+        )
 
     # ----------------------------------------------------- header + chatmix
 

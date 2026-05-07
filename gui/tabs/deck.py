@@ -118,10 +118,17 @@ class DeckTab(QWidget):
         controls_layout.setContentsMargins(0, 0, 0, 0)
         controls_layout.setSpacing(12)
         controls_layout.addWidget(self._build_oled_card())
-        controls_layout.addWidget(self._build_anc_card())
-        controls_layout.addWidget(self._build_wireless_card())
+        # Wireless-only cards. We keep references so on_device_variant_changed
+        # can hide them on the Wired Nova Pro (no ANC hardware, no 2.4 GHz
+        # radio, no battery → no auto-off).
+        self._anc_card = self._build_anc_card()
+        self._wireless_card = self._build_wireless_card()
+        self._pm_shutdown_card = None  # built below; assigned for clarity
+        controls_layout.addWidget(self._anc_card)
+        controls_layout.addWidget(self._wireless_card)
         controls_layout.addWidget(self._build_mic_hw_card())
-        controls_layout.addWidget(self._build_pm_shutdown_card())
+        self._pm_shutdown_card = self._build_pm_shutdown_card()
+        controls_layout.addWidget(self._pm_shutdown_card)
         self._controls_container.setEnabled(False)
         layout.addWidget(self._controls_container)
 
@@ -462,6 +469,17 @@ class DeckTab(QWidget):
             self.pm_shutdown_combo.setCurrentIndex(idx)
         finally:
             self.pm_shutdown_combo.blockSignals(was_blocked)
+
+    def on_device_variant_changed(self, variant: str) -> None:
+        # Hide wireless-only cards on the Wired Nova Pro. Wired
+        # variants don't have ANC hardware, a 2.4 GHz radio, or a
+        # battery, so the corresponding daemon writes are silent
+        # no-ops anyway — this just keeps the UI honest.
+        is_wireless = variant != "wired"
+        self._anc_card.setVisible(is_wireless)
+        self._wireless_card.setVisible(is_wireless)
+        if self._pm_shutdown_card is not None:
+            self._pm_shutdown_card.setVisible(is_wireless)
 
     def on_deck_control_enabled_changed(self, enabled: bool) -> None:
         was_blocked = self.deck_control_toggle.blockSignals(True)

@@ -13,8 +13,8 @@ use crate::config;
 use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
 use crate::protocol::{
-    AncMode, DaemonEvent, EqChannel, EqState, MicGain, MicState, PmShutdown, VolumeBoostState,
-    WirelessMode,
+    AncMode, DaemonEvent, DeviceVariant, EqChannel, EqState, MicGain, MicState, PmShutdown,
+    VolumeBoostState, WirelessMode,
 };
 
 pub type SharedSinks = Arc<Mutex<SinkManager>>;
@@ -200,6 +200,11 @@ pub struct MixerState {
     /// buttons. Reads from the device (battery-poll mirror) continue
     /// regardless so the GUI still tracks reality.
     pub deck_control_enabled: bool,
+    /// Which Nova Pro variant the daemon is currently connected to.
+    /// Set by `run_session` from `NovaDevice::variant()`. Drives GUI
+    /// gating (Wireless-only cards hidden on Wired) and daemon-side
+    /// no-op behaviour for opcodes the wired firmware doesn't accept.
+    pub device_variant: DeviceVariant,
 }
 
 impl MixerState {
@@ -264,6 +269,10 @@ impl MixerState {
             pm_shutdown,
             applied_pm_shutdown: u8::MAX,
             deck_control_enabled,
+            // Defaults to Wireless; updated when a session opens.
+            // Stays Wireless if no device is ever detected, which is
+            // a reasonable fallback (matches the current GUI layout).
+            device_variant: DeviceVariant::default(),
         }
     }
 }
@@ -526,6 +535,21 @@ impl Mixer {
     /// virtual sinks and OLED, announce state, and run the event loop until
     /// the user unplugs or we're told to shut down.
     fn run_session(&mut self, dev: NovaDevice, output_sink: String) -> SessionEnd {
+        // Capture device variant up-front; persist + broadcast so the
+        // GUI hides wireless-only cards (ANC / Wireless mode / PM
+        // shutdown) when on the Wired Nova Pro.
+        let variant = dev.variant();
+        info!("Connected to Nova Pro variant: {variant:?}");
+        let variant_changed = {
+            let mut st = self.state.lock().unwrap();
+            let prior = st.device_variant;
+            st.device_variant = variant;
+            prior != variant
+        };
+        if variant_changed {
+            self.broadcast(DaemonEvent::DeviceVariantChanged { variant });
+        }
+
         // Master gate: passive-open the OLED (no brightness write,
         // no draw probe) when the user has deck control disabled.
         // The handle still exists so oled_present is true and the
@@ -852,7 +876,7 @@ impl Mixer {
                         // for several knobs per ASM yaml — mirror them so
                         // the GUI tracks reality (e.g. user pressed the
                         // headset's ANC button while we weren't looking).
-                        if let Some(extras) = NovaDevice::parse_battery_extras(&msg) {
+                        if let Some(extras) = dev.parse_battery_extras(&msg) {
                             self.sync_anc_from_device(extras.anc_mode, extras.transparent_level);
                             self.sync_wireless_from_device(extras.wireless_mode);
                             self.sync_mic_led_from_device(extras.mic_led_brightness);
@@ -1014,7 +1038,7 @@ impl Mixer {
             Err(_) => BatteryPollResult::WriteFailed,
             Ok(None) => BatteryPollResult::NoReply,
             Ok(Some((bat, msg))) => {
-                if let Some(extras) = NovaDevice::parse_battery_extras(&msg) {
+                if let Some(extras) = dev.parse_battery_extras(&msg) {
                     self.sync_anc_from_device(extras.anc_mode, extras.transparent_level);
                     self.sync_wireless_from_device(extras.wireless_mode);
                     self.sync_mic_led_from_device(extras.mic_led_brightness);

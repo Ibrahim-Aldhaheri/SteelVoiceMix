@@ -3,11 +3,32 @@
 use hidapi::{HidApi, HidDevice};
 use thiserror::Error;
 
+use crate::protocol::DeviceVariant;
+
 // USB IDs
 pub const VENDOR_ID: u16 = 0x1038;  // SteelSeries
-pub const PRODUCT_ID: u16 = 0x12E0; // Arctis Nova Pro Wireless base station
-pub const HID_INTERFACE: i32 = 0x04; // Control interface
-pub const MSG_LEN: usize = 64;
+// Nova Pro variants — Wireless ships two PIDs (USB + Xbox), Wired
+// ships two as well (USB + Xbox). All share the same SteelSeries
+// vendor ID and the same HID control interface index. Per-variant
+// differences (msg padding, supported opcodes) live in DeviceVariant.
+pub const PRODUCT_ID_WIRELESS_USB: u16 = 0x12E0;
+pub const PRODUCT_ID_WIRELESS_XBOX: u16 = 0x12E5;
+pub const PRODUCT_ID_WIRED_USB: u16 = 0x12CB;
+pub const PRODUCT_ID_WIRED_XBOX: u16 = 0x12CD;
+pub const PRODUCT_IDS: &[u16] = &[
+    PRODUCT_ID_WIRELESS_USB,
+    PRODUCT_ID_WIRELESS_XBOX,
+    PRODUCT_ID_WIRED_USB,
+    PRODUCT_ID_WIRED_XBOX,
+];
+pub const HID_INTERFACE: i32 = 0x04;
+// Wireless variants pad commands to 64 bytes; wired variants pad
+// to 16. ASM yamls verify this — see `command_padding.length`.
+const MSG_LEN_WIRELESS: usize = 64;
+const MSG_LEN_WIRED: usize = 16;
+// Read buffer size must accommodate the largest possible reply
+// (wireless battery reply runs 64 bytes). Wired replies fit too.
+pub const MSG_LEN: usize = MSG_LEN_WIRELESS;
 
 // HID protocol bytes
 pub const TX: u8 = 0x06; // Host → base station
@@ -72,9 +93,11 @@ pub struct BatteryStatus {
     pub status: String,
 }
 
-/// Device-state fields carried alongside the battery in `0x06b0` replies
-/// (offsets per ASM nova_pro_wireless.yaml `response_mapping`).
-#[derive(Debug, Clone, Copy)]
+/// Device-state fields carried alongside the battery in `0x06b0` replies.
+/// Wired and wireless yamls share `mic_led_brightness` at offset 11 and
+/// `mic_status` at offset 9; everything else is wireless-only. Caller
+/// is expected to ignore `wireless_*` fields when on the Wired variant.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BatteryExtras {
     pub transparent_level: u8,
     pub anc_mode: u8,
@@ -114,21 +137,31 @@ pub enum HidError {
 /// Wrapper around an open HID device.
 pub struct NovaDevice {
     dev: HidDevice,
+    variant: DeviceVariant,
 }
 
 impl NovaDevice {
-    /// Find and open the base station HID device.
+    /// Find and open the base station HID device. Probes all known
+    /// PIDs (Wireless first, then both Wired editions) so a single
+    /// daemon binary supports either deck.
     pub fn open() -> Result<Self, HidError> {
         let api = HidApi::new().map_err(|e| HidError::ApiError(e.to_string()))?;
 
-        let path = api
+        // Pick whichever variant is currently on the bus. Wireless
+        // first since it's the more common dev hardware.
+        let (path, variant) = api
             .device_list()
-            .find(|d| {
-                d.vendor_id() == VENDOR_ID
-                    && d.product_id() == PRODUCT_ID
-                    && d.interface_number() == HID_INTERFACE
+            .find_map(|d| {
+                if d.vendor_id() != VENDOR_ID || d.interface_number() != HID_INTERFACE {
+                    return None;
+                }
+                let v = match d.product_id() {
+                    PRODUCT_ID_WIRELESS_USB | PRODUCT_ID_WIRELESS_XBOX => DeviceVariant::Wireless,
+                    PRODUCT_ID_WIRED_USB | PRODUCT_ID_WIRED_XBOX => DeviceVariant::Wired,
+                    _ => return None,
+                };
+                Some((d.path().to_owned(), v))
             })
-            .map(|d| d.path().to_owned())
             .ok_or(HidError::DeviceNotFound)?;
 
         let dev = api
@@ -138,15 +171,32 @@ impl NovaDevice {
         dev.set_blocking_mode(false)
             .map_err(|e| HidError::OpenFailed(e.to_string()))?;
 
-        Ok(NovaDevice { dev })
+        Ok(NovaDevice { dev, variant })
     }
 
-    /// Send a HID message to the base station.
+    /// Which Nova Pro variant this handle is talking to. Drives
+    /// per-variant capability gating in the mixer.
+    pub fn variant(&self) -> DeviceVariant {
+        self.variant
+    }
+
+    fn msg_len(&self) -> usize {
+        match self.variant {
+            DeviceVariant::Wireless => MSG_LEN_WIRELESS,
+            DeviceVariant::Wired => MSG_LEN_WIRED,
+        }
+    }
+
+    /// Send a HID message to the base station. Pads to the variant's
+    /// expected report size (64 bytes wireless, 16 bytes wired).
     fn send(&self, data: &[u8]) -> Result<(), HidError> {
         let mut msg = [0u8; MSG_LEN];
-        let len = data.len().min(MSG_LEN);
+        let target_len = self.msg_len();
+        let len = data.len().min(target_len);
         msg[..len].copy_from_slice(&data[..len]);
-        self.dev.write(&msg).map_err(|_| HidError::Disconnected)?;
+        self.dev
+            .write(&msg[..target_len])
+            .map_err(|_| HidError::Disconnected)?;
         Ok(())
     }
 
@@ -194,25 +244,31 @@ impl NovaDevice {
         Ok(())
     }
 
-    /// Set ANC mode. `mode` clamped to 0..=2 — 0=off, 1=transparent,
-    /// 2=on. Single Output report; ASM doesn't follow with SAVE_STATE
-    /// here, so neither do we.
+    /// Set ANC mode (Wireless variant only). On Wired this is a
+    /// silent no-op — the wired Nova Pro doesn't have ANC hardware
+    /// and the opcode isn't in ASM's wired yaml.
     pub fn set_anc_mode(&self, mode: u8) -> Result<(), HidError> {
+        if self.variant != DeviceVariant::Wireless {
+            return Ok(());
+        }
         let mode = mode.min(2);
         self.send(&[TX, OPT_NOISE_CANCELLING, mode])
     }
 
-    /// Set transparent-mode intensity level (1..=10).
+    /// Set transparent-mode intensity level (Wireless only).
     pub fn set_anc_transparent_level(&self, level: u8) -> Result<(), HidError> {
+        if self.variant != DeviceVariant::Wireless {
+            return Ok(());
+        }
         let level = level.clamp(1, 10);
         self.send(&[TX, OPT_TRANSPARENT_LEVEL, level])
     }
 
-    /// Set 2.4 GHz wireless mode (0x00=speed, 0x01=range). Caller is
-    /// responsible for checking that this differs from the device's
-    /// current value before invoking — the radio briefly drops the
-    /// link on every write regardless.
+    /// Set 2.4 GHz wireless mode (Wireless only — wired has no radio).
     pub fn set_wireless_mode(&self, mode: u8) -> Result<(), HidError> {
+        if self.variant != DeviceVariant::Wireless {
+            return Ok(());
+        }
         let mode = mode.min(1);
         self.send(&[TX, OPT_WIRELESS_MODE, mode])
     }
@@ -236,10 +292,12 @@ impl NovaDevice {
         self.send(&[TX, OPT_MIC_LED_BRIGHTNESS, level])
     }
 
-    /// Set auto power-off timer (raw byte value 0..=6 per ASM yaml
-    /// values_mapping). Use `protocol::PmShutdown::as_byte()` to
-    /// convert from the typed enum.
+    /// Set auto power-off timer (Wireless only — wired has no
+    /// battery so no auto-off applies).
     pub fn set_pm_shutdown(&self, value: u8) -> Result<(), HidError> {
+        if self.variant != DeviceVariant::Wireless {
+            return Ok(());
+        }
         let v = value.min(6);
         self.send(&[TX, OPT_PM_SHUTDOWN, v])
     }
@@ -292,20 +350,28 @@ impl NovaDevice {
     }
 
     /// All device-state extras carried by a `[0x06, 0xb0, ...]`
-    /// battery reply, per ASM nova_pro_wireless.yaml `response_mapping`.
-    /// Single parse so callers don't redo the length+opcode check
-    /// once per field.
-    pub fn parse_battery_extras(msg: &[u8]) -> Option<BatteryExtras> {
+    /// battery reply. Per ASM yamls: wired carries only mic_status
+    /// (offset 9, not used here) and mic_led_brightness (offset 11).
+    /// Wireless adds transparent_level (8), anc_mode (10), pm_shutdown
+    /// (12), wireless_mode (13). Wireless-only offsets stay 0 on wired
+    /// — callers gate on the device variant before consuming them.
+    pub fn parse_battery_extras(&self, msg: &[u8]) -> Option<BatteryExtras> {
         if msg.len() < 16 || msg[1] != OPT_BATTERY {
             return None;
         }
-        Some(BatteryExtras {
-            transparent_level: msg[8],
-            anc_mode: msg[10],
-            mic_led_brightness: msg[11],
-            pm_shutdown: msg[12],
-            wireless_mode: msg[13],
-        })
+        match self.variant {
+            DeviceVariant::Wireless => Some(BatteryExtras {
+                transparent_level: msg[8],
+                anc_mode: msg[10],
+                mic_led_brightness: msg[11],
+                pm_shutdown: msg[12],
+                wireless_mode: msg[13],
+            }),
+            DeviceVariant::Wired => Some(BatteryExtras {
+                mic_led_brightness: msg[11],
+                ..BatteryExtras::default()
+            }),
+        }
     }
 
     /// Request battery status from the base station.
