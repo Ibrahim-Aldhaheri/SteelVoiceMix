@@ -36,7 +36,7 @@ def _derive_app_version() -> str:
 # Bumped manually on each beta cut; runtime derives from RPM if
 # available so this constant only matters in source-checkout /
 # manual-install scenarios.
-_APP_VERSION_FALLBACK = "0.4.2~beta36"
+_APP_VERSION_FALLBACK = "0.4.2~beta37"
 APP_VERSION = _derive_app_version()
 
 CONFIG_DIR = Path.home() / ".config" / APP_NAME
@@ -242,7 +242,52 @@ def load() -> dict[str, Any]:
         settings["game_eq_bindings"] = [
             {"game": k, "preset": v} for k, v in sorted(legacy.items())
         ]
+
+    # Strip the legacy `[ASM] ` prefix from any persisted EQ preset
+    # name. Earlier versions badged bundled ASM presets in the
+    # dropdown ("[ASM] Apex Legends"); we removed the prefix once
+    # ASM credit moved permanently into the README. Without this
+    # migration, an upgrading user's auto-EQ rehydrates with a stale
+    # "[ASM] X" name that no longer exists in list_presets() →
+    # find_preset_bands returns None → silent no-op until the user
+    # reapplies. One-shot strip on load fixes it cleanly.
+    _strip_asm_prefix(settings)
     return settings
+
+
+def _strip_asm_prefix(settings: dict[str, Any]) -> None:
+    """In-place strip of the legacy `[ASM] ` prefix from every field
+    that could carry a preset name. Idempotent (safe to call against
+    already-migrated state)."""
+    prefix = "[ASM] "
+
+    def strip(s: object) -> object:
+        if isinstance(s, str) and s.startswith(prefix):
+            return s[len(prefix):]
+        return s
+
+    for key in ("auto_game_eq_active_preset", "auto_game_eq_pre_preset"):
+        v = settings.get(key)
+        if isinstance(v, str):
+            settings[key] = strip(v)
+
+    by_channel = settings.get("eq_active_preset_by_channel")
+    if isinstance(by_channel, dict):
+        settings["eq_active_preset_by_channel"] = {
+            ch: strip(name) for ch, name in by_channel.items()
+        }
+
+    favourites = settings.get("eq_favourites")
+    if isinstance(favourites, dict):
+        for ch, names in list(favourites.items()):
+            if isinstance(names, list):
+                favourites[ch] = [strip(n) for n in names]
+
+    bindings = settings.get("game_eq_bindings")
+    if isinstance(bindings, list):
+        for entry in bindings:
+            if isinstance(entry, dict) and "preset" in entry:
+                entry["preset"] = strip(entry["preset"])
 
 
 def save(settings: dict[str, Any]) -> None:

@@ -132,14 +132,14 @@ def match_asm_preset(game_name: str) -> str | None:
          is the explicit-overrides path — used to fix false positives
          (e.g. fuzzy match accidentally picking 'Podcast' for 'Pod')
          and to map runtime names that don't share the preset's
-         filename (e.g. `EldenRing.exe` → `[ASM] Elden Ring`).
+         filename (e.g. `EldenRing.exe` → `Elden Ring`).
       2. Fall back to fuzzy filename match against bundled ASM
          presets (cutoff 0.62). Catches new games we haven't aliased
          yet.
 
-    The returned name is the one the EQ tab shows in its dropdown
-    (i.e. with the `[ASM] ` prefix), so callers can pass it straight
-    to the existing apply path."""
+    The returned name is the plain preset display name as it appears
+    in the EQ tab dropdown — callers pass it straight to the existing
+    apply path."""
     if not game_name:
         return None
 
@@ -156,7 +156,7 @@ def match_asm_preset(game_name: str) -> str | None:
     matches = difflib.get_close_matches(target, keys, n=1, cutoff=_FUZZY_THRESHOLD)
     if not matches:
         return None
-    return f"[ASM] {index[matches[0]].stem}"
+    return index[matches[0]].stem
 
 
 def find_preset_bands(preset_name: str) -> list[dict] | None:

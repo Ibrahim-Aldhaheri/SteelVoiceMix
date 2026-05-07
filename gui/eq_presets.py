@@ -256,12 +256,10 @@ def list_bundled_asm_presets(channel: str) -> list[dict]:
         bands = data.get("bands")
         if not isinstance(bands, list) or len(bands) != NUM_BANDS:
             continue
-        # Display the ASM name with an "[ASM] " prefix so users can
-        # distinguish them from built-ins and their own saves at a
-        # glance — same convention the (now retired) network importer
-        # used.
+        # Bundled ASM presets are listed under their plain display name.
+        # ASM is credited in the README, no need to badge every entry.
         display = data.get("name", path.stem)
-        out.append({"name": f"[ASM] {display}", "bands": bands})
+        out.append({"name": display, "bands": bands})
     return out
 
 
@@ -317,12 +315,17 @@ def delete_user_preset(name: str, channel: str) -> bool:
 def is_user_preset(name: str, channel: str) -> bool:
     """True iff the named preset is user-saved (not a built-in or a
     bundled ASM preset). The Delete + Rename buttons only enable for
-    these. Bundled ASM presets carry the ASM_NAME_PREFIX so we can
-    short-circuit the check without doing file IO."""
-    if name.startswith(ASM_NAME_PREFIX):
-        return False
+    these. Built-ins and bundled ASM presets are identified by name
+    lookup against their respective sources — slightly more I/O than
+    a prefix check but always correct, and `bundled_asm_dir` is a
+    small read."""
     builtin_names = {p["name"] for p in BUILT_IN_PRESETS.get(channel, [])}
-    return name not in builtin_names
+    if name in builtin_names:
+        return False
+    bundled_names = {p["name"] for p in list_bundled_asm_presets(channel)}
+    if name in bundled_names:
+        return False
+    return True
 
 
 # ----------------------------------------------------- ASM preset import

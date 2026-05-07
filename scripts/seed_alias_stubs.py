@@ -8,16 +8,15 @@ new preset's filename. But fuzzy match is a fallback — explicit
 aliases are faster and immune to false positives. This script writes
 a baseline alias for every new preset:
 
-    "<Display Name>": "[ASM] <Display Name>"
+    "<Display Name>": "<Display Name>"
 
-— mapping the preset's display name to itself (with the standard
-[ASM] prefix). The maintainer can refine each entry afterward, e.g.
-adding `.exe` variants:
+— mapping the preset's display name to itself. The maintainer can
+refine each entry afterward, e.g. adding `.exe` variants:
 
-    "ApexLegends.exe": "[ASM] Apex Legends"
+    "ApexLegends.exe": "Apex Legends"
 
-Existing manual aliases (e.g. `r6.exe` → `[ASM] Rainbow Six Siege`)
-are NEVER overwritten. The script is idempotent — running it twice
+Existing manual aliases (e.g. `r6.exe` → `Rainbow Six Siege`) are
+NEVER overwritten. The script is idempotent — running it twice
 produces the same file the second time.
 
 Designed to run inside a GitHub Action immediately after
@@ -98,10 +97,10 @@ def main() -> int:
         existing_lower = {k.lower() for k in existing.keys()}
         added_here = 0
         for display in list_preset_displays(channel):
-            stub_value = f"[ASM] {display}"
-            # Don't add if the display name is already an alias key
-            # (case-insensitive) OR if any existing alias already
-            # points at this preset (manual aliases supersede).
+            # Default stub: alias the preset's display name to itself.
+            # Manual aliases (e.g. `EldenRing.exe → Elden Ring`) are
+            # NOT overwritten thanks to the two skip-checks below.
+            stub_value = display
             if display.lower() in existing_lower:
                 continue
             if stub_value in existing.values():
