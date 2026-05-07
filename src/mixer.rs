@@ -4,7 +4,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use log::{debug, info, warn};
 
@@ -74,6 +74,18 @@ fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
 /// before forcing a reconnect, which leaves room for a one-off
 /// firmware quirk to recover on the next poll.
 const HID_WATCHDOG_FAIL_THRESHOLD: u32 = 3;
+
+/// Wall-clock vs monotonic-clock divergence above this threshold in
+/// a single event-loop iteration is treated as a system suspend/
+/// resume cycle. Linux's `CLOCK_MONOTONIC` (which `Instant::now`
+/// uses) freezes during suspend; the wall clock keeps ticking.
+/// Detection: if `SystemTime` advances by >>10 s while `Instant`
+/// barely moves, we just woke up — return SessionEnd::Disconnected
+/// before issuing any I/O on the now-stale hidraw fd. (If we let
+/// the next `dev.write()` run on the stale fd, the kernel hidraw
+/// driver can wedge into a permanent unrecoverable state, which
+/// is what bit beta24 → 21 h of silent retries.)
+const SUSPEND_DETECTION_THRESHOLD: Duration = Duration::from_secs(10);
 
 /// Outcome of a battery poll. Drives the post-suspend HID watchdog.
 enum BatteryPollResult {
@@ -691,6 +703,14 @@ impl Mixer {
         // typically re-enumerated the device under suspend without
         // hidapi noticing.
         let mut consecutive_failed_polls: u32 = 0;
+        // Suspend detection — wall and monotonic clock pair updated
+        // each iteration. Divergence > SUSPEND_DETECTION_THRESHOLD
+        // means the system just resumed; bail out before touching
+        // the (potentially-stale) hidraw fd. See the constant's
+        // comment for the kernel-state-corruption trap that motivates
+        // this short-circuit.
+        let mut last_mono = Instant::now();
+        let mut last_wall = SystemTime::now();
         // Track the last-applied sidetone level so we can detect
         // GUI-driven changes from MixerState and push them to the
         // device. Initialised from current state (already applied at
@@ -698,9 +718,32 @@ impl Mixer {
         let mut last_sidetone = self.state.lock().unwrap().sidetone_level;
 
         while self.running.load(Ordering::Relaxed) {
+            // Suspend/resume sniffer — runs FIRST so we never issue
+            // any HID I/O on a fd whose underlying USB connection was
+            // just suspended. CLOCK_MONOTONIC freezes during suspend;
+            // CLOCK_REALTIME (wall clock) keeps ticking via the RTC.
+            // If we see a 10 s+ gap on wall while monotonic barely
+            // advanced, the system just woke up.
+            let now_mono = Instant::now();
+            let now_wall = SystemTime::now();
+            let mono_delta = now_mono.duration_since(last_mono);
+            let wall_delta = now_wall.duration_since(last_wall).unwrap_or_default();
+            if wall_delta > mono_delta + SUSPEND_DETECTION_THRESHOLD {
+                info!(
+                    "Suspend/resume detected (wall +{:.1}s vs mono +{:.1}s) — \
+                     forcing reconnect before touching the stale hidraw fd",
+                    wall_delta.as_secs_f64(),
+                    mono_delta.as_secs_f64(),
+                );
+                return SessionEnd::Disconnected;
+            }
+            last_mono = now_mono;
+            last_wall = now_wall;
+
             // Hotplug-driven fast disconnect. libusb just told us the
-            // device left the bus (typical on PC suspend/resume),
-            // so don't waste 3 minutes waiting for the watchdog.
+            // device left the bus (typical on PC suspend/resume on
+            // boxes where the kernel actually re-enumerates), so
+            // don't waste 3 minutes waiting for the watchdog.
             if !self.device_present.load(Ordering::Relaxed) {
                 info!("USB hotplug: device left the bus, ending session");
                 return SessionEnd::Disconnected;
