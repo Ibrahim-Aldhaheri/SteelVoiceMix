@@ -53,6 +53,16 @@ impl ChatMixGauge {
         Ok(ChatMixGauge { device, can_draw })
     }
 
+    /// Open the OLED handle in pure-observer mode — no brightness
+    /// write, no draw probe. Used when deck_control_enabled is false
+    /// so the daemon never touches the screen state. `can_draw` is
+    /// hard-set to false (we won't draw, so we don't need to know).
+    pub fn open_passive() -> Result<Self, String> {
+        let device = Device::connect().map_err(|e| format!("OLED open failed: {e}"))?;
+        info!("OLED display connected (passive — daemon control disabled)");
+        Ok(ChatMixGauge { device, can_draw: false })
+    }
+
     /// True iff this device accepts the larger Feature reports used
     /// for bitmap draws. Wireless variants return false here.
     pub fn can_draw(&self) -> bool {

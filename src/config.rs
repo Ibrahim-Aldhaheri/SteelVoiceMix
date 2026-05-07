@@ -128,6 +128,17 @@ pub struct DaemonState {
     /// Mic-mute LED brightness 1..=10.
     #[serde(default = "default_mic_level")]
     pub mic_led_brightness: u8,
+    /// Master switch for whether the daemon writes deck-side settings
+    /// (OLED brightness, ANC, wireless mode, mic gain/volume/LED,
+    /// sidetone) to the device. When false, the daemon stays in
+    /// pure-observer mode — reads state from the device for the GUI
+    /// but never pushes back. Defaults to false so a fresh install
+    /// can't silently override settings the user configured via
+    /// SteelSeries GG, headset hardware buttons, or another tool.
+    /// Existing users on the dev channel have to flip this on once
+    /// after upgrade to keep the old behaviour.
+    #[serde(default)]
+    pub deck_control_enabled: bool,
 }
 
 fn default_chatmix_half() -> u8 {
@@ -186,6 +197,7 @@ impl Default for DaemonState {
             mic_gain: MicGain::High,
             mic_volume: default_mic_level(),
             mic_led_brightness: default_mic_level(),
+            deck_control_enabled: false,
         }
     }
 }

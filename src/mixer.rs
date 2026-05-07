@@ -60,6 +60,7 @@ fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
         mic_gain: st.mic_gain,
         mic_volume: st.mic_volume,
         mic_led_brightness: st.mic_led_brightness,
+        deck_control_enabled: st.deck_control_enabled,
     });
 }
 
@@ -188,6 +189,12 @@ pub struct MixerState {
     /// Mic-mute LED brightness (1..=10). Persisted.
     pub mic_led_brightness: u8,
     pub applied_mic_led_brightness: u8,
+    /// Master switch: when false, the daemon never writes deck-side
+    /// settings to the device — pure-observer mode for users who
+    /// already configure the headset via SteelSeries GG / hardware
+    /// buttons. Reads from the device (battery-poll mirror) continue
+    /// regardless so the GUI still tracks reality.
+    pub deck_control_enabled: bool,
 }
 
 impl MixerState {
@@ -213,6 +220,7 @@ impl MixerState {
         mic_gain: MicGain,
         mic_volume: u8,
         mic_led_brightness: u8,
+        deck_control_enabled: bool,
     ) -> Self {
         MixerState {
             connected: false,
@@ -247,6 +255,7 @@ impl MixerState {
             applied_mic_volume: 0,
             mic_led_brightness,
             applied_mic_led_brightness: 0,
+            deck_control_enabled,
         }
     }
 }
@@ -472,13 +481,18 @@ impl Mixer {
         }
         info!("Base station connected, ChatMix enabled");
 
-        // Push the persisted sidetone level to the device on connect.
-        // The headset's EEPROM remembers across power cycles, but we
-        // re-send anyway in case the user's been on a different
-        // machine since.
-        let level = self.state.lock().unwrap().sidetone_level;
-        if let Err(e) = dev.set_sidetone(level) {
-            warn!("Could not restore sidetone level {level}: {e}");
+        // Push the persisted sidetone level to the device on connect
+        // (only when deck control is enabled). The headset's EEPROM
+        // remembers across power cycles, but we re-send anyway in
+        // case the user's been on a different machine since.
+        let (level, deck_control_enabled) = {
+            let st = self.state.lock().unwrap();
+            (st.sidetone_level, st.deck_control_enabled)
+        };
+        if deck_control_enabled {
+            if let Err(e) = dev.set_sidetone(level) {
+                warn!("Could not restore sidetone level {level}: {e}");
+            }
         }
 
         Some((dev, output_sink))
@@ -488,18 +502,35 @@ impl Mixer {
     /// virtual sinks and OLED, announce state, and run the event loop until
     /// the user unplugs or we're told to shut down.
     fn run_session(&mut self, dev: NovaDevice, output_sink: String) -> SessionEnd {
-        let initial_brightness = self.state.lock().unwrap().oled_brightness;
-        let (mut display, present_now) = match ChatMixGauge::new(initial_brightness) {
-            Ok(d) => {
-                info!(
-                    "OLED display initialized at brightness {initial_brightness} (gauge {})",
-                    if d.can_draw() { "enabled" } else { "disabled" }
-                );
-                (Some(d), true)
+        // Master gate: passive-open the OLED (no brightness write,
+        // no draw probe) when the user has deck control disabled.
+        // The handle still exists so oled_present is true and the
+        // GUI shows the Deck tab; controls are greyed-out client-side.
+        let (initial_brightness, deck_control_enabled) = {
+            let st = self.state.lock().unwrap();
+            (st.oled_brightness, st.deck_control_enabled)
+        };
+        let (mut display, present_now) = if deck_control_enabled {
+            match ChatMixGauge::new(initial_brightness) {
+                Ok(d) => {
+                    info!(
+                        "OLED display initialized at brightness {initial_brightness} (gauge {})",
+                        if d.can_draw() { "enabled" } else { "disabled" }
+                    );
+                    (Some(d), true)
+                }
+                Err(e) => {
+                    warn!("OLED display not available: {e}");
+                    (None, false)
+                }
             }
-            Err(e) => {
-                warn!("OLED display not available: {e}");
-                (None, false)
+        } else {
+            match ChatMixGauge::open_passive() {
+                Ok(d) => (Some(d), true),
+                Err(e) => {
+                    warn!("OLED display not available (passive open): {e}");
+                    (None, false)
+                }
             }
         };
         let was_present = {
@@ -628,7 +659,7 @@ impl Mixer {
             }
             // One state read per iteration covers all pending GUI
             // writes (sidetone + OLED brightness + ANC + wireless +
-            // mic gain/volume/LED).
+            // mic gain/volume/LED) + the master deck-control gate.
             let snap = {
                 let st = self.state.lock().unwrap();
                 (
@@ -647,6 +678,7 @@ impl Mixer {
                     st.applied_mic_volume,
                     st.mic_led_brightness,
                     st.applied_mic_led_brightness,
+                    st.deck_control_enabled,
                 )
             };
             let (
@@ -665,83 +697,95 @@ impl Mixer {
                 applied_mic_vol,
                 want_mic_led,
                 applied_mic_led,
+                deck_control_enabled,
             ) = snap;
-            if want_sidetone != last_sidetone {
-                if let Err(e) = dev.set_sidetone(want_sidetone) {
-                    warn!("Failed to apply sidetone {want_sidetone}: {e}");
-                } else {
-                    last_sidetone = want_sidetone;
+            // All device writes are gated on the master deck-control
+            // toggle. State still mutates freely client-side (so the
+            // GUI can preview future changes), but nothing reaches
+            // the firmware until the user opts in.
+            if deck_control_enabled {
+                if want_sidetone != last_sidetone {
+                    if let Err(e) = dev.set_sidetone(want_sidetone) {
+                        warn!("Failed to apply sidetone {want_sidetone}: {e}");
+                    } else {
+                        last_sidetone = want_sidetone;
+                    }
+                }
+
+                // Mark applied unconditionally — on failure the firmware
+                // is silently dropping writes; retrying every 100 ms would
+                // spam HID + warn logs forever. Next reconnect re-pushes
+                // via run_session.
+                if want_bright != applied_bright {
+                    if let Some(ref d) = display {
+                        d.set_brightness(want_bright);
+                    }
+                    self.state.lock().unwrap().applied_oled_brightness = want_bright;
                 }
             }
 
-            // Mark applied unconditionally — on failure the firmware
-            // is silently dropping writes; retrying every 100 ms would
-            // spam HID + warn logs forever. Next reconnect re-pushes
-            // via run_session.
-            if want_bright != applied_bright {
-                if let Some(ref d) = display {
-                    d.set_brightness(want_bright);
+            // Apply pending ANC state (same gate). Same once-per-iter
+            // mark-applied pattern: write, then mark applied
+            // unconditionally so a silently-failed firmware write
+            // doesn't loop forever.
+            if deck_control_enabled {
+                if want_anc_mode.as_byte() != applied_anc_mode {
+                    if let Err(e) = dev.set_anc_mode(want_anc_mode.as_byte()) {
+                        warn!("Failed to apply ANC mode {want_anc_mode:?}: {e}");
+                    }
+                    self.state.lock().unwrap().applied_anc_mode = want_anc_mode.as_byte();
                 }
-                self.state.lock().unwrap().applied_oled_brightness = want_bright;
+                if want_anc_trans != applied_anc_trans {
+                    if let Err(e) = dev.set_anc_transparent_level(want_anc_trans) {
+                        warn!("Failed to apply ANC transparent level {want_anc_trans}: {e}");
+                    }
+                    self.state.lock().unwrap().applied_anc_transparent_level = want_anc_trans;
+                }
             }
 
-            // Apply pending ANC state. Same once-per-iteration pattern
-            // as brightness: write, then mark applied unconditionally
-            // so a silently-failed firmware write doesn't loop forever.
-            if want_anc_mode.as_byte() != applied_anc_mode {
-                if let Err(e) = dev.set_anc_mode(want_anc_mode.as_byte()) {
-                    warn!("Failed to apply ANC mode {want_anc_mode:?}: {e}");
+            if deck_control_enabled {
+                // Wireless-mode write briefly drops the radio link, so we
+                // only push when the desired byte differs from what the
+                // device reported back (battery-poll mirror keeps applied
+                // in sync). Otherwise spamming set/toggle from a shortcut
+                // would bounce the headset every keypress.
+                if want_wireless.as_byte() != applied_wireless {
+                    info!(
+                        "Wireless mode change: {:?} → {:?} (radio will briefly drop link)",
+                        WirelessMode::from_byte(applied_wireless),
+                        want_wireless,
+                    );
+                    if let Err(e) = dev.set_wireless_mode(want_wireless.as_byte()) {
+                        warn!("Failed to apply wireless mode {want_wireless:?}: {e}");
+                    }
+                    self.state.lock().unwrap().applied_wireless_mode = want_wireless.as_byte();
                 }
-                self.state.lock().unwrap().applied_anc_mode = want_anc_mode.as_byte();
-            }
-            if want_anc_trans != applied_anc_trans {
-                if let Err(e) = dev.set_anc_transparent_level(want_anc_trans) {
-                    warn!("Failed to apply ANC transparent level {want_anc_trans}: {e}");
-                }
-                self.state.lock().unwrap().applied_anc_transparent_level = want_anc_trans;
-            }
 
-            // Wireless-mode write briefly drops the radio link, so we
-            // only push when the desired byte differs from what the
-            // device reported back (battery-poll mirror keeps applied
-            // in sync). Otherwise spamming set/toggle from a shortcut
-            // would bounce the headset every keypress.
-            if want_wireless.as_byte() != applied_wireless {
-                info!(
-                    "Wireless mode change: {:?} → {:?} (radio will briefly drop link)",
-                    WirelessMode::from_byte(applied_wireless),
-                    want_wireless,
-                );
-                if let Err(e) = dev.set_wireless_mode(want_wireless.as_byte()) {
-                    warn!("Failed to apply wireless mode {want_wireless:?}: {e}");
+                // Mic gain / volume / LED brightness — same once-per-iter
+                // mark-applied-unconditionally pattern. None of these
+                // disconnect the device on write, so no compare-and-skip
+                // safety needed at the daemon-command layer.
+                if want_mic_gain.as_byte() != applied_mic_gain {
+                    debug!("mic gain → {:?}", want_mic_gain);
+                    if let Err(e) = dev.set_mic_gain(want_mic_gain.as_byte()) {
+                        warn!("Failed to apply mic gain {want_mic_gain:?}: {e}");
+                    }
+                    self.state.lock().unwrap().applied_mic_gain = want_mic_gain.as_byte();
                 }
-                self.state.lock().unwrap().applied_wireless_mode = want_wireless.as_byte();
-            }
-
-            // Mic gain / volume / LED brightness — same once-per-iter
-            // mark-applied-unconditionally pattern. None of these
-            // disconnect the device on write, so no compare-and-skip
-            // safety needed at the daemon-command layer.
-            if want_mic_gain.as_byte() != applied_mic_gain {
-                debug!("mic gain → {:?}", want_mic_gain);
-                if let Err(e) = dev.set_mic_gain(want_mic_gain.as_byte()) {
-                    warn!("Failed to apply mic gain {want_mic_gain:?}: {e}");
+                if want_mic_vol != applied_mic_vol {
+                    debug!("mic volume → {want_mic_vol}");
+                    if let Err(e) = dev.set_mic_volume(want_mic_vol) {
+                        warn!("Failed to apply mic volume {want_mic_vol}: {e}");
+                    }
+                    self.state.lock().unwrap().applied_mic_volume = want_mic_vol;
                 }
-                self.state.lock().unwrap().applied_mic_gain = want_mic_gain.as_byte();
-            }
-            if want_mic_vol != applied_mic_vol {
-                debug!("mic volume → {want_mic_vol}");
-                if let Err(e) = dev.set_mic_volume(want_mic_vol) {
-                    warn!("Failed to apply mic volume {want_mic_vol}: {e}");
+                if want_mic_led != applied_mic_led {
+                    debug!("mic LED brightness → {want_mic_led}");
+                    if let Err(e) = dev.set_mic_led_brightness(want_mic_led) {
+                        warn!("Failed to apply mic LED brightness {want_mic_led}: {e}");
+                    }
+                    self.state.lock().unwrap().applied_mic_led_brightness = want_mic_led;
                 }
-                self.state.lock().unwrap().applied_mic_volume = want_mic_vol;
-            }
-            if want_mic_led != applied_mic_led {
-                debug!("mic LED brightness → {want_mic_led}");
-                if let Err(e) = dev.set_mic_led_brightness(want_mic_led) {
-                    warn!("Failed to apply mic LED brightness {want_mic_led}: {e}");
-                }
-                self.state.lock().unwrap().applied_mic_led_brightness = want_mic_led;
             }
 
             // Short timeout keeps dial-to-update latency low; battery

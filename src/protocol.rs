@@ -505,6 +505,13 @@ pub enum ClientCommand {
     /// Set mic-mute LED brightness (1..=10).
     #[serde(rename = "set-mic-led-brightness")]
     SetMicLedBrightness { level: u8 },
+    /// Master switch for whether the daemon writes deck-side settings
+    /// to the device. Off = pure observer; on = current behaviour
+    /// (push persisted state on connect, react to GUI/CLI commands).
+    /// Flipping false→true re-applies all persisted settings on the
+    /// next event-loop iteration.
+    #[serde(rename = "set-deck-control-enabled")]
+    SetDeckControlEnabled { enabled: bool },
     /// Toggle daemon-side desktop notifications (the connect /
     /// disconnect notify-send popups). Distinct from the GUI's own
     /// minimize-to-tray toast, which is GUI-side only.
@@ -569,6 +576,8 @@ pub enum DaemonEvent {
         mic_volume: u8,
         /// Mic-mute LED brightness (1..=10).
         mic_led_brightness: u8,
+        /// Master deck-control switch.
+        deck_control_enabled: bool,
     },
 
     /// Fired whenever the daemon adds or removes the SteelMedia sink —
@@ -665,6 +674,11 @@ pub enum DaemonEvent {
     /// Fired when mic-mute LED brightness changes (1..=10).
     #[serde(rename = "mic-led-brightness-changed")]
     MicLedBrightnessChanged { level: u8 },
+
+    /// Fired when the master deck-control toggle changes. GUI uses
+    /// this to enable/disable all deck controls.
+    #[serde(rename = "deck-control-enabled-changed")]
+    DeckControlEnabledChanged { enabled: bool },
 
     /// Fired when daemon-side desktop notifications are toggled.
     #[serde(rename = "notifications-enabled-changed")]
@@ -765,6 +779,7 @@ mod tests {
             mic_gain: MicGain::High,
             mic_volume: 10,
             mic_led_brightness: 10,
+            deck_control_enabled: false,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
         assert_eq!(json["event"], "status");
@@ -1103,6 +1118,24 @@ mod tests {
         match cmd {
             ClientCommand::SetMicLedBrightness { level } => assert_eq!(level, 3),
             other => panic!("expected SetMicLedBrightness, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deck_control_round_trip() {
+        for enabled in [true, false] {
+            let cmd_json = format!(
+                r#"{{"cmd":"set-deck-control-enabled","enabled":{enabled}}}"#
+            );
+            let parsed: ClientCommand = from_str(&cmd_json).unwrap();
+            match parsed {
+                ClientCommand::SetDeckControlEnabled { enabled: e } => assert_eq!(e, enabled),
+                other => panic!("expected SetDeckControlEnabled, got {other:?}"),
+            }
+            let ev = DaemonEvent::DeckControlEnabledChanged { enabled };
+            let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+            assert_eq!(json["event"], "deck-control-enabled-changed");
+            assert_eq!(json["enabled"], enabled);
         }
     }
 

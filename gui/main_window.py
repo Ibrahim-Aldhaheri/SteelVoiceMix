@@ -368,6 +368,9 @@ class MixerGUI(QMainWindow):
         self.signals.mic_led_brightness_changed.connect(
             self.deck_tab.on_mic_led_brightness_changed
         )
+        self.signals.deck_control_enabled_changed.connect(
+            self.deck_tab.on_deck_control_enabled_changed
+        )
 
     # ----------------------------------------------------- header + chatmix
 

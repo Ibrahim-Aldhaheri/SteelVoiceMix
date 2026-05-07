@@ -134,6 +134,8 @@ class DaemonSignals(QObject):
     mic_volume_changed = Signal(int)
     # Mic-mute LED brightness (1..10).
     mic_led_brightness_changed = Signal(int)
+    # Master deck-control gate.
+    deck_control_enabled_changed = Signal(bool)
     # Daemon-side desktop notification toggle (separate from the GUI's
     # own minimize-to-tray toast; this one gates the connect /
     # disconnect notify-send popups emitted by the Rust daemon).
@@ -263,6 +265,10 @@ class DaemonClient:
             self.signals.mic_volume_changed.emit(int(event.get("level", 10)))
         elif ev == "mic-led-brightness-changed":
             self.signals.mic_led_brightness_changed.emit(int(event.get("level", 10)))
+        elif ev == "deck-control-enabled-changed":
+            self.signals.deck_control_enabled_changed.emit(
+                bool(event.get("enabled", False))
+            )
         elif ev == "notifications-enabled-changed":
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("enabled", True))
@@ -332,6 +338,9 @@ class DaemonClient:
             self.signals.mic_volume_changed.emit(int(event.get("mic_volume", 10)))
             self.signals.mic_led_brightness_changed.emit(
                 int(event.get("mic_led_brightness", 10))
+            )
+            self.signals.deck_control_enabled_changed.emit(
+                bool(event.get("deck_control_enabled", False))
             )
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("notifications_enabled", True))

@@ -1224,5 +1224,21 @@ Continue?</source>
         <source>Hardware mic settings on the headset itself, written via the base-station HID. Distinct from the Microphone tab which controls software-side capture processing (gate, noise reduction, AI noise cancellation).</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Deck Control</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Allow SteelVoiceMix to manage deck settings</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>When off, the daemon never writes to the headset — it only reads state for display. Turn this on to let the controls below take effect on your device.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Default off. Existing device settings (configured via SteelSeries GG, headset hardware buttons, or another tool) stay untouched until you opt in. Settings you configure below while this is off are remembered and applied as soon as you enable it.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 </TS>

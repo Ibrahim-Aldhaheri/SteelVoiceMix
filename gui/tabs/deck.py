@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..widgets import NoWheelSlider, card
+from ..widgets import NoWheelSlider, card, labelled_toggle
 
 _ANC_MODES = ("off", "transparent", "on")
 _WIRELESS_MODES = ("speed", "range")
@@ -52,10 +52,21 @@ class DeckTab(QWidget):
         layout.setSpacing(12)
         layout.setContentsMargins(16, 16, 16, 16)
 
-        layout.addWidget(self._build_oled_card())
-        layout.addWidget(self._build_anc_card())
-        layout.addWidget(self._build_wireless_card())
-        layout.addWidget(self._build_mic_hw_card())
+        layout.addWidget(self._build_master_toggle_card())
+        # Container for all controls that depend on deck control being
+        # enabled. We disable() the whole QWidget when the toggle is
+        # off so cards stay laid out (no jumpy reflow) but go visually
+        # greyed and unclickable.
+        self._controls_container = QWidget()
+        controls_layout = QVBoxLayout(self._controls_container)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(12)
+        controls_layout.addWidget(self._build_oled_card())
+        controls_layout.addWidget(self._build_anc_card())
+        controls_layout.addWidget(self._build_wireless_card())
+        controls_layout.addWidget(self._build_mic_hw_card())
+        self._controls_container.setEnabled(False)
+        layout.addWidget(self._controls_container)
 
         self._not_connected_hint = QLabel(
             self.tr(
@@ -98,6 +109,39 @@ class DeckTab(QWidget):
         self._mic_led_send_timer.setInterval(120)
         self._mic_led_send_timer.timeout.connect(self._send_mic_led_brightness)
         self._mic_led_pending: int | None = None
+
+    def _build_master_toggle_card(self) -> QWidget:
+        # Master gate. Defaults to OFF on a fresh install so a normal
+        # user's existing device settings (set via SteelSeries GG,
+        # headset hardware buttons, etc.) aren't silently overwritten
+        # by the daemon on first launch.
+        toggle_row, self.deck_control_toggle = labelled_toggle(
+            self.tr("Allow SteelVoiceMix to manage deck settings"),
+            tooltip=self.tr(
+                "When off, the daemon never writes to the headset — it "
+                "only reads state for display. Turn this on to let the "
+                "controls below take effect on your device."
+            ),
+        )
+        self.deck_control_toggle.setChecked(False)
+        self.deck_control_toggle.setEnabled(self._daemon is not None)
+        self.deck_control_toggle.toggled.connect(self._on_deck_control_toggled)
+
+        help_lbl = QLabel(
+            self.tr(
+                "Default off. Existing device settings (configured via "
+                "SteelSeries GG, headset hardware buttons, or another "
+                "tool) stay untouched until you opt in. Settings you "
+                "configure below while this is off are remembered and "
+                "applied as soon as you enable it."
+            )
+        )
+        help_lbl.setWordWrap(True)
+        help_lbl.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        return card(self.tr("Deck Control"), toggle_row, help_lbl)
 
     def _build_oled_card(self) -> QWidget:
         row = QHBoxLayout()
@@ -424,6 +468,16 @@ class DeckTab(QWidget):
             self.mic_led_slider.blockSignals(was_blocked)
         self.mic_led_value.setText(f"{clamped} / 10")
 
+    def on_deck_control_enabled_changed(self, enabled: bool) -> None:
+        # Block signals so the daemon echo doesn't loop back as
+        # another set-deck-control-enabled.
+        was_blocked = self.deck_control_toggle.blockSignals(True)
+        try:
+            self.deck_control_toggle.setChecked(bool(enabled))
+        finally:
+            self.deck_control_toggle.blockSignals(was_blocked)
+        self._controls_container.setEnabled(bool(enabled))
+
     def _on_brightness_value_changed(self, value: int) -> None:
         self.oled_brightness_value.setText(f"{value} / 10")
         self._oled_pending_level = int(value)
@@ -493,3 +547,14 @@ class DeckTab(QWidget):
             "set-mic-led-brightness", level=self._mic_led_pending
         )
         self._mic_led_pending = None
+
+    def _on_deck_control_toggled(self, checked: bool) -> None:
+        # Local UI update happens immediately; the daemon echo will
+        # arrive shortly and is idempotent under the blockSignals
+        # guard in on_deck_control_enabled_changed.
+        self._controls_container.setEnabled(bool(checked))
+        if self._daemon is None:
+            return
+        self._daemon.send_command(
+            "set-deck-control-enabled", enabled=bool(checked)
+        )
