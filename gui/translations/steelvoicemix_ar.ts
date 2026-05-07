@@ -25,7 +25,8 @@
     </message>
     <message>
         <source>🖥   Deck</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Sidebar navigation button for the Deck tab (hardware controls for the Arctis base station — OLED, ANC, wireless mode, mic hardware settings). Keep short; matches the other nav labels like 🎛 Equalizer.</extracomment>
+        <translation>🖥   اللوحة</translation>
     </message>
     <message>
         <source>⚙   Settings</source>
@@ -128,11 +129,13 @@
     </message>
     <message>
         <source>Deck not detected</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Status label shown on the Home tab when the base station USB cable is not plugged in. "Deck" refers to the Arctis Nova Pro base station/deck hardware.</extracomment>
+        <translation>اللوحة غير متصلة</translation>
     </message>
     <message>
         <source>—</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Placeholder dash shown on the Home tab when a numeric value (e.g. battery percentage, deck info) is unavailable. Preserve the em-dash character exactly.</extracomment>
+        <translation>—</translation>
     </message>
     <message>
         <source>Battery good</source>
@@ -829,7 +832,8 @@
     </message>
     <message>
         <source>Voice Test</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Section title on the Microphone tab for the loopback listen / voice-test controls. The user uses this to hear their own mic output through the headset to test gate/NR/AI-NC settings.</extracomment>
+        <translation>اختبار الصوت</translation>
     </message>
     <message>
         <source>🎧  Hear yourself (test mic)</source>
@@ -1158,139 +1162,173 @@ Continue?</source>
     <name>DeckTab</name>
     <message>
         <source>OLED Brightness</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Section title above the OLED brightness slider on the Deck tab. Refers to the small screen on the Arctis base station. OLED stays in English (technical term).</extracomment>
+        <translation>سطوع شاشة OLED</translation>
     </message>
     <message>
         <source>Deck not detected. Plug in the base station's USB cable; your selection here will apply on connect.</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Inline status message on the Deck tab when the base station USB is disconnected. Tells the user the settings they configure now will be applied once the device connects. Keep concise.</extracomment>
+        <translation>اللوحة غير متصلة. وصّل كابل USB بالقاعدة؛ سيُطبَّق اختيارك هنا عند الاتصال.</translation>
     </message>
     <message>
         <source>⚠ Deck not detected. Plug in the base station's USB cable; controls below stay disabled until the device shows up on the bus.</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Warning banner at the top of the Deck tab when the base station is not detected on USB. Informs the user the controls are disabled. Preserve the ⚠ character.</extracomment>
+        <translation>⚠ اللوحة غير متصلة. وصّل كابل USB بالقاعدة؛ تظل الأدوات أدناه معطّلة حتى يظهر الجهاز على الناقل.</translation>
     </message>
     <message>
         <source>Base-station screen brightness. Re-applied automatically on every reconnect — the deck does not remember this across power cycles.</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Tooltip/description for the OLED brightness slider on the Deck tab. Explains that the brightness setting is reapplied on every reconnect because the base station does not persist it across power cycles.</extracomment>
+        <translation>سطوع شاشة القاعدة. يُعاد تطبيقه تلقائيًا في كل إعادة اتصال — اللوحة لا تتذكر هذا الإعداد عبر دورات الطاقة.</translation>
     </message>
     <message>
         <source>Headset ANC</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Section title on the Deck tab for the Active Noise Cancellation controls. ANC is a technical abbreviation; keep it in English as the existing translations do with similar abbreviations.</extracomment>
+        <translation>إلغاء الضوضاء (ANC) للسماعة</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <extracomment>ANC mode option on the Deck tab: noise cancellation is fully off. Matches "معطّل" used for Off in MicrophoneTab.</extracomment>
+        <translation>معطّل</translation>
     </message>
     <message>
         <source>Transparent</source>
-        <translation type="unfinished"></translation>
+        <extracomment>ANC mode option on the Deck tab: transparent/pass-through mode lets ambient sound in. Hardware ANC term.</extracomment>
+        <translation>شفّاف</translation>
     </message>
     <message>
         <source>ANC On</source>
-        <translation type="unfinished"></translation>
+        <extracomment>ANC mode option on the Deck tab: active noise cancellation is fully enabled. ANC stays in English as a recognised abbreviation.</extracomment>
+        <translation>ANC مُفعّل</translation>
     </message>
     <message>
         <source>Active Noise Cancellation. The headset's hardware button cycles the same three modes; changes there reflect here automatically. Transparent intensity (1..10) only matters in Transparent mode.</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Tooltip/description for the ANC section on the Deck tab. Explains the three ANC modes and that the headset hardware button syncs with the GUI. Transparent intensity range (1..10) is a numeric range — keep as-is.</extracomment>
+        <translation>إلغاء الضوضاء النشط. زر العتاد على السماعة يتنقل بين نفس الأوضاع الثلاثة؛ أي تغيير هناك ينعكس هنا تلقائيًا. شدة الوضع الشفّاف (1..10) تؤثر فقط في وضع "شفّاف".</translation>
     </message>
     <message>
         <source>Wireless Mode</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Section title on the Deck tab for the wireless transmission mode selector (Speed vs Range). Controls the RF trade-off on the Arctis Nova Pro Wireless.</extracomment>
+        <translation>وضع اللاسلكي</translation>
     </message>
     <message>
         <source>Speed (low latency)</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Wireless mode option on the Deck tab: prioritises low RF latency at the cost of range. Shown in a radio-button or combo. Keep the parenthetical in Arabic.</extracomment>
+        <translation>سرعة (زمن استجابة منخفض)</translation>
     </message>
     <message>
         <source>Range (long distance)</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Wireless mode option on the Deck tab: prioritises long RF range at the cost of latency. Keep the parenthetical in Arabic.</extracomment>
+        <translation>مدى (مسافة طويلة)</translation>
     </message>
     <message>
         <source>Switching modes briefly drops the wireless link. Bind a keyboard shortcut to &lt;code&gt;steelvoicemix-cli wireless-mode toggle&lt;/code&gt; for a one-press flip when you walk to another room.</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Tooltip/description for the wireless mode section on the Deck tab. Warns about momentary dropout and suggests binding a keyboard shortcut. Preserve &lt;code&gt;...&lt;/code&gt; tags and CLI command verbatim.</extracomment>
+        <translation>تبديل الأوضاع يقطع الاتصال اللاسلكي لحظيًا. اربط اختصار لوحة مفاتيح بـ &lt;code&gt;steelvoicemix-cli wireless-mode toggle&lt;/code&gt; للتبديل بضغطة واحدة عند الانتقال لغرفة أخرى.</translation>
     </message>
     <message>
         <source>Microphone (hardware)</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Section title on the Deck tab for hardware microphone settings (gain, volume, mute LED) written directly to the headset via HID. Distinguishes from the software Microphone tab.</extracomment>
+        <translation>الميكروفون (عتاد)</translation>
     </message>
     <message>
         <source>Gain</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Label for the hardware microphone gain control on the Deck tab (Low / High toggle). "Gain" as in hardware preamp gain on the headset.</extracomment>
+        <translation>الكسب</translation>
     </message>
     <message>
         <source>Low</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Hardware mic gain option on the Deck tab: low gain setting. Matches "منخفض" used for Low in MicrophoneTab.</extracomment>
+        <translation>منخفض</translation>
     </message>
     <message>
         <source>High</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Hardware mic gain option on the Deck tab: high gain setting. Matches "مرتفع" used for High in MicrophoneTab.</extracomment>
+        <translation>مرتفع</translation>
     </message>
     <message>
         <source>Volume</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Label for the hardware microphone volume slider on the Deck tab. Controls the mic output level on the headset hardware itself.</extracomment>
+        <translation>مستوى الصوت</translation>
     </message>
     <message>
         <source>Mute LED</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Label for the mute LED toggle on the Deck tab. Controls whether the headset's physical mute-indicator LED is on when the mic is muted.</extracomment>
+        <translation>مصباح الكتم</translation>
     </message>
     <message>
         <source>Hardware mic settings on the headset itself, written via the base-station HID. Distinct from the Microphone tab which controls software-side capture processing (gate, noise reduction, AI noise cancellation).</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Tooltip/description for the Microphone (hardware) section on the Deck tab. Clarifies these are low-level HID writes to the headset, not software processing (which lives on the Microphone tab).</extracomment>
+        <translation>إعدادات الميكروفون العتادية على السماعة ذاتها، تُكتَب عبر HID القاعدة. مختلفة عن تبويب الميكروفون الذي يتحكم في معالجة الالتقاط البرمجية (البوابة، إزالة الضوضاء، إلغاء الضوضاء بالذكاء الاصطناعي).</translation>
     </message>
     <message>
         <source>Untested. Bytes match ASM exactly but the listening-side behaviour hasn't been verified on hardware.</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Warning note on the Deck tab for mic hardware controls. Warns that while the protocol bytes match ASM's reference, the actual effect on real hardware has not been confirmed. Keep "ASM" as-is (refers to the reference implementation).</extracomment>
+        <translation>غير مختبر. البايتات تطابق ASM تمامًا لكن السلوك الفعلي لم يتحقق منه على عتاد حقيقي.</translation>
     </message>
     <message>
         <source>Deck Control</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Section title on the Deck tab for the master opt-in toggle that allows SteelVoiceMix to write settings to the base station hardware. When this is off the daemon is read-only.</extracomment>
+        <translation>التحكم باللوحة</translation>
     </message>
     <message>
         <source>Allow SteelVoiceMix to manage deck settings</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Checkbox/toggle label on the Deck tab. When the user enables this, SteelVoiceMix is allowed to write hardware settings to the Arctis base station (OLED brightness, ANC, wireless mode, mic settings, power-off timer).</extracomment>
+        <translation>السماح لـ SteelVoiceMix بإدارة إعدادات اللوحة</translation>
     </message>
     <message>
         <source>When off, the daemon never writes to the headset — it only reads state for display. Turn this on to let the controls below take effect on your device.</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Short tooltip for the "Allow SteelVoiceMix to manage deck settings" toggle. Explains the read-only vs read-write distinction.</extracomment>
+        <translation>عند الإيقاف، لا تكتب الخدمة إلى السماعة أبدًا — تقرأ الحالة للعرض فقط. فعّل هذا للسماح للأدوات أدناه بالتأثير على جهازك.</translation>
     </message>
     <message>
         <source>Default off. Existing device settings (configured via SteelSeries GG, headset hardware buttons, or another tool) stay untouched until you opt in. Settings you configure below while this is off are remembered and applied as soon as you enable it.</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Longer description for the Deck Control toggle on the Deck tab. Explains the safe default (off = read-only), that existing settings from SteelSeries GG or hardware buttons are preserved, and that settings configured while off are queued and applied on opt-in.</extracomment>
+        <translation>معطّل افتراضيًا. تبقى إعدادات الجهاز الحالية (المضبوطة عبر SteelSeries GG أو أزرار العتاد أو أداة أخرى) دون تغيير حتى تختار التفعيل. الإعدادات التي تضبطها أدناه وهذا الخيار معطّل تُحفَظ وتُطبَّق فور تفعيله.</translation>
     </message>
     <message>
         <source>Auto Power-Off</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Section title on the Deck tab for the headset idle auto-power-off timer. The user picks a duration after which the headset shuts off automatically when there is no audio.</extracomment>
+        <translation>الإيقاف التلقائي</translation>
     </message>
     <message>
         <source>Never</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Auto power-off timer option on the Deck tab: headset never powers off automatically (stays on indefinitely). Shown in a dropdown/combo alongside time durations.</extracomment>
+        <translation>أبدًا</translation>
     </message>
     <message>
         <source>1 minute</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Auto power-off timer option on the Deck tab: headset powers off after 1 minute of no audio.</extracomment>
+        <translation>دقيقة واحدة</translation>
     </message>
     <message>
         <source>5 minutes</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Auto power-off timer option on the Deck tab: headset powers off after 5 minutes of no audio.</extracomment>
+        <translation>5 دقائق</translation>
     </message>
     <message>
         <source>10 minutes</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Auto power-off timer option on the Deck tab: headset powers off after 10 minutes of no audio.</extracomment>
+        <translation>10 دقائق</translation>
     </message>
     <message>
         <source>15 minutes</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Auto power-off timer option on the Deck tab: headset powers off after 15 minutes of no audio.</extracomment>
+        <translation>15 دقيقة</translation>
     </message>
     <message>
         <source>30 minutes</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Auto power-off timer option on the Deck tab: headset powers off after 30 minutes of no audio.</extracomment>
+        <translation>30 دقيقة</translation>
     </message>
     <message>
         <source>60 minutes</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Auto power-off timer option on the Deck tab: headset powers off after 60 minutes of no audio.</extracomment>
+        <translation>60 دقيقة</translation>
     </message>
     <message>
         <source>How long the headset stays powered on with no audio before auto-sleeping. Setting it to Never keeps it on indefinitely (drains battery faster).</source>
-        <translation type="unfinished"></translation>
+        <extracomment>Tooltip/description for the Auto Power-Off section on the Deck tab. Explains the idle timer and warns that "Never" drains the battery faster.</extracomment>
+        <translation>المدة التي تظل فيها السماعة مشغّلة دون صوت قبل الإيقاف التلقائي. الضبط على "أبدًا" يُبقيها مشغّلة بلا حد (يستنزف البطارية أسرع).</translation>
     </message>
 </context>
 </TS>
