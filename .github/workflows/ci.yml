@@ -47,4 +47,18 @@ jobs:
         with:
           python-version: "3.12"
       - name: py_compile all modules
-        run: python3 -m py_compile steelvoicemix-gui.py gui/*.py
+        # Walks every .py under the repo (entry shims, gui/, gui/tabs/,
+        # CLI). Catches syntax errors in any tab module, not just the
+        # top-level gui/ package.
+        run: |
+          set -e
+          find . -name '*.py' -not -path './target/*' -not -path './.git/*' -print0 \
+            | xargs -0 python3 -m py_compile
+      - name: Validate translation .ts XML
+        # The Qt linguist .ts files are XML; a malformed entry would
+        # crash the GUI's QTranslator at startup. Cheap to check here.
+        run: |
+          set -e
+          for ts in gui/translations/*.ts; do
+            python3 -c "import xml.etree.ElementTree as ET; ET.parse('$ts')"
+          done
