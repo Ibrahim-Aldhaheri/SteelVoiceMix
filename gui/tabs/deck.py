@@ -275,10 +275,21 @@ class DeckTab(QWidget):
         )
 
     def _build_mic_hw_card(self) -> QWidget:
+        # Gain + Volume carry an ALPHA badge — bytes are byte-exact
+        # from ASM but the maintainer hasn't found a way to verify
+        # the device honours them at the listening end. LED brightness
+        # is unbadged because it's directly observable.
         gain_row = QHBoxLayout()
         gain_label = QLabel(self.tr("Gain"))
         gain_label.setFixedWidth(64)
         gain_row.addWidget(gain_label)
+        gain_row.addWidget(
+            alpha_badge(tooltip=self.tr(
+                "Untested. Bytes match ASM exactly but the listening-side "
+                "behaviour hasn't been verified on hardware."
+            )),
+            0, Qt.AlignVCenter,
+        )
         picker_row, self._mic_gain_buttons, self._mic_gain_button_group = mode_picker(
             self,
             (("low", self.tr("Low")), ("high", self.tr("High"))),
@@ -296,6 +307,13 @@ class DeckTab(QWidget):
         self.mic_volume_slider = _ten_step_slider(10, self._daemon is not None)
         self.mic_volume_value = _value_label("10 / 10")
         vol_row.addWidget(vol_label)
+        vol_row.addWidget(
+            alpha_badge(tooltip=self.tr(
+                "Untested. Bytes match ASM exactly but the listening-side "
+                "behaviour hasn't been verified on hardware."
+            )),
+            0, Qt.AlignVCenter,
+        )
         vol_row.addWidget(self.mic_volume_slider, 1)
         vol_row.addWidget(self.mic_volume_value)
         self._mic_volume_timer = self._bind_unit_slider(
@@ -319,26 +337,8 @@ class DeckTab(QWidget):
             lambda v: self._send("set-mic-led-brightness", level=v),
         )
 
-        # ALPHA banner — these three writes are byte-exact ports from
-        # ASM but the maintainer doesn't have a way to verify the
-        # device actually honours them (no second mic to compare gain
-        # / volume against, mute LED is hard to eyeball at granular
-        # 1..10 steps). Surface that prominently so users go in with
-        # the right expectations.
-        alpha_row = QHBoxLayout()
-        alpha_text = QLabel(self.tr(
-            "Untested on hardware — bytes are byte-exact from ASM but "
-            "the maintainer can't verify the device honours them. "
-            "Report behaviour on GitHub if you try these."
-        ))
-        alpha_text.setWordWrap(True)
-        alpha_text.setStyleSheet("font-size: 11px;")
-        alpha_row.addWidget(alpha_badge(), 0, Qt.AlignTop)
-        alpha_row.addWidget(alpha_text, 1)
-
         return card(
             self.tr("Microphone (hardware)"),
-            alpha_row,
             gain_row, vol_row, led_row,
             _help_label(self.tr(
                 "Hardware mic settings on the headset itself, written "

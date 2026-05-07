@@ -1237,7 +1237,7 @@ Continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Untested on hardware — bytes are byte-exact from ASM but the maintainer can't verify the device honours them. Report behaviour on GitHub if you try these.</source>
+        <source>Untested. Bytes match ASM exactly but the listening-side behaviour hasn't been verified on hardware.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
