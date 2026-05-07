@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "steelvoicemix"
-version = "0.4.2-beta.28"
+version = "0.4.2-beta.29"
 dependencies = [
  "ctrlc",
  "env_logger",

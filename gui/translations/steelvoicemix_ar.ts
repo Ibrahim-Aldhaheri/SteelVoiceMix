@@ -1237,6 +1237,10 @@ Continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Untested on hardware — bytes are byte-exact from ASM but the maintainer can't verify the device honours them. Report behaviour on GitHub if you try these.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Deck Control</source>
         <translation type="unfinished"></translation>
     </message>

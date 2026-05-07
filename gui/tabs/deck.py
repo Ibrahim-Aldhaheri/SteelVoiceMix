@@ -23,6 +23,7 @@ from ..daemon_client import (
 from ..widgets import (
     NoWheelComboBox,
     NoWheelSlider,
+    alpha_badge,
     bind_debounced_slider,
     card,
     labelled_toggle,
@@ -318,8 +319,26 @@ class DeckTab(QWidget):
             lambda v: self._send("set-mic-led-brightness", level=v),
         )
 
+        # ALPHA banner — these three writes are byte-exact ports from
+        # ASM but the maintainer doesn't have a way to verify the
+        # device actually honours them (no second mic to compare gain
+        # / volume against, mute LED is hard to eyeball at granular
+        # 1..10 steps). Surface that prominently so users go in with
+        # the right expectations.
+        alpha_row = QHBoxLayout()
+        alpha_text = QLabel(self.tr(
+            "Untested on hardware — bytes are byte-exact from ASM but "
+            "the maintainer can't verify the device honours them. "
+            "Report behaviour on GitHub if you try these."
+        ))
+        alpha_text.setWordWrap(True)
+        alpha_text.setStyleSheet("font-size: 11px;")
+        alpha_row.addWidget(alpha_badge(), 0, Qt.AlignTop)
+        alpha_row.addWidget(alpha_text, 1)
+
         return card(
             self.tr("Microphone (hardware)"),
+            alpha_row,
             gain_row, vol_row, led_row,
             _help_label(self.tr(
                 "Hardware mic settings on the headset itself, written "
