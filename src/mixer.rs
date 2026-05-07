@@ -13,7 +13,8 @@ use crate::config;
 use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
 use crate::protocol::{
-    AncMode, DaemonEvent, EqChannel, EqState, MicGain, MicState, VolumeBoostState, WirelessMode,
+    AncMode, DaemonEvent, EqChannel, EqState, MicGain, MicState, PmShutdown, VolumeBoostState,
+    WirelessMode,
 };
 
 pub type SharedSinks = Arc<Mutex<SinkManager>>;
@@ -60,6 +61,7 @@ fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
         mic_gain: st.mic_gain,
         mic_volume: st.mic_volume,
         mic_led_brightness: st.mic_led_brightness,
+        pm_shutdown: st.pm_shutdown,
         deck_control_enabled: st.deck_control_enabled,
     });
 }
@@ -189,6 +191,9 @@ pub struct MixerState {
     /// Mic-mute LED brightness (1..=10). Persisted.
     pub mic_led_brightness: u8,
     pub applied_mic_led_brightness: u8,
+    /// Auto power-off timer. Persisted.
+    pub pm_shutdown: PmShutdown,
+    pub applied_pm_shutdown: u8,
     /// Master switch: when false, the daemon never writes deck-side
     /// settings to the device — pure-observer mode for users who
     /// already configure the headset via SteelSeries GG / hardware
@@ -220,6 +225,7 @@ impl MixerState {
         mic_gain: MicGain,
         mic_volume: u8,
         mic_led_brightness: u8,
+        pm_shutdown: PmShutdown,
         deck_control_enabled: bool,
     ) -> Self {
         MixerState {
@@ -255,6 +261,8 @@ impl MixerState {
             applied_mic_volume: 0,
             mic_led_brightness,
             applied_mic_led_brightness: 0,
+            pm_shutdown,
+            applied_pm_shutdown: u8::MAX,
             deck_control_enabled,
         }
     }
@@ -316,6 +324,22 @@ impl Mixer {
     /// Broadcast an event to all subscribed GUI clients. Removes dead senders.
     fn broadcast(&self, event: DaemonEvent) {
         broadcast_event(&self.subscribers, event);
+    }
+
+    /// Mirror device-reported PM shutdown timer into MixerState.
+    fn sync_pm_shutdown_from_device(&self, raw: u8) {
+        let new_value = PmShutdown::from_byte(raw);
+        let changed = {
+            let mut st = self.state.lock().unwrap();
+            let prior = st.pm_shutdown;
+            st.pm_shutdown = new_value;
+            st.applied_pm_shutdown = new_value.as_byte();
+            prior != new_value
+        };
+        if changed {
+            persist_dial_state(&self.state);
+            self.broadcast(DaemonEvent::PmShutdownChanged { value: new_value });
+        }
     }
 
     /// Mirror device-reported mic LED brightness into MixerState.
@@ -678,6 +702,8 @@ impl Mixer {
                     st.applied_mic_volume,
                     st.mic_led_brightness,
                     st.applied_mic_led_brightness,
+                    st.pm_shutdown,
+                    st.applied_pm_shutdown,
                     st.deck_control_enabled,
                 )
             };
@@ -697,6 +723,8 @@ impl Mixer {
                 applied_mic_vol,
                 want_mic_led,
                 applied_mic_led,
+                want_pm,
+                applied_pm,
                 deck_control_enabled,
             ) = snap;
             // All device writes are gated on the master deck-control
@@ -786,6 +814,13 @@ impl Mixer {
                     }
                     self.state.lock().unwrap().applied_mic_led_brightness = want_mic_led;
                 }
+                if want_pm.as_byte() != applied_pm {
+                    debug!("PM shutdown → {want_pm:?}");
+                    if let Err(e) = dev.set_pm_shutdown(want_pm.as_byte()) {
+                        warn!("Failed to apply PM shutdown {want_pm:?}: {e}");
+                    }
+                    self.state.lock().unwrap().applied_pm_shutdown = want_pm.as_byte();
+                }
             }
 
             // Short timeout keeps dial-to-update latency low; battery
@@ -830,10 +865,10 @@ impl Mixer {
                     }
                     HidEvent::Battery(bat) => {
                         debug!("battery: {}% ({})", bat.level, bat.status);
-                        // Battery reply also carries current ANC state per
-                        // ASM yaml — mirror it into our state so the GUI
-                        // tracks reality (e.g. user pressed the headset's
-                        // ANC button while we weren't looking).
+                        // Battery reply also carries current device state
+                        // for several knobs per ASM yaml — mirror them so
+                        // the GUI tracks reality (e.g. user pressed the
+                        // headset's ANC button while we weren't looking).
                         if let Some((anc_byte, trans_level)) =
                             NovaDevice::anc_from_battery_reply(&msg)
                         {
@@ -843,6 +878,16 @@ impl Mixer {
                             NovaDevice::wireless_mode_from_battery_reply(&msg)
                         {
                             self.sync_wireless_from_device(wireless_byte);
+                        }
+                        if let Some(led) =
+                            NovaDevice::mic_led_brightness_from_battery_reply(&msg)
+                        {
+                            self.sync_mic_led_from_device(led);
+                        }
+                        if let Some(pm) =
+                            NovaDevice::pm_shutdown_from_battery_reply(&msg)
+                        {
+                            self.sync_pm_shutdown_from_device(pm);
                         }
                         {
                             let mut st = self.state.lock().unwrap();
@@ -1014,6 +1059,11 @@ impl Mixer {
                     NovaDevice::mic_led_brightness_from_battery_reply(&msg)
                 {
                     self.sync_mic_led_from_device(led);
+                }
+                if let Some(pm) =
+                    NovaDevice::pm_shutdown_from_battery_reply(&msg)
+                {
+                    self.sync_pm_shutdown_from_device(pm);
                 }
                 {
                     let mut st = self.state.lock().unwrap();

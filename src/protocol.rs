@@ -57,6 +57,54 @@ impl AncMode {
     }
 }
 
+/// Auto power-off timer for the headset. Wire byte mapping (verified
+/// byte-exact against ASM nova_pro_wireless.yaml `values_mapping`):
+/// 0=never, 1=1m, 2=5m, 3=10m, 4=15m, 5=30m (device default), 6=60m.
+/// JSON encoding is the short minute string (`"never"`, `"1m"`, ...).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum PmShutdown {
+    #[serde(rename = "never")]
+    Never,
+    #[serde(rename = "1m")]
+    OneMinute,
+    #[serde(rename = "5m")]
+    FiveMinutes,
+    #[serde(rename = "10m")]
+    TenMinutes,
+    #[serde(rename = "15m")]
+    FifteenMinutes,
+    #[serde(rename = "30m")]
+    #[default]
+    ThirtyMinutes,
+    #[serde(rename = "60m")]
+    SixtyMinutes,
+}
+
+impl PmShutdown {
+    pub fn as_byte(self) -> u8 {
+        match self {
+            PmShutdown::Never => 0,
+            PmShutdown::OneMinute => 1,
+            PmShutdown::FiveMinutes => 2,
+            PmShutdown::TenMinutes => 3,
+            PmShutdown::FifteenMinutes => 4,
+            PmShutdown::ThirtyMinutes => 5,
+            PmShutdown::SixtyMinutes => 6,
+        }
+    }
+    pub fn from_byte(b: u8) -> Self {
+        match b {
+            0 => PmShutdown::Never,
+            1 => PmShutdown::OneMinute,
+            2 => PmShutdown::FiveMinutes,
+            3 => PmShutdown::TenMinutes,
+            4 => PmShutdown::FifteenMinutes,
+            6 => PmShutdown::SixtyMinutes,
+            _ => PmShutdown::ThirtyMinutes, // 5 or unknown → device default
+        }
+    }
+}
+
 /// Audio gain — Low (0x01) or High (0x02). High is the device default.
 /// JSON encoding is lowercase strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -505,6 +553,9 @@ pub enum ClientCommand {
     /// Set mic-mute LED brightness (1..=10).
     #[serde(rename = "set-mic-led-brightness")]
     SetMicLedBrightness { level: u8 },
+    /// Set headset auto power-off timer.
+    #[serde(rename = "set-pm-shutdown")]
+    SetPmShutdown { value: PmShutdown },
     /// Master switch for whether the daemon writes deck-side settings
     /// to the device. Off = pure observer; on = current behaviour
     /// (push persisted state on connect, react to GUI/CLI commands).
@@ -576,6 +627,8 @@ pub enum DaemonEvent {
         mic_volume: u8,
         /// Mic-mute LED brightness (1..=10).
         mic_led_brightness: u8,
+        /// Auto power-off timer.
+        pm_shutdown: PmShutdown,
         /// Master deck-control switch.
         deck_control_enabled: bool,
     },
@@ -674,6 +727,11 @@ pub enum DaemonEvent {
     /// Fired when mic-mute LED brightness changes (1..=10).
     #[serde(rename = "mic-led-brightness-changed")]
     MicLedBrightnessChanged { level: u8 },
+
+    /// Fired when auto power-off timer changes (GUI command, device-
+    /// side mirror via battery poll).
+    #[serde(rename = "pm-shutdown-changed")]
+    PmShutdownChanged { value: PmShutdown },
 
     /// Fired when the master deck-control toggle changes. GUI uses
     /// this to enable/disable all deck controls.
@@ -779,6 +837,7 @@ mod tests {
             mic_gain: MicGain::High,
             mic_volume: 10,
             mic_led_brightness: 10,
+            pm_shutdown: PmShutdown::ThirtyMinutes,
             deck_control_enabled: false,
         };
         let json: Value = from_str(&to_string(&with_bat).unwrap()).unwrap();
@@ -1118,6 +1177,33 @@ mod tests {
         match cmd {
             ClientCommand::SetMicLedBrightness { level } => assert_eq!(level, 3),
             other => panic!("expected SetMicLedBrightness, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pm_shutdown_round_trip() {
+        for (value, label, byte) in [
+            (PmShutdown::Never, "never", 0u8),
+            (PmShutdown::OneMinute, "1m", 1u8),
+            (PmShutdown::FiveMinutes, "5m", 2u8),
+            (PmShutdown::TenMinutes, "10m", 3u8),
+            (PmShutdown::FifteenMinutes, "15m", 4u8),
+            (PmShutdown::ThirtyMinutes, "30m", 5u8),
+            (PmShutdown::SixtyMinutes, "60m", 6u8),
+        ] {
+            let cmd_json = format!(r#"{{"cmd":"set-pm-shutdown","value":"{label}"}}"#);
+            let parsed: ClientCommand = from_str(&cmd_json).unwrap();
+            match parsed {
+                ClientCommand::SetPmShutdown { value: v } => assert_eq!(v, value),
+                other => panic!("expected SetPmShutdown, got {other:?}"),
+            }
+            assert_eq!(value.as_byte(), byte);
+            assert_eq!(PmShutdown::from_byte(byte), value);
+
+            let ev = DaemonEvent::PmShutdownChanged { value };
+            let json: Value = from_str(&to_string(&ev).unwrap()).unwrap();
+            assert_eq!(json["event"], "pm-shutdown-changed");
+            assert_eq!(json["value"], label);
         }
     }
 

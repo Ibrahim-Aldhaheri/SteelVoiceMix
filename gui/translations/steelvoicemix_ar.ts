@@ -1240,5 +1240,41 @@ Continue?</source>
         <source>Default off. Existing device settings (configured via SteelSeries GG, headset hardware buttons, or another tool) stay untouched until you opt in. Settings you configure below while this is off are remembered and applied as soon as you enable it.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Auto Power-Off</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Never</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>1 minute</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>5 minutes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>10 minutes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>15 minutes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>30 minutes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>60 minutes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>How long the headset stays powered on with no audio before auto-sleeping. Setting it to Never keeps it on indefinitely (drains battery faster).</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 </TS>

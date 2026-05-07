@@ -24,7 +24,7 @@ use filter_chain::{FilterChainHandle, FilterChainSpec};
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
 use protocol::{
     default_channel_bands, AncMode, ClientCommand, DaemonEvent, EqChannel, EqState, MicFeature,
-    MicGain, MicState, VolumeBoost, WirelessMode,
+    MicGain, MicState, PmShutdown, VolumeBoost, WirelessMode,
 };
 use routing::{spawn_router, RouterState};
 
@@ -69,6 +69,7 @@ fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
         mic_gain: st.mic_gain,
         mic_volume: st.mic_volume,
         mic_led_brightness: st.mic_led_brightness,
+        pm_shutdown: st.pm_shutdown,
         deck_control_enabled: st.deck_control_enabled,
     }
 }
@@ -141,6 +142,7 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
         mic_gain: st.mic_gain,
         mic_volume: st.mic_volume,
         mic_led_brightness: st.mic_led_brightness,
+        pm_shutdown: st.pm_shutdown,
         deck_control_enabled: st.deck_control_enabled,
     });
 }
@@ -361,13 +363,14 @@ fn handle_client(
                     st.mic_state = MicState::default();
                     st.sidetone_level = 0;
                     st.notifications_enabled = true;
-                    st.oled_brightness = 5;
+                    st.oled_brightness = 8;
                     st.anc_mode = AncMode::Off;
                     st.anc_transparent_level = 5;
                     st.wireless_mode = WirelessMode::Speed;
                     st.mic_gain = MicGain::High;
                     st.mic_volume = 10;
                     st.mic_led_brightness = 10;
+                    st.pm_shutdown = PmShutdown::ThirtyMinutes;
                     st.deck_control_enabled = false;
                 }
                 router
@@ -438,7 +441,7 @@ fn handle_client(
                 );
                 broadcast_event(
                     &subscribers,
-                    DaemonEvent::OledBrightnessChanged { level: 5 },
+                    DaemonEvent::OledBrightnessChanged { level: 8 },
                 );
                 broadcast_event(
                     &subscribers,
@@ -465,6 +468,12 @@ fn handle_client(
                 broadcast_event(
                     &subscribers,
                     DaemonEvent::MicLedBrightnessChanged { level: 10 },
+                );
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::PmShutdownChanged {
+                        value: PmShutdown::ThirtyMinutes,
+                    },
                 );
                 broadcast_event(
                     &subscribers,
@@ -807,6 +816,18 @@ fn handle_client(
                     DaemonEvent::MicLedBrightnessChanged { level: clamped },
                 );
             }
+            ClientCommand::SetPmShutdown { value } => {
+                {
+                    let mut st = state.lock().unwrap();
+                    st.pm_shutdown = value;
+                }
+                persist_sink_state(&state);
+                info!("GUI requested: set-pm-shutdown {value:?}");
+                broadcast_event(
+                    &subscribers,
+                    DaemonEvent::PmShutdownChanged { value },
+                );
+            }
             ClientCommand::SetDeckControlEnabled { enabled } => {
                 let was = {
                     let mut st = state.lock().unwrap();
@@ -826,6 +847,7 @@ fn handle_client(
                         st.applied_mic_gain = u8::MAX;
                         st.applied_mic_volume = 0;
                         st.applied_mic_led_brightness = 0;
+                        st.applied_pm_shutdown = u8::MAX;
                     }
                     was
                 };
@@ -1028,6 +1050,7 @@ fn main() {
     let mic_gain = persisted.mic_gain;
     let mic_volume = persisted.mic_volume.clamp(1, 10);
     let mic_led_brightness = persisted.mic_led_brightness.clamp(1, 10);
+    let pm_shutdown = persisted.pm_shutdown;
     let deck_control_enabled = persisted.deck_control_enabled;
     info!(
         "Media sink startup state: {} (persisted={}, --no-media-sink={})",
@@ -1058,10 +1081,10 @@ fn main() {
         mic_state.ai_noise_cancellation.enabled,
     );
     info!(
-        "Sidetone level: {} | Daemon notifications: {} | OLED brightness: {} | ANC: {:?} (transparent level {}) | Wireless mode: {:?} | Mic gain: {:?} | Mic vol: {} | Mic LED: {} | Deck control: {}",
+        "Sidetone level: {} | Daemon notifications: {} | OLED brightness: {} | ANC: {:?} (transparent level {}) | Wireless mode: {:?} | Mic gain: {:?} | Mic vol: {} | Mic LED: {} | PM shutdown: {:?} | Deck control: {}",
         sidetone_level, notifications_enabled, oled_brightness,
         anc_mode, anc_transparent_level, wireless_mode,
-        mic_gain, mic_volume, mic_led_brightness, deck_control_enabled,
+        mic_gain, mic_volume, mic_led_brightness, pm_shutdown, deck_control_enabled,
     );
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(MixerState::new(
@@ -1085,6 +1108,7 @@ fn main() {
         mic_gain,
         mic_volume,
         mic_led_brightness,
+        pm_shutdown,
         deck_control_enabled,
     )));
     let subscribers: Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>> =

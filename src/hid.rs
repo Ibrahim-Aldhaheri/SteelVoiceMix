@@ -57,6 +57,11 @@ pub const OPT_MIC_VOLUME: u8 = 0x37;
 // Brightness of the red ring around the mic when muted. Status
 // readback at offset 11 of the battery reply.
 pub const OPT_MIC_LED_BRIGHTNESS: u8 = 0xBF;
+// Auto power-off timer — `[0x06, 0xc1, value]` where value maps to:
+//   0x00=never, 0x01=1m, 0x02=5m, 0x03=10m, 0x04=15m, 0x05=30m
+//   (device default per ASM yaml), 0x06=60m.
+// Battery reply carries current value at offset 12.
+pub const OPT_PM_SHUTDOWN: u8 = 0xC1;
 
 /// Battery status decoded from HID response.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -220,6 +225,14 @@ impl NovaDevice {
         self.send(&[TX, OPT_MIC_LED_BRIGHTNESS, level])
     }
 
+    /// Set auto power-off timer (raw byte value 0..=6 per ASM yaml
+    /// values_mapping). Use `protocol::PmShutdown::as_byte()` to
+    /// convert from the typed enum.
+    pub fn set_pm_shutdown(&self, value: u8) -> Result<(), HidError> {
+        let v = value.min(6);
+        self.send(&[TX, OPT_PM_SHUTDOWN, v])
+    }
+
     /// Read a HID message with timeout (milliseconds). Returns None on timeout.
     pub fn read(&self, timeout_ms: i32) -> Result<Option<Vec<u8>>, HidError> {
         let mut buf = [0u8; MSG_LEN];
@@ -294,6 +307,15 @@ impl NovaDevice {
             return None;
         }
         Some(msg[11])
+    }
+
+    /// Pull auto power-off timer raw byte (offset 12) out of a
+    /// battery reply.
+    pub fn pm_shutdown_from_battery_reply(msg: &[u8]) -> Option<u8> {
+        if msg.len() < 16 || msg[1] != OPT_BATTERY {
+            return None;
+        }
+        Some(msg[12])
     }
 
     /// Request battery status from the base station.

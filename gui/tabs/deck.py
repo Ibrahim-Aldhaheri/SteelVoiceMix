@@ -13,11 +13,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..widgets import NoWheelSlider, card, labelled_toggle
+from ..widgets import NoWheelComboBox, NoWheelSlider, card, labelled_toggle
 
 _ANC_MODES = ("off", "transparent", "on")
 _WIRELESS_MODES = ("speed", "range")
 _MIC_GAINS = ("low", "high")
+# Wire string ↔ user-facing label for the PM shutdown combo. Keep
+# the daemon's wire enum exact ("never", "1m", "5m", ...) so the
+# GUI ↔ daemon round-trip stays stable across translations.
+_PM_SHUTDOWN_VALUES = ("never", "1m", "5m", "10m", "15m", "30m", "60m")
 
 # Stylesheet for the mode-picker buttons (ANC + Wireless). QPushButton's
 # default checked state is visually identical to unchecked, so we
@@ -65,6 +69,7 @@ class DeckTab(QWidget):
         controls_layout.addWidget(self._build_anc_card())
         controls_layout.addWidget(self._build_wireless_card())
         controls_layout.addWidget(self._build_mic_hw_card())
+        controls_layout.addWidget(self._build_pm_shutdown_card())
         self._controls_container.setEnabled(False)
         layout.addWidget(self._controls_container)
 
@@ -155,13 +160,13 @@ class DeckTab(QWidget):
         self.oled_brightness_slider.setPageStep(1)
         self.oled_brightness_slider.setTickInterval(1)
         self.oled_brightness_slider.setTickPosition(QSlider.TicksBelow)
-        self.oled_brightness_slider.setValue(5)
+        self.oled_brightness_slider.setValue(8)
         self.oled_brightness_slider.setEnabled(self._daemon is not None)
         self.oled_brightness_slider.valueChanged.connect(
             self._on_brightness_value_changed
         )
 
-        self.oled_brightness_value = QLabel("5 / 10")
+        self.oled_brightness_value = QLabel("8 / 10")
         self.oled_brightness_value.setFixedWidth(64)
         self.oled_brightness_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
@@ -385,6 +390,49 @@ class DeckTab(QWidget):
             gain_row, vol_row, led_row, help_lbl,
         )
 
+    def _build_pm_shutdown_card(self) -> QWidget:
+        # 7 discrete options doesn't fit a slider; use a combobox.
+        # Wire values stay raw ("never", "1m", ...) so the daemon
+        # protocol round-trip is translation-stable.
+        row = QHBoxLayout()
+        icon = QLabel("⏻")
+        icon.setFixedWidth(36)
+        icon.setStyleSheet("font-size: 16px;")
+        self.pm_shutdown_combo = NoWheelComboBox()
+        for value, label in (
+            ("never", self.tr("Never")),
+            ("1m", self.tr("1 minute")),
+            ("5m", self.tr("5 minutes")),
+            ("10m", self.tr("10 minutes")),
+            ("15m", self.tr("15 minutes")),
+            ("30m", self.tr("30 minutes")),
+            ("60m", self.tr("60 minutes")),
+        ):
+            self.pm_shutdown_combo.addItem(label, userData=value)
+        self.pm_shutdown_combo.setCurrentIndex(
+            _PM_SHUTDOWN_VALUES.index("30m")  # GG default
+        )
+        self.pm_shutdown_combo.setEnabled(self._daemon is not None)
+        self.pm_shutdown_combo.currentIndexChanged.connect(
+            self._on_pm_shutdown_combo_changed
+        )
+        row.addWidget(icon)
+        row.addWidget(self.pm_shutdown_combo, 1)
+
+        help_lbl = QLabel(
+            self.tr(
+                "How long the headset stays powered on with no audio "
+                "before auto-sleeping. Setting it to Never keeps it on "
+                "indefinitely (drains battery faster)."
+            )
+        )
+        help_lbl.setWordWrap(True)
+        help_lbl.setStyleSheet(
+            "font-size: 10px; color: palette(placeholder-text);"
+        )
+
+        return card(self.tr("Auto Power-Off"), row, help_lbl)
+
     def on_oled_brightness_changed(self, level: int) -> None:
         # Block signals so the daemon echo doesn't loop back as another
         # set-oled-brightness command.
@@ -468,6 +516,16 @@ class DeckTab(QWidget):
             self.mic_led_slider.blockSignals(was_blocked)
         self.mic_led_value.setText(f"{clamped} / 10")
 
+    def on_pm_shutdown_changed(self, value: str) -> None:
+        if value not in _PM_SHUTDOWN_VALUES:
+            return
+        idx = _PM_SHUTDOWN_VALUES.index(value)
+        was_blocked = self.pm_shutdown_combo.blockSignals(True)
+        try:
+            self.pm_shutdown_combo.setCurrentIndex(idx)
+        finally:
+            self.pm_shutdown_combo.blockSignals(was_blocked)
+
     def on_deck_control_enabled_changed(self, enabled: bool) -> None:
         # Block signals so the daemon echo doesn't loop back as
         # another set-deck-control-enabled.
@@ -547,6 +605,13 @@ class DeckTab(QWidget):
             "set-mic-led-brightness", level=self._mic_led_pending
         )
         self._mic_led_pending = None
+
+    def _on_pm_shutdown_combo_changed(self, idx: int) -> None:
+        if self._daemon is None or idx < 0 or idx >= len(_PM_SHUTDOWN_VALUES):
+            return
+        self._daemon.send_command(
+            "set-pm-shutdown", value=_PM_SHUTDOWN_VALUES[idx]
+        )
 
     def _on_deck_control_toggled(self, checked: bool) -> None:
         # Local UI update happens immediately; the daemon echo will

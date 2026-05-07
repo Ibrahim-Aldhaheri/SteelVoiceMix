@@ -136,6 +136,8 @@ class DaemonSignals(QObject):
     mic_led_brightness_changed = Signal(int)
     # Master deck-control gate.
     deck_control_enabled_changed = Signal(bool)
+    # Auto power-off timer — "never" / "1m" / "5m" / "10m" / "15m" / "30m" / "60m".
+    pm_shutdown_changed = Signal(str)
     # Daemon-side desktop notification toggle (separate from the GUI's
     # own minimize-to-tray toast; this one gates the connect /
     # disconnect notify-send popups emitted by the Rust daemon).
@@ -269,6 +271,8 @@ class DaemonClient:
             self.signals.deck_control_enabled_changed.emit(
                 bool(event.get("enabled", False))
             )
+        elif ev == "pm-shutdown-changed":
+            self.signals.pm_shutdown_changed.emit(str(event.get("value", "30m")))
         elif ev == "notifications-enabled-changed":
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("enabled", True))
@@ -341,6 +345,9 @@ class DaemonClient:
             )
             self.signals.deck_control_enabled_changed.emit(
                 bool(event.get("deck_control_enabled", False))
+            )
+            self.signals.pm_shutdown_changed.emit(
+                str(event.get("pm_shutdown", "30m"))
             )
             self.signals.notifications_enabled_changed.emit(
                 bool(event.get("notifications_enabled", True))

@@ -10,7 +10,9 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{AncMode, EqState, MicGain, MicState, VolumeBoostState, WirelessMode};
+use crate::protocol::{
+    AncMode, EqState, MicGain, MicState, PmShutdown, VolumeBoostState, WirelessMode,
+};
 
 /// What the daemon remembers across restarts. Most fields default to
 /// "off" so a fresh install doesn't surprise users with extra output
@@ -128,6 +130,9 @@ pub struct DaemonState {
     /// Mic-mute LED brightness 1..=10.
     #[serde(default = "default_mic_level")]
     pub mic_led_brightness: u8,
+    /// Auto power-off timer (matches SteelSeries GG default of 30m).
+    #[serde(default)]
+    pub pm_shutdown: PmShutdown,
     /// Master switch for whether the daemon writes deck-side settings
     /// (OLED brightness, ANC, wireless mode, mic gain/volume/LED,
     /// sidetone) to the device. When false, the daemon stays in
@@ -158,7 +163,9 @@ fn default_notifications_enabled() -> bool {
 }
 
 fn default_oled_brightness() -> u8 {
-    5
+    // Matches SteelSeries GG / ASM default for the Nova Pro Wireless.
+    // Verified against ASM `settings.py:94`.
+    8
 }
 
 fn default_anc_transparent_level() -> u8 {
@@ -197,6 +204,7 @@ impl Default for DaemonState {
             mic_gain: MicGain::High,
             mic_volume: default_mic_level(),
             mic_led_brightness: default_mic_level(),
+            pm_shutdown: PmShutdown::ThirtyMinutes,
             deck_control_enabled: false,
         }
     }
