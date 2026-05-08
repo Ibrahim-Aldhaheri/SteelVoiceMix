@@ -405,11 +405,17 @@ class EqualizerTab(QWidget):
 
             bands_row.addLayout(band_col)
 
+        # Help text — phrased to cover both views. The graph view's
+        # discovery hint ("Click anywhere to add a point") lives inside
+        # the empty graph itself; this label covers the generic side.
         eq_help = QLabel(
             self.tr(
-                "Drag a slider to boost or cut a frequency band by up to "
-                "±12 dB. Each release respawns the filter chain with the new "
-                "gains (~100 ms audio glitch per change)."
+                "Boost or cut a frequency band by up to ±12 dB. "
+                "Sliders view: drag a slider for that band. "
+                "Graph view: click empty space to drop a point, "
+                "drag points to shape the curve, right-click a "
+                "point to remove it. Each commit respawns the filter "
+                "chain (~100 ms audio glitch per change)."
             )
         )
         eq_help.setStyleSheet(

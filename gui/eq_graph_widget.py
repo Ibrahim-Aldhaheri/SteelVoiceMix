@@ -50,6 +50,17 @@ RESPONSE_SAMPLES = 256
 DOT_RADIUS_PX = 9
 DOT_HIT_RADIUS_PX = 14
 
+# A band is treated as "active" (renders a dot) iff its gain magnitude
+# is at least this much. Hides the 10 default-flat dots so a fresh
+# graph reads as Sonar's clean curve. The user reveals dots by
+# clicking — see mousePressEvent.
+VISIBILITY_EPS_DB = 0.05
+
+# When the user clicks empty space exactly on the 0 dB line, snap the
+# new dot to a small non-zero gain so it stays visible. Without this
+# the placed dot would vanish the moment the user releases.
+PLACEMENT_FLOOR_DB = 0.5
+
 # Default zone labels (no game loaded). Per-game overrides land in
 # gui/presets/eq_zones.json in a follow-up session.
 DEFAULT_ZONES: list[tuple[str, float, float]] = [
@@ -231,22 +242,113 @@ class EqGraphWidget(QWidget):
         if event.button() != Qt.LeftButton or not self._bands:
             return
         pos = event.position()
-        # Pick the closest dot within the hit radius. Wide-Q presets
-        # often overlap dots — closest-center matches Sonar.
+        rect = self._plot_rect()
+        if not rect.contains(pos):
+            return
+        # First try to grab an existing visible dot.
         best_idx = -1
         best_dist = float("inf")
         for idx, band in enumerate(self._bands):
+            if not self._band_is_visible(band):
+                continue
             dot = self._band_dot_pos(band)
             d = math.hypot(pos.x() - dot.x(), pos.y() - dot.y())
             if d <= DOT_HIT_RADIUS_PX and d < best_dist:
                 best_dist = d
                 best_idx = idx
-        if best_idx >= 0:
-            self._dragging_band = best_idx
-            dot = self._band_dot_pos(self._bands[best_idx])
-            self._drag_offset = (pos.x() - dot.x(), pos.y() - dot.y())
-            self.setCursor(Qt.ClosedHandCursor)
-            event.accept()
+        if best_idx < 0:
+            # Empty space → place a new dot. Find the unused slot
+            # whose default freq sits closest to the click X — that
+            # way clicking near 100 Hz uses a low-band slot, near
+            # 5 kHz uses a high-band slot, and we don't fight the
+            # band-type semantics (lowshelf at slot 0 etc.).
+            best_idx = self._pick_placement_slot(pos.x())
+            if best_idx < 0:
+                return  # all 10 slots in use; nothing to place
+            new_freq, new_gain = self._click_to_band_coords(pos)
+            band = self._bands[best_idx]
+            ftype = str(band.get("type", "peaking"))
+            # Shelves carry their corner freq — moving them would
+            # rewrite the shelf. Just bump their gain.
+            if ftype not in ("lowshelf", "highshelf"):
+                band["freq"] = new_freq
+            band["gain"] = new_gain
+            self.bandChanged.emit(best_idx, float(band["freq"]), new_gain)
+        # Either path: enter drag-tracking so the user can refine the
+        # placement without releasing the mouse.
+        self._dragging_band = best_idx
+        dot = self._band_dot_pos(self._bands[best_idx])
+        self._drag_offset = (pos.x() - dot.x(), pos.y() - dot.y())
+        self.setCursor(Qt.ClosedHandCursor)
+        self.update()
+        event.accept()
+
+    def _band_is_visible(self, band: dict) -> bool:
+        """A band renders as a dot iff it actively shapes the curve.
+        Disabled bands and bands with effectively zero gain are
+        invisible — keeps the graph clean before the user has placed
+        anything."""
+        if not band.get("enabled", True):
+            return False
+        return abs(float(band.get("gain", 0.0))) >= VISIBILITY_EPS_DB
+
+    def _click_to_band_coords(self, pos: QPointF) -> tuple[float, float]:
+        """Click position → (freq_hz, gain_db). Snaps gain away from
+        exactly 0 dB so the placed dot stays visible after release."""
+        r = self._plot_rect()
+        freq = _x_to_hz(pos.x(), r.left(), r.right())
+        gain = _y_to_db(pos.y(), r.top(), r.bottom())
+        if abs(gain) < PLACEMENT_FLOOR_DB:
+            gain = PLACEMENT_FLOOR_DB if gain >= 0 else -PLACEMENT_FLOOR_DB
+        return freq, gain
+
+    def _pick_placement_slot(self, click_x: float) -> int:
+        """Pick the band slot to use for a new placement. Prefer an
+        unused (gain-near-zero) peaking slot whose default freq is
+        closest to the click. Falls back to shelves if nothing else
+        is free, and returns -1 only when every slot is in use."""
+        r = self._plot_rect()
+        click_hz = _x_to_hz(click_x, r.left(), r.right())
+        best_peak = -1
+        best_peak_dist = float("inf")
+        best_shelf = -1
+        best_shelf_dist = float("inf")
+        for idx, band in enumerate(self._bands):
+            if self._band_is_visible(band):
+                continue
+            band_hz = float(band.get("freq", 1000.0))
+            # Distance in log space — feels right on a log axis.
+            dist = abs(math.log10(max(band_hz, 1.0)) -
+                       math.log10(max(click_hz, 1.0)))
+            ftype = str(band.get("type", "peaking"))
+            if ftype == "peaking":
+                if dist < best_peak_dist:
+                    best_peak_dist = dist
+                    best_peak = idx
+            else:
+                if dist < best_shelf_dist:
+                    best_shelf_dist = dist
+                    best_shelf = idx
+        return best_peak if best_peak >= 0 else best_shelf
+
+    def contextMenuEvent(self, event) -> None:
+        """Right-click on a dot → reset that band's gain to 0, hiding
+        the dot. The slot stays in the array (we always carry 10
+        bands) but stops shaping the curve."""
+        if not self._bands:
+            return
+        pos = event.pos()
+        for idx, band in enumerate(self._bands):
+            if not self._band_is_visible(band):
+                continue
+            dot = self._band_dot_pos(band)
+            if math.hypot(pos.x() - dot.x(), pos.y() - dot.y()) <= DOT_HIT_RADIUS_PX:
+                band["gain"] = 0.0
+                self.bandChanged.emit(idx, float(band.get("freq", 1000.0)), 0.0)
+                self.bandReleased.emit(idx)
+                self.update()
+                event.accept()
+                return
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._dragging_band is None:
@@ -283,11 +385,18 @@ class EqGraphWidget(QWidget):
 
     def _update_hover_cursor(self, pos: QPointF) -> None:
         for band in self._bands:
+            if not self._band_is_visible(band):
+                continue
             dot = self._band_dot_pos(band)
             if math.hypot(pos.x() - dot.x(), pos.y() - dot.y()) <= DOT_HIT_RADIUS_PX:
                 self.setCursor(Qt.OpenHandCursor)
                 return
-        self.unsetCursor()
+        # Crosshair over the plot signals "click here to place a new
+        # dot"; default cursor outside the plot rect.
+        if self._plot_rect().contains(pos):
+            self.setCursor(Qt.CrossCursor)
+        else:
+            self.unsetCursor()
 
     def paintEvent(self, _event: QPaintEvent) -> None:
         p = QPainter(self)
@@ -297,6 +406,19 @@ class EqGraphWidget(QWidget):
         self._paint_grid(p, rect)
         self._paint_curve(p, rect)
         self._paint_dots(p, rect)
+        if not any(self._band_is_visible(b) for b in self._bands):
+            self._paint_empty_hint(p, rect)
+
+    def _paint_empty_hint(self, p: QPainter, rect: QRectF) -> None:
+        """Centered hint shown when no bands are active. Disappears
+        as soon as the user places a dot."""
+        font = QFont(self.font())
+        font.setItalic(True)
+        font.setPointSizeF(max(9.0, font.pointSizeF()))
+        p.setFont(font)
+        p.setPen(QColor(255, 255, 255, 130))
+        p.drawText(rect, Qt.AlignCenter,
+                   self.tr("Click anywhere on the graph to add a point"))
 
     def _paint_zones(self, p: QPainter, rect: QRectF) -> None:
         strip_h = self.PLOT_PAD_TOP - 4
@@ -384,6 +506,11 @@ class EqGraphWidget(QWidget):
 
     def _paint_dots(self, p: QPainter, rect: QRectF) -> None:
         for idx, band in enumerate(self._bands):
+            # Hide flat / disabled bands. The dragged band is exempt:
+            # it might be momentarily passing through 0 dB while the
+            # user is shaping it.
+            if not self._band_is_visible(band) and self._dragging_band != idx:
+                continue
             dot = self._band_dot_pos(band)
             color = QColor(DOT_COLORS[idx % len(DOT_COLORS)])
             if not band.get("enabled", True):
