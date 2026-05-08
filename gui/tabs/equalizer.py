@@ -13,6 +13,7 @@ from __future__ import annotations
 from PySide6.QtCore import QProcess, Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QButtonGroup,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
@@ -21,12 +22,14 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSlider,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from ..eq_graph_widget import EqGraphWidget
 from ..searchable_select import SearchableSelect
 
 from ..eq_presets import (
@@ -413,7 +416,52 @@ class EqualizerTab(QWidget):
             "font-size: 10px; color: palette(placeholder-text);"
         )
         eq_help.setWordWrap(True)
-        layout.addWidget(card(self.tr("Bands"), bands_row, eq_help))
+
+        # View-mode toggle: Sliders (existing) vs Graph (new Sonar-style
+        # dot-on-curve). Both views read/write the same _bands_by_channel
+        # dict so switching mid-session is lossless. Default = Sliders to
+        # avoid surprising existing users; persists across launches.
+        view_row = QHBoxLayout()
+        view_row.setSpacing(6)
+        self.view_sliders_btn = QPushButton(self.tr("Sliders"))
+        self.view_sliders_btn.setCheckable(True)
+        self.view_graph_btn = QPushButton(self.tr("Graph"))
+        self.view_graph_btn.setCheckable(True)
+        self._view_button_group = QButtonGroup(self)
+        self._view_button_group.setExclusive(True)
+        self._view_button_group.addButton(self.view_sliders_btn, 0)
+        self._view_button_group.addButton(self.view_graph_btn, 1)
+        view_row.addWidget(QLabel(self.tr("View:")))
+        view_row.addWidget(self.view_sliders_btn)
+        view_row.addWidget(self.view_graph_btn)
+        view_row.addStretch(1)
+
+        # Slider grid wrapped so QStackedWidget can swap it as a unit.
+        sliders_page = QWidget()
+        sliders_page.setLayout(bands_row)
+
+        # Graph view — emits bandChanged on drag, bandReleased on
+        # mouse-up. We mirror those into the same daemon-commit path
+        # the sliders use so behaviour stays identical.
+        self.eq_graph = EqGraphWidget()
+        self.eq_graph.bandChanged.connect(self._on_graph_band_changed)
+        self.eq_graph.bandReleased.connect(self._on_graph_band_released)
+
+        self.eq_view_stack = QStackedWidget()
+        self.eq_view_stack.addWidget(sliders_page)
+        self.eq_view_stack.addWidget(self.eq_graph)
+
+        # Restore persisted view mode (defaults to sliders).
+        initial_view = str(self._settings.get("eq_view_mode") or "sliders")
+        if initial_view == "graph":
+            self.view_graph_btn.setChecked(True)
+            self.eq_view_stack.setCurrentIndex(1)
+        else:
+            self.view_sliders_btn.setChecked(True)
+            self.eq_view_stack.setCurrentIndex(0)
+        self._view_button_group.idClicked.connect(self._on_view_mode_changed)
+
+        layout.addWidget(card(self.tr("Bands"), view_row, self.eq_view_stack, eq_help))
 
         # Test-audio card ----------------------------------------------
         test_row = QHBoxLayout()
@@ -1629,3 +1677,92 @@ class EqualizerTab(QWidget):
             value_lbl.setText(f"{sign}{gain_db:.1f}")
             name_lbl.setText(names[idx])
             freq_lbl.setText(_format_freq(freq))
+
+        # Keep the graph view in sync with the slider grid. Both views
+        # render from _bands_by_channel, but the graph caches its own
+        # copy so it stays consistent across paint events — push fresh
+        # bands now that we've decided what this channel looks like.
+        if hasattr(self, "eq_graph"):
+            self.eq_graph.set_bands(bands)
+
+    def _on_view_mode_changed(self, btn_id: int) -> None:
+        """Switch between Sliders (0) and Graph (1) views and persist
+        the choice. Both views read/write the same _bands_by_channel
+        dict so no data migration is needed across the switch."""
+        self.eq_view_stack.setCurrentIndex(btn_id)
+        self._settings["eq_view_mode"] = "graph" if btn_id == 1 else "sliders"
+        save_settings(self._settings)
+
+    def _on_graph_band_changed(
+        self, band_idx: int, freq_hz: float, gain_db: float,
+    ) -> None:
+        """Graph dot drag tick. Mirrors _on_slider_changed: update the
+        local bands dict, fork to Custom-N if needed, queue a debounced
+        commit of the full band (since freq can change too — the slider
+        path only does gain, but graph drags move freq + gain together)."""
+        channel = self._current_channel
+        bands = self._bands_by_channel[channel]
+        if not (0 <= band_idx < len(bands)):
+            return
+        band = bands[band_idx]
+        band["freq"] = float(freq_hz)
+        band["gain"] = float(gain_db)
+        self._maybe_fork_to_custom()
+        # Sync the slider grid so view-switching during an unreleased
+        # drag shows the in-flight values. Freq dragged peaking bands
+        # also need their freq label refreshed — gain only would let
+        # the slider lag the dot.
+        if 0 <= band_idx < len(self.band_sliders):
+            slider = self.band_sliders[band_idx]
+            value_lbl = self.band_value_labels[band_idx]
+            freq_lbl = self.band_freq_labels[band_idx]
+            value_tenths = int(round(float(gain_db) * 10))
+            was_blocked = slider.blockSignals(True)
+            slider.setValue(value_tenths)
+            slider.blockSignals(was_blocked)
+            sign = "+" if gain_db > 0 else ""
+            value_lbl.setText(f"{sign}{float(gain_db):.1f}")
+            freq_lbl.setText(_format_freq(float(freq_hz)))
+        # Debounced commit — same pattern as the slider drag.
+        self._pending_band_value[band_idx + 1] = int(round(float(gain_db) * 10))
+        self._commit_timer.start()
+
+    def _on_graph_band_released(self, band_idx: int) -> None:
+        """Drag finished — push the full band (freq + gain + q + type)
+        atomically via set-eq-band, since freq may have changed. The
+        slider path's set-eq-band-gain only handles gain so it can't
+        cover this case. Cancel any pending debounce so we don't fire
+        a stale gain-only commit afterward."""
+        channel = self._current_channel
+        bands = self._bands_by_channel[channel]
+        if not (0 <= band_idx < len(bands)):
+            return
+        # The dragged band may share its band-number slot with a
+        # pending-gain entry from the same drag — drop it, the
+        # set-eq-band below supersedes a gain-only update.
+        self._pending_band_value.pop(band_idx + 1, None)
+        self._commit_timer.stop()
+        # Flush any other bands that had pending gain changes too.
+        if self._pending_band_value:
+            self._commit_pending_changes()
+        band = bands[band_idx]
+        self._daemon.send_command(
+            "set-eq-band",
+            channel=channel,
+            band=band_idx + 1,
+            params={
+                "freq": float(band.get("freq", 1000.0)),
+                "q": float(band.get("q", 1.0)),
+                "gain": float(band.get("gain", 0.0)),
+                "type": str(band.get("type", "peaking")),
+                "enabled": bool(band.get("enabled", True)),
+            },
+        )
+        # Re-apply auto-save for user presets — same as
+        # _commit_pending_changes does for the gain-only path.
+        active = self._active_preset_by_channel.get(channel, "")
+        if active and is_user_preset(active, channel):
+            try:
+                save_user_preset(active, channel, bands)
+            except ValueError:
+                pass
