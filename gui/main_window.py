@@ -69,7 +69,7 @@ class MixerGUI(QMainWindow):
         # don't get crushed if the window goes smaller than the
         # content.
         self.setMinimumSize(820, 660)
-        self.resize(900, 740)
+        self.resize(1180, 880)
         self.setWindowIcon(app_icon())
         self.setStyleSheet(GLOBAL_QSS)
 
