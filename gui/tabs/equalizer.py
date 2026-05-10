@@ -452,6 +452,14 @@ class EqualizerTab(QWidget):
         self.eq_graph = EqGraphWidget()
         self.eq_graph.bandChanged.connect(self._on_graph_band_changed)
         self.eq_graph.bandReleased.connect(self._on_graph_band_released)
+        self.eq_graph.bandQChanged.connect(self._on_graph_band_q_changed)
+        self.eq_graph.selectionChanged.connect(self._on_graph_selection_changed)
+        # Inspector edits commit the full band atomically — same code
+        # path the drag-release uses, just triggered by a spinner /
+        # combo edit instead of a mouse release.
+        self.eq_graph.band_inspector.band_edited.connect(
+            self._on_graph_band_released
+        )
 
         self.eq_view_stack = QStackedWidget()
         self.eq_view_stack.addWidget(sliders_page)
@@ -1732,6 +1740,23 @@ class EqualizerTab(QWidget):
         # Debounced commit — same pattern as the slider drag.
         self._pending_band_value[band_idx + 1] = int(round(float(gain_db) * 10))
         self._commit_timer.start()
+
+    def _on_graph_band_q_changed(self, band_idx: int, q: float) -> None:
+        """Scroll-wheel Q tick from the graph. Update local state;
+        the bandReleased that follows will flush a single set-eq-band
+        atomic write covering the new Q value (the slider path has
+        no Q control so we can't reuse its gain-only debounce)."""
+        channel = self._current_channel
+        bands = self._bands_by_channel[channel]
+        if 0 <= band_idx < len(bands):
+            bands[band_idx]["q"] = float(q)
+            self._maybe_fork_to_custom()
+
+    def _on_graph_selection_changed(self, _band_idx: int) -> None:
+        """Inspector visibility is managed inside the graph widget
+        itself; this slot exists so external listeners (status bar
+        readouts, band-name labels elsewhere) can hook in later
+        without re-routing the graph's signal."""
 
     def _on_graph_band_released(self, band_idx: int) -> None:
         """Drag finished — push the full band (freq + gain + q + type)

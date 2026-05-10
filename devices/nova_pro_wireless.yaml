@@ -1,0 +1,244 @@
+# SteelSeries Arctis Nova Pro Wireless / Wireless X / Wired
+#
+# Descriptor of every HID byte SteelVoiceMix exchanges with the
+# headset. See devices/README.md for how this file is used (currently
+# documentation; future runtime loader will read it).
+#
+# Sources for byte-exactness:
+#   - ASM (loteran/Arctis-Sound-Manager) device YAML
+#   - LAM (elegos/Linux-Arctis-Manager) nova_pro_wireless.yaml
+#   - Wireshark captures against SteelSeries GG on Windows
+#
+# When an opcode in this file disagrees with ASM/LAM, there must be a
+# `# DIFF: …` comment on the line explaining why.
+
+device:
+  name: SteelSeries Arctis Nova Pro Wireless
+  vendor_id: 0x1038
+  product_ids:
+    - 0x12E0  # Nova Pro Wireless (USB-C base station)
+    - 0x12E5  # Nova Pro Wireless X (Xbox)
+    - 0x12CB  # Nova Pro Wired (GameDAC Gen 2)
+    - 0x12CD  # Nova Pro Wired (GameDAC Gen 2 Xbox)
+  command_padding:
+    length: 64        # wireless variants — wired uses 16
+    length_wired: 16
+    position: end
+    filler: 0x00
+  command_interface_index: [4, 0]   # bInterfaceNumber, bAlternateSetting
+  listen_interface_indexes: [4]
+  command_byte: 0x06   # TX prefix (host → base station)
+  reply_byte: 0x07     # RX prefix (base station → host)
+
+# Init handshake — sent on connect to bring the headset to a known
+# state. Values referencing `settings.<name>` are substituted at
+# send-time from persisted user preferences.
+device_init:
+  - [0x06, 0x20]                                # query / housekeeping
+  - [0x06, 0x10]                                # query / housekeeping
+  - [0x06, 0x49, 0x01]                          # ChatMix enable
+  - [0x06, 0x8D, 0x01]                          # ChatMix icon on OLED
+  - [0x06, 0xC3, 'settings.wireless_mode']      # 2.4 GHz mode (speed / range)
+  - [0x06, 0xC1, 'settings.pm_shutdown']        # power-save inactivity timer
+  - [0x06, 0x37, 'settings.mic_volume']         # mic volume (0x01–0x0A)
+  - [0x06, 0x27, 'settings.mic_gain']           # gain (0x01 low / 0x02 high)
+  - [0x06, 0x39, 'settings.mic_sidetone']       # sidetone (0x00–0x03)
+  - [0x06, 0xBF, 'settings.mic_led_brightness'] # mute-LED brightness (0x01–0x0A)
+  - [0x06, 0xBD, 'settings.anc_mode']           # ANC mode (off/transparent/on)
+
+# Status polling — daemon sends `request:` and parses the reply against
+# `response_mapping:`. Wired variant has fewer fields; see DIFF notes.
+status:
+  request: [0x06, 0xB0]
+  response_mapping:
+    starts_with: 0x06b0
+    headset_battery_charge: 0x06   # raw 0x00..0x08, mapped to %
+    charge_slot_battery_charge: 0x07
+    transparent_noise_cancelling_level: 0x08  # 0..10
+    mic_status: 0x09               # 0x00 unmuted / 0x01 muted
+    noise_cancelling: 0x0A         # 0x00 off / 0x01 transparent / 0x02 on
+    mic_led_brightness: 0x0B
+    auto_off_time_minutes: 0x0C
+    wireless_mode: 0x0D
+    wireless_pairing: 0x0E
+    headset_power_status: 0x0F
+  representation:
+    headset:
+      - headset_power_status
+      - headset_battery_charge
+      - noise_cancelling
+      - transparent_noise_cancelling_level
+      - auto_off_time_minutes
+    microphone:
+      - mic_status
+      - mic_led_brightness
+    base_station:
+      - charge_slot_battery_charge
+    wireless:
+      - wireless_mode
+      - wireless_pairing
+
+# Live mix telemetry — separate report, not part of the periodic
+# status poll. Decoded by the daemon's chat-mix listener.
+mix_status:
+  starts_with: 0x0745
+  media_mix: 0x02   # 0–100 %
+  chat_mix: 0x03    # 0–100 %
+
+# Optional separate report — base-station volume readout.
+station_status:
+  starts_with: 0x0725
+  station_volume: 0x02
+
+# User-controllable settings. Each entry has the `update_sequence`
+# bytes the daemon sends on change, the input range / mapping, and a
+# default. Currently the daemon hardcodes these in `src/protocol.rs`.
+settings:
+  headset:
+    mic_gain:
+      type: discrete_map
+      values_mapping:
+        0x01: low
+        0x02: high
+      default: 0x02
+      update_sequence: [0x06, 0x27, 'value']
+    anc_mode:
+      type: discrete_map
+      values_mapping:
+        0x00: off
+        0x01: transparent
+        0x02: on
+      default: 0x00
+      update_sequence: [0x06, 0xBD, 'value']
+    transparent_level:
+      type: slider
+      min: 0x00
+      max: 0x0A
+      default: 0x05
+      depends_on: anc_mode == transparent
+      update_sequence: [0x06, 0xB9, 'value']
+
+  microphone:
+    mic_volume:
+      type: slider
+      min: 0x01    # mute
+      max: 0x0A    # 100 %
+      default: 0x0A
+      update_sequence: [0x06, 0x37, 'value']
+    mic_sidetone:
+      type: discrete_map
+      values_mapping:
+        0x00: off
+        0x01: low
+        0x02: medium
+        0x03: high
+      default: 0x00
+      update_sequence: [0x06, 0x39, 'value']
+    mic_led_brightness:
+      type: slider
+      min: 0x01
+      max: 0x0A
+      default: 0x0A
+      update_sequence: [0x06, 0xBF, 'value']
+
+  power_management:
+    pm_shutdown:
+      type: discrete_map
+      values_mapping:
+        0x00: never
+        0x01: 1_minute
+        0x02: 5_minutes
+        0x03: 10_minutes
+        0x04: 15_minutes
+        0x05: 30_minutes
+        0x06: 60_minutes
+      default: 0x05  # 30 minutes — matches GG default
+      update_sequence: [0x06, 0xC1, 'value']
+
+  wireless:
+    wireless_mode:
+      type: discrete_map
+      values_mapping:
+        0x00: speed
+        0x01: range
+      default: 0x00
+      update_sequence: [0x06, 0xC3, 'value']
+
+# Raw value parse rules — applied to status fields by the daemon
+# before broadcasting via the IPC socket.
+status_parse:
+  headset_battery_charge:
+    type: percentage
+    raw_min: 0x00
+    raw_max: 0x08
+  charge_slot_battery_charge:
+    type: percentage
+    raw_min: 0x00
+    raw_max: 0x08
+  transparent_noise_cancelling_level:
+    type: percentage
+    raw_min: 0x00
+    raw_max: 0x0A
+  mic_led_brightness:
+    type: percentage
+    raw_min: 0x00
+    raw_max: 0x0A
+  station_volume:
+    type: percentage
+    raw_min: 0x38   # 56 raw → 0 % (inverted by ASM/LAM)
+    raw_max: 0x00
+  mic_status:
+    type: discrete
+    values:
+      0x00: unmuted
+      0x01: muted
+  noise_cancelling:
+    type: discrete
+    values:
+      0x00: off
+      0x01: transparent
+      0x02: on
+  wireless_mode:
+    type: discrete
+    values:
+      0x00: speed
+      0x01: range
+  wireless_pairing:
+    type: discrete
+    values:
+      0x01: not_paired
+      0x04: paired_offline
+      0x08: connected
+  headset_power_status:
+    type: discrete
+    values:
+      0x01: offline
+      0x02: cable_charging
+      0x08: online
+  auto_off_time_minutes:
+    type: discrete
+    values:
+      0x00: 0
+      0x01: 1
+      0x02: 5
+      0x03: 10
+      0x04: 15
+      0x05: 30
+      0x06: 60
+
+# OLED gauge / display protocol — wireless variants only.
+# Byte sequences MUST come byte-exact from ASM or a verified
+# Wireshark capture (CONTRIBUTING.md hardware-safety rule).
+oled:
+  supported_on:
+    - 0x12E0
+    - 0x12E5
+  brightness:
+    type: slider
+    min: 0x00    # off
+    max: 0x0A    # full
+    default: 0x08
+    update_sequence: [0x06, 0x85, 'value']
+  # Frame upload + chatmix gauge opcodes are documented in
+  # ggoled_lib/ — they use a different interface than the control
+  # commands above and aren't part of this YAML.

@@ -435,6 +435,9 @@ class GameProfileManager(QObject):
         # tick (loading screen, cutscene, audio refocus) doesn't
         # respawn the EQ chain unnecessarily.
         self._consecutive_empty_ticks: int = 0
+        # Last reconciler-input tuple we logged. Per-tick logs only
+        # fire on a change vs this snapshot.
+        self._last_reconcile_snapshot: tuple | None = None
         if self._snapshot_bands is not None:
             log.info(
                 "Auto game-EQ: rehydrated stale session — preset=%r, "
@@ -495,15 +498,28 @@ class GameProfileManager(QObject):
             self._consecutive_empty_ticks = 0
         else:
             self._consecutive_empty_ticks += 1
-        # Per-tick reconcile log — DEBUG only so the journal isn't
-        # spammed every 2 s. The actual transitions (_enter / _switch
-        # / _exit) still log at INFO so users see preset changes.
-        log.debug(
-            "Auto game-EQ reconcile: auto_on=%s games=%s active_preset=%r "
-            "empty_ticks=%d",
-            auto_on, list(games.keys()), self._active_preset,
-            self._consecutive_empty_ticks,
+        # Reconcile snapshot — only logged when something the
+        # reconciler actually decides on changes. Per-tick spam
+        # (every 2 s on a quiet desktop) drowned out other logs
+        # the user was tailing for unrelated debugging. The
+        # transitions themselves (_enter / _switch / _exit) still
+        # log at INFO.
+        snapshot = (
+            bool(auto_on),
+            tuple(sorted(games.keys())),
+            self._active_preset,
+            # Bucket empty_ticks so a steadily-growing counter on a
+            # quiet desktop doesn't keep firing the log either.
+            self._consecutive_empty_ticks // 30,
         )
+        if snapshot != self._last_reconcile_snapshot:
+            log.debug(
+                "Auto game-EQ reconcile: auto_on=%s games=%s active_preset=%r "
+                "empty_ticks=%d",
+                auto_on, list(games.keys()), self._active_preset,
+                self._consecutive_empty_ticks,
+            )
+            self._last_reconcile_snapshot = snapshot
         if not auto_on:
             if self._active_preset is not None:
                 self._exit()

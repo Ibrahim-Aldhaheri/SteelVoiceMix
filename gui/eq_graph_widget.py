@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QDateTime, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -42,7 +42,15 @@ from PySide6.QtGui import (
     QPixmap,
     QRadialGradient,
 )
-from PySide6.QtWidgets import QSizePolicy, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDoubleSpinBox,
+    QFrame,
+    QGridLayout,
+    QLabel,
+    QSizePolicy,
+    QWidget,
+)
 
 
 FREQ_MIN_HZ = 20.0
@@ -208,6 +216,208 @@ def _summed_response_db(
     return total
 
 
+# Filter types we expose in the inspector. The daemon supports more
+# (lowpass / highpass / bandpass / notch / allpass via PipeWire's
+# builtin biquads) but most aren't useful in a mastering-EQ context;
+# mirroring ASM's set keeps the user-facing palette focused.
+_INSPECTOR_FILTER_TYPES: list[tuple[str, str]] = [
+    ("peaking",   "Peaking"),
+    ("lowshelf",  "Low shelf"),
+    ("highshelf", "High shelf"),
+    ("lowpass",   "Low pass"),
+    ("highpass",  "High pass"),
+]
+
+
+class EqBandInspector(QFrame):
+    """Floating popup showing the selected band's parameters with
+    bidirectional editing. Lives as a child of EqGraphWidget so it
+    floats above the curve; positions itself next to the selected
+    dot, flipping side when there isn't room.
+
+    Signal:
+      band_edited(int): the band dict in the parent's _bands has
+        already been updated with the new value(s); the parent
+        flushes a set-eq-band commit. Emitted on any field commit
+        (combo change, spinbox editing-finished)."""
+
+    band_edited = Signal(int)
+
+    def __init__(self, graph: "EqGraphWidget") -> None:
+        super().__init__(graph)
+        self._graph = graph
+        self._idx: int = -1
+        self._loading = False
+        self.setObjectName("eq_band_inspector")
+        self.setFrameShape(QFrame.NoFrame)
+        self.setStyleSheet(
+            "QFrame#eq_band_inspector {"
+            "  background-color: rgba(20, 22, 38, 235);"
+            "  border: 1px solid rgba(255,255,255,60);"
+            "  border-radius: 7px;"
+            "}"
+            "QLabel { color: #B5B5D8; background: transparent; "
+            "  border: none; font-size: 9pt; }"
+            "QLabel#title { color: #FFFFFF; font-weight: bold; "
+            "  font-size: 10pt; }"
+            "QComboBox, QDoubleSpinBox {"
+            "  background: #2C2C46; color: #E0E5FF;"
+            "  border: 1px solid rgba(255,255,255,40);"
+            "  border-radius: 4px; padding: 2px 6px;"
+            "  font-size: 9pt; min-width: 70px;"
+            "}"
+            "QComboBox::drop-down { border: none; }"
+        )
+        grid = QGridLayout(self)
+        grid.setContentsMargins(10, 8, 10, 10)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(5)
+
+        self._title = QLabel("Band")
+        self._title.setObjectName("title")
+        grid.addWidget(self._title, 0, 0, 1, 2)
+
+        self._type = QComboBox()
+        for key, label in _INSPECTOR_FILTER_TYPES:
+            self._type.addItem(self.tr(label), key)
+        self._type.currentIndexChanged.connect(self._on_type_changed)
+        grid.addWidget(QLabel(self.tr("Type")), 1, 0)
+        grid.addWidget(self._type, 1, 1)
+
+        self._gain = QDoubleSpinBox()
+        self._gain.setRange(GAIN_MIN_DB, GAIN_MAX_DB)
+        self._gain.setSuffix(" dB")
+        self._gain.setSingleStep(0.5)
+        self._gain.setDecimals(1)
+        self._gain.editingFinished.connect(self._on_gain_changed)
+        grid.addWidget(QLabel(self.tr("Gain")), 2, 0)
+        grid.addWidget(self._gain, 2, 1)
+
+        self._freq = QDoubleSpinBox()
+        self._freq.setRange(FREQ_MIN_HZ, FREQ_MAX_HZ)
+        self._freq.setSuffix(" Hz")
+        self._freq.setSingleStep(10.0)
+        self._freq.setDecimals(0)
+        self._freq.editingFinished.connect(self._on_freq_changed)
+        grid.addWidget(QLabel(self.tr("Freq")), 3, 0)
+        grid.addWidget(self._freq, 3, 1)
+
+        self._q = QDoubleSpinBox()
+        self._q.setRange(EqGraphWidget.Q_MIN, EqGraphWidget.Q_MAX)
+        self._q.setSingleStep(0.1)
+        self._q.setDecimals(2)
+        self._q.editingFinished.connect(self._on_q_changed)
+        grid.addWidget(QLabel(self.tr("Q")), 4, 0)
+        grid.addWidget(self._q, 4, 1)
+
+        self.adjustSize()
+        self.hide()
+
+    def show_for_band(self, idx: int) -> None:
+        if idx < 0 or idx >= len(self._graph._bands):
+            self.hide()
+            self._idx = -1
+            return
+        self._idx = idx
+        band = self._graph._bands[idx]
+        self._loading = True
+        try:
+            self._title.setText(self.tr("Band {n}").format(n=idx + 1))
+            ftype = str(band.get("type", "peaking"))
+            type_idx = next(
+                (i for i, (k, _) in enumerate(_INSPECTOR_FILTER_TYPES) if k == ftype),
+                0,
+            )
+            self._type.setCurrentIndex(type_idx)
+            self._gain.setValue(float(band.get("gain", 0.0)))
+            self._freq.setValue(float(band.get("freq", 1000.0)))
+            self._q.setValue(float(band.get("q", 1.0)))
+        finally:
+            self._loading = False
+        self._reposition()
+        self.show()
+        self.raise_()
+
+    def refresh_from_band(self) -> None:
+        """Re-pull current values from the band dict — call after a
+        drag updates freq/gain on the same selected band so the
+        spinners track the dot."""
+        if self._idx < 0:
+            return
+        if not self.isVisible():
+            return
+        self.show_for_band(self._idx)
+
+    def _reposition(self) -> None:
+        if self._idx < 0 or self._idx >= len(self._graph._bands):
+            return
+        band = self._graph._bands[self._idx]
+        dot = self._graph._band_dot_pos(band)
+        self.adjustSize()
+        iw, ih = self.width(), self.height()
+        gw, gh = self._graph.width(), self._graph.height()
+        # Default: place to the right of the dot; flip left if it'd
+        # overflow. Vertically centered on the dot, clamped to the
+        # widget bounds.
+        x = int(dot.x() + DOT_RADIUS_PX + 12)
+        if x + iw > gw - 4:
+            x = int(dot.x() - DOT_RADIUS_PX - 12 - iw)
+        x = max(4, min(x, gw - iw - 4))
+        y = int(dot.y() - ih / 2)
+        y = max(4, min(y, gh - ih - 4))
+        self.move(x, y)
+
+    def _on_type_changed(self, _idx: int) -> None:
+        if self._loading or self._idx < 0:
+            return
+        new_type = self._type.currentData()
+        band = self._graph._bands[self._idx]
+        if str(band.get("type", "peaking")) == new_type:
+            return
+        band["type"] = new_type
+        self._graph._curve_points = None
+        self._graph.update()
+        self.band_edited.emit(self._idx)
+
+    def _on_gain_changed(self) -> None:
+        if self._loading or self._idx < 0:
+            return
+        band = self._graph._bands[self._idx]
+        new_gain = float(self._gain.value())
+        if abs(float(band.get("gain", 0.0)) - new_gain) < 1e-3:
+            return
+        band["gain"] = new_gain
+        self._graph._curve_points = None
+        self._graph.update()
+        self._reposition()
+        self.band_edited.emit(self._idx)
+
+    def _on_freq_changed(self) -> None:
+        if self._loading or self._idx < 0:
+            return
+        band = self._graph._bands[self._idx]
+        new_freq = float(self._freq.value())
+        if abs(float(band.get("freq", 1000.0)) - new_freq) < 1e-3:
+            return
+        band["freq"] = new_freq
+        self._graph._curve_points = None
+        self._graph.update()
+        self._reposition()
+        self.band_edited.emit(self._idx)
+
+    def _on_q_changed(self) -> None:
+        if self._loading or self._idx < 0:
+            return
+        band = self._graph._bands[self._idx]
+        new_q = float(self._q.value())
+        if abs(float(band.get("q", 1.0)) - new_q) < 1e-3:
+            return
+        band["q"] = new_q
+        self._graph._curve_points = None
+        self._graph.update()
+        self.band_edited.emit(self._idx)
+
+
 class EqGraphWidget(QWidget):
     """Sonar-style EQ view: dot-on-a-curve graph with zone-label header.
 
@@ -219,12 +429,20 @@ class EqGraphWidget(QWidget):
     """
 
     bandChanged = Signal(int, float, float)
+    bandQChanged = Signal(int, float)        # band_idx, q
     bandReleased = Signal(int)
+    selectionChanged = Signal(int)           # -1 when nothing selected
 
     PLOT_PAD_LEFT = 42
     PLOT_PAD_RIGHT = 16
     PLOT_PAD_TOP = 32
     PLOT_PAD_BOTTOM = 30
+
+    # Q range for scroll-wheel adjustment. Tracks ASM's range so
+    # the user-perceived sharpness ceiling matches.
+    Q_MIN = 0.1
+    Q_MAX = 10.0
+    Q_STEP_PER_NOTCH = 0.1
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -235,10 +453,21 @@ class EqGraphWidget(QWidget):
         self._hover_pos: QPointF | None = None
         self._bg_pixmap: QPixmap | None = None
         self._curve_points: list[QPointF] | None = None
+        self._selected_band: int = -1
+        # Banner shown briefly when a placement click lands on a
+        # full graph (every slot already in use). Cleared by a
+        # short timer so the user knows what happened without
+        # cluttering steady-state.
+        self._slot_full_banner_until_ms: int = 0
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumHeight(320)
         self.setMouseTracking(True)
         self.setAttribute(Qt.WA_OpaquePaintEvent)
+        # Floating inspector — shows the selected band's params with
+        # bidirectional editing. Owned by us; the parent tab connects
+        # to its band_edited signal to push set-eq-band commits.
+        self.band_inspector = EqBandInspector(self)
+        self.selectionChanged.connect(self._on_selection_changed_internal)
 
     def set_bands(self, bands: list[dict]) -> None:
         """Replace the bands shown. Stores shallow copies. Skipped
@@ -273,6 +502,8 @@ class EqGraphWidget(QWidget):
         super().resizeEvent(event)
         self._bg_pixmap = None
         self._curve_points = None
+        if self._selected_band >= 0:
+            self.band_inspector.refresh_from_band()
         self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -286,6 +517,16 @@ class EqGraphWidget(QWidget):
         if best_idx < 0:
             best_idx = self._pick_placement_slot(pos.x())
             if best_idx < 0:
+                # Every slot's in use — flash a briefly-visible
+                # banner explaining the click was a no-op. Tied to
+                # wall-clock so a stale banner can't linger across
+                # repaints; a 2.4 s single-shot timer schedules the
+                # repaint that hides it.
+                self._slot_full_banner_until_ms = (
+                    QDateTime.currentMSecsSinceEpoch() + 2200
+                )
+                QTimer.singleShot(2400, self.update)
+                self.update()
                 return
             new_freq, new_gain = self._click_to_band_coords(pos)
             band = self._bands[best_idx]
@@ -295,12 +536,72 @@ class EqGraphWidget(QWidget):
             band["gain"] = new_gain
             self._curve_points = None
             self.bandChanged.emit(best_idx, float(band["freq"]), new_gain)
+        self._set_selected(best_idx)
         self._dragging_band = best_idx
         dot = self._band_dot_pos(self._bands[best_idx])
         self._drag_offset = (pos.x() - dot.x(), pos.y() - dot.y())
         self.setCursor(Qt.ClosedHandCursor)
         self.update()
         event.accept()
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        """Double-click a dot to clear it (gain → 0). Mirrors ASM —
+        primary "remove" gesture instead of right-click."""
+        if event.button() != Qt.LeftButton or not self._bands:
+            return
+        pos = event.position()
+        idx = self._dot_at(pos)
+        if idx < 0:
+            return
+        band = self._bands[idx]
+        band["gain"] = 0.0
+        self._curve_points = None
+        if self._selected_band == idx:
+            self._set_selected(-1)
+        self.bandChanged.emit(idx, float(band.get("freq", 1000.0)), 0.0)
+        self.bandReleased.emit(idx)
+        self.update()
+        event.accept()
+
+    def wheelEvent(self, event) -> None:
+        """Scroll wheel on the selected band → adjust Q. No-op if no
+        band is currently selected (can't pick blindly — Q changes
+        the curve shape and the user needs visual confirmation of
+        which band they're shaping)."""
+        idx = self._selected_band
+        if idx < 0 or not (0 <= idx < len(self._bands)):
+            event.ignore()
+            return
+        band = self._bands[idx]
+        # angleDelta is 120 per notch on most mice (Qt convention).
+        notches = event.angleDelta().y() / 120.0
+        if notches == 0:
+            return
+        q = float(band.get("q", 1.0)) + notches * self.Q_STEP_PER_NOTCH
+        q = max(self.Q_MIN, min(self.Q_MAX, round(q, 3)))
+        if abs(q - float(band.get("q", 1.0))) < 1e-4:
+            return
+        band["q"] = q
+        self._curve_points = None
+        self.bandQChanged.emit(idx, q)
+        self.bandReleased.emit(idx)
+        self.update()
+        event.accept()
+
+    def _set_selected(self, idx: int) -> None:
+        if idx == self._selected_band:
+            return
+        self._selected_band = idx
+        self.selectionChanged.emit(idx)
+
+    def selected_band(self) -> int:
+        return self._selected_band
+
+    def _on_selection_changed_internal(self, idx: int) -> None:
+        if idx < 0:
+            self.band_inspector.hide()
+        else:
+            self.band_inspector.show_for_band(idx)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self._hover_pos = event.position()
@@ -326,6 +627,11 @@ class EqGraphWidget(QWidget):
         band["gain"] = new_gain
         self._curve_points = None
         self.bandChanged.emit(idx, new_freq, new_gain)
+        # Inspector spinners track the drag so the user can read the
+        # in-flight values without releasing — and reposition follows
+        # the dot.
+        if self._selected_band == idx:
+            self.band_inspector.refresh_from_band()
         self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -354,6 +660,8 @@ class EqGraphWidget(QWidget):
             if math.hypot(pos.x() - dot.x(), pos.y() - dot.y()) <= DOT_HIT_RADIUS_PX:
                 band["gain"] = 0.0
                 self._curve_points = None
+                if self._selected_band == idx:
+                    self._set_selected(-1)
                 self.bandChanged.emit(idx, float(band.get("freq", 1000.0)), 0.0)
                 self.bandReleased.emit(idx)
                 self.update()
@@ -443,6 +751,7 @@ class EqGraphWidget(QWidget):
         self._paint_dots(p, rect)
         if self._hover_pos and self._dragging_band is None:
             self._paint_hover_crosshair(p, rect, self._hover_pos)
+        self._paint_slot_full_banner(p, rect)
 
     def _build_static_background(self) -> QPixmap:
         """Render the parts that don't change between paints — the
@@ -609,8 +918,17 @@ class EqGraphWidget(QWidget):
                 continue
             dot = self._band_dot_pos(band)
             core_hex, halo_hex = DOT_PALETTE[idx % len(DOT_PALETTE)]
-            highlight = (self._dragging_band == idx)
+            is_selected = (self._selected_band == idx)
+            is_dragging = (self._dragging_band == idx)
+            highlight = is_selected or is_dragging
             r = DOT_RADIUS_PX + (1.5 if highlight else 0.0)
+            if is_selected and not is_dragging:
+                # Outer ring around the selected dot — telegraphs
+                # "scroll wheel adjusts this band's Q" without text.
+                ring_pen = QPen(QColor(255, 255, 255, 200), 1.6)
+                p.setPen(ring_pen)
+                p.setBrush(Qt.NoBrush)
+                p.drawEllipse(dot, r + 5.0, r + 5.0)
             # Soft halo. Three stops so the bloom fades gracefully
             # rather than ending in a hard ring.
             halo_r = r * 2.4
@@ -674,6 +992,34 @@ class EqGraphWidget(QWidget):
         p.drawRoundedRect(pill, 6, 6)
         p.setPen(QColor(TOOLTIP_TEXT))
         p.drawText(pill, Qt.AlignCenter, text)
+
+    def _paint_slot_full_banner(self, p: QPainter, rect: QRectF) -> None:
+        """Brief banner shown after a placement click that found no
+        free slot. Auto-hides via the wall-clock timestamp set in
+        mousePressEvent."""
+        now_ms = QDateTime.currentMSecsSinceEpoch()
+        if now_ms >= self._slot_full_banner_until_ms:
+            return
+        text = self.tr("All 10 bands are in use — drag or remove an existing point first")
+        f = QFont(self.font())
+        f.setPointSizeF(max(9.5, f.pointSizeF()))
+        f.setBold(True)
+        p.setFont(f)
+        fm = QFontMetrics(f)
+        pad_x, pad_y = 14.0, 8.0
+        tw = fm.horizontalAdvance(text)
+        th = fm.height()
+        bw = tw + 2 * pad_x
+        bh = th + 2 * pad_y
+        bx = rect.left() + (rect.width() - bw) / 2.0
+        by = rect.top() + 8.0
+        banner = QRectF(bx, by, bw, bh)
+        # Warm amber so it reads as "advisory", not red-alert error.
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(255, 152, 0, 235))
+        p.drawRoundedRect(banner, 6, 6)
+        p.setPen(QColor("#1A1B2E"))
+        p.drawText(banner, Qt.AlignCenter, text)
 
     def _curve_db_at_x(self, x: float, rect: QRectF) -> float:
         """Linear-interpolate against the cached curve points. Used
