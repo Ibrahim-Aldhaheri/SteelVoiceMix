@@ -1100,19 +1100,37 @@ impl Mixer {
         }
     }
 
-    /// Wait for a duration, checking `running` every second. Bails
-    /// out early if the hotplug watcher reports the device returned
-    /// to the bus mid-wait — turns post-suspend reconnect from
-    /// "wait the full backoff window" into "retry as soon as the
-    /// kernel re-enumerates the device".
+    /// Wait for a duration, checking `running` regularly. Bails out
+    /// early only on the false→true *edge* of `device_present` —
+    /// i.e. the device wasn't on the bus when we entered the wait,
+    /// then arrived mid-wait. That's the post-suspend / replug
+    /// scenario this short-circuit was designed for.
+    ///
+    /// Why an edge instead of a level check: at user-session
+    /// startup the daemon races PipeWire's USB enumeration. The
+    /// USB device is on the bus from the moment the daemon starts
+    /// (it never left), but PipeWire hasn't yet exposed the ALSA
+    /// sink. The level-check version short-circuited to zero on
+    /// every iteration ("device is here, retry now"), spinning
+    /// the reconnect ladder thousands of times per second and
+    /// never letting PipeWire catch up. Verified in the wild on
+    /// 2026-05-10 — daemon logged 44k+ "Output sink not found /
+    /// device back on bus / retrying immediately" lines over 15
+    /// hours after a fresh login on beta40 before the user
+    /// noticed and manually restarted.
     fn wait(&self, duration: Duration) {
+        let started_present = self.device_present.load(Ordering::Relaxed);
         let start = Instant::now();
         while self.running.load(Ordering::Relaxed) && start.elapsed() < duration {
-            if self.device_present.load(Ordering::Relaxed) {
-                info!("USB hotplug: device back on bus during reconnect wait — retrying immediately");
+            // Only short-circuit if device went absent→present during
+            // this wait. If it was already present at entry, sleep
+            // through the full backoff so PipeWire has time to
+            // expose the ALSA sink.
+            if !started_present && self.device_present.load(Ordering::Relaxed) {
+                info!("USB hotplug: device returned to bus during reconnect wait — retrying immediately");
                 return;
             }
-            thread::sleep(Duration::from_secs(1));
+            thread::sleep(Duration::from_millis(200));
         }
     }
 }
