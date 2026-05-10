@@ -87,19 +87,23 @@ DEFAULT_ZONES: list[tuple[str, float, float]] = [
 ]
 
 # (core, halo) per band slot. Core paints the dot's solid centre;
-# halo paints the wider radial bloom underneath. The halo alpha is
-# baked into the hex (last two chars).
+# halo paints the wider radial bloom underneath. Desaturated palette
+# tuned to sit on the navy → black backdrop without competing with
+# the mint-teal curve. Each color is roughly 60 % saturation / 75 %
+# brightness — distinguishable enough to cross-reference with the
+# slider grid, harmonious enough that 10 dots clustered don't look
+# like a fruit salad.
 DOT_PALETTE: list[tuple[str, str]] = [
-    ("#FF5577", "#FF557755"),  # 1
-    ("#FF8855", "#FF885555"),  # 2
-    ("#FFCC44", "#FFCC4455"),  # 3
-    ("#A6E22E", "#A6E22E55"),  # 4
-    ("#3DDBCD", "#3DDBCD55"),  # 5
-    ("#5EA8FF", "#5EA8FF55"),  # 6
-    ("#8B6BFF", "#8B6BFF55"),  # 7
-    ("#D966FF", "#D966FF55"),  # 8
-    ("#FF66B3", "#FF66B355"),  # 9
-    ("#9CC0CF", "#9CC0CF55"),  # 10
+    ("#D88B9A", "#D88B9A40"),  # 1 — dusty rose
+    ("#D9A077", "#D9A07740"),  # 2 — muted apricot
+    ("#D4BD7A", "#D4BD7A40"),  # 3 — sand
+    ("#A8C68B", "#A8C68B40"),  # 4 — sage
+    ("#7CC8B5", "#7CC8B540"),  # 5 — soft mint (sibling of the curve)
+    ("#88AED4", "#88AED440"),  # 6 — periwinkle
+    ("#A599D4", "#A599D440"),  # 7 — lavender
+    ("#C490C0", "#C490C040"),  # 8 — orchid
+    ("#D49BB0", "#D49BB040"),  # 9 — dusty pink
+    ("#9AAAB8", "#9AAAB840"),  # 10 — slate blue
 ]
 
 CURVE_COLOR = "#50E3C2"
@@ -314,15 +318,36 @@ class EqBandInspector(QFrame):
         self.hide()
 
     def show_for_band(self, idx: int) -> None:
+        """Full show — sets the index, populates fields, repositions,
+        and brings the popup to front. Use only on selection changes,
+        not on per-drag-tick refreshes (which would call show() +
+        raise_() at 60 Hz and cause visible flicker)."""
         if idx < 0 or idx >= len(self._graph._bands):
             self.hide()
             self._idx = -1
             return
         self._idx = idx
-        band = self._graph._bands[idx]
+        self._sync_fields_from_band()
+        self._reposition()
+        self.show()
+        self.raise_()
+
+    def refresh_from_band(self) -> None:
+        """Lightweight tick — pulls current values into the spinners
+        and repositions, but doesn't touch show()/raise_(). Cheap to
+        call from mouseMoveEvent."""
+        if self._idx < 0 or not self.isVisible():
+            return
+        self._sync_fields_from_band()
+        self._reposition()
+
+    def _sync_fields_from_band(self) -> None:
+        if self._idx < 0 or self._idx >= len(self._graph._bands):
+            return
+        band = self._graph._bands[self._idx]
         self._loading = True
         try:
-            self._title.setText(self.tr("Band {n}").format(n=idx + 1))
+            self._title.setText(self.tr("Band {n}").format(n=self._idx + 1))
             ftype = str(band.get("type", "peaking"))
             type_idx = next(
                 (i for i, (k, _) in enumerate(_INSPECTOR_FILTER_TYPES) if k == ftype),
@@ -334,19 +359,6 @@ class EqBandInspector(QFrame):
             self._q.setValue(float(band.get("q", 1.0)))
         finally:
             self._loading = False
-        self._reposition()
-        self.show()
-        self.raise_()
-
-    def refresh_from_band(self) -> None:
-        """Re-pull current values from the band dict — call after a
-        drag updates freq/gain on the same selected band so the
-        spinners track the dot."""
-        if self._idx < 0:
-            return
-        if not self.isVisible():
-            return
-        self.show_for_band(self._idx)
 
     def _reposition(self) -> None:
         if self._idx < 0 or self._idx >= len(self._graph._bands):

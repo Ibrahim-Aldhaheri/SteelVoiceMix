@@ -1759,15 +1759,28 @@ class EqualizerTab(QWidget):
         without re-routing the graph's signal."""
 
     def _on_graph_band_released(self, band_idx: int) -> None:
-        """Drag finished — push the full band (freq + gain + q + type)
-        atomically via set-eq-band, since freq may have changed. The
-        slider path's set-eq-band-gain only handles gain so it can't
-        cover this case. Cancel any pending debounce so we don't fire
-        a stale gain-only commit afterward."""
+        """Drag or inspector edit finished — push the full band
+        (freq + gain + q + type) atomically via set-eq-band, since
+        freq/q/type may have changed. The slider path's
+        set-eq-band-gain only handles gain so it can't cover this
+        case. Cancel any pending debounce so we don't fire a stale
+        gain-only commit afterward.
+
+        Sync from `eq_graph._bands` BEFORE building the commit:
+        inspector edits (filter type, gain spinbox, freq spinbox, Q
+        spinbox) and scroll-wheel Q updates mutate only the graph's
+        local copy. Without this sync, the daemon would receive the
+        parent's stale values and echo them right back, snapping
+        the dot to its pre-edit position."""
         channel = self._current_channel
         bands = self._bands_by_channel[channel]
         if not (0 <= band_idx < len(bands)):
             return
+        if 0 <= band_idx < len(self.eq_graph._bands):
+            graph_band = self.eq_graph._bands[band_idx]
+            for key in ("freq", "gain", "q", "type", "enabled"):
+                if key in graph_band:
+                    bands[band_idx][key] = graph_band[key]
         # The dragged band may share its band-number slot with a
         # pending-gain entry from the same drag — drop it, the
         # set-eq-band below supersedes a gain-only update.
