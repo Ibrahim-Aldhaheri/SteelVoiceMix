@@ -1,56 +1,60 @@
-# Device descriptors
+# Device protocol references
 
-YAML files in this directory document the HID surface SteelVoiceMix
-talks to — one file per device family. Modeled loosely on the same
-format used by [Linux-Arctis-Manager (LAM)][lam] and
-[Arctis Sound Manager (ASM)][asm] so descriptors can be cross-checked
-against upstream when an opcode is in doubt.
+Markdown files in this directory document the HID surface
+SteelVoiceMix talks to — one file per device family.
 
-[lam]: https://github.com/elegos/Linux-Arctis-Manager/tree/develop/src/linux_arctis_manager/devices
-[asm]: https://github.com/loteran/Arctis-Sound-Manager
+## What this is, and what it isn't
 
-## Status — descriptive, not yet loaded at runtime
+**This is**: a contributor-facing protocol reference. Every byte the
+daemon sends is documented in one place with a status column
+(shipped / planned / cross-checked-against-upstream).
 
-The Rust daemon still has hardcoded device behavior in `src/hid.rs`
-and `src/protocol.rs`. These YAML files exist so:
+**This isn't**: machine-readable. The Rust daemon hardcodes opcodes
+in `src/hid.rs` and `src/protocol.rs`. Nothing parses these `.md`
+files. When the daemon and a doc disagree, **the daemon is
+authoritative** — fix the doc.
 
-1. Every opcode the daemon sends is **declared in one human-readable
-   place**. New contributors can read the YAML before reading
-   `hid.rs`.
-2. **PR reviews can verify byte-exactness** against ASM/LAM by diffing
-   the corresponding YAML files instead of grepping Rust enums.
-3. **New device support starts as a YAML PR** — contributors can
-   submit a descriptor for an Arctis variant we don't yet handle, and
-   the runtime work to wire it up can land in a follow-up.
-4. **Future runtime loader is straightforward** when we want it: each
-   `update_sequence` already reads as a literal byte recipe.
-
-When the runtime loader lands, the source-of-truth flips: the YAML
-becomes authoritative and Rust constants disappear. Until then, the
-two sides need to stay in sync — adding a new opcode means updating
-both `hid.rs` and the YAML in the same PR.
+If we ever wire a real runtime loader (when a third device family
+incoming, or a contributor submits a new Arctis variant), we'll move
+to a typed format with serde derive — likely TOML or RON, not YAML.
+The earlier YAML scaffold was misleading: it looked loadable but
+nothing read it. Markdown removes that pretense.
 
 ## Format
 
-See `nova_pro_wireless.yaml` for the canonical example. Key sections:
+See `nova_pro_wireless.protocol.md` for the canonical example. Tables
+group:
 
-- `device:` — identity (vendor ID, product IDs, command interface,
-  message length, padding rules).
-- `device_init:` — opcodes sent on connect to bring the headset into
-  a known state. Order matters; values referencing
-  `settings.<name>` are substituted at send-time from persisted
-  preferences.
-- `status:` — the polled status report request opcode and the
-  byte-offset map of the response, plus how each field is
-  interpreted (percentage / on-off / int-string mapping).
-- `settings:` — the user-facing controls grouped by category
-  (headset / microphone / power_management / wireless / anc).
-  Each entry has its `update_sequence` (the opcode bytes), a
-  type (slider / discrete_map / toggle), and any value mapping.
+- **Identity** — vendor / product IDs, message length, padding.
+- **Init handshake** — opcodes sent on connect, in order.
+- **Status polling** — request opcode + offset map of the response.
+- **Auxiliary status reports** — async base-station messages.
+- **User-facing settings** — control opcodes by category.
+- **OLED gauge** — brightness only; frame protocol lives in
+  `ggoled_lib/`.
 
-## Cross-references
+Every row carries a status column:
 
-When opcodes here don't match ASM/LAM, that's a red flag that
-deserves a comment explaining why. The hardware-safety rule from
-`CONTRIBUTING.md` still applies: bytes hitting the device firmware
-must be byte-exact from a verified upstream source.
+| Symbol | Meaning |
+|:---:|---|
+| ✅ | Shipped — daemon sends or parses this today |
+| 🚧 | Planned — staged for an upcoming beta |
+| 🔁 | Cross-checked against ASM and/or LAM upstream |
+
+## Contributing
+
+When adding or changing an opcode:
+
+1. Update `src/hid.rs` / `src/protocol.rs` (the source of truth).
+2. Update the matching row in the corresponding `.protocol.md` file
+   in the same PR — keep the doc in sync.
+3. Cite the source: ASM YAML row, LAM YAML row, or a Wireshark
+   capture. Per `CONTRIBUTING.md`'s hardware-safety rule, every byte
+   that hits firmware must be byte-exact from a verified upstream.
+
+When adding a brand-new device:
+
+1. Open an issue first — we don't have multi-device support in the
+   daemon yet, so the runtime work is non-trivial.
+2. The device's `.protocol.md` reference can land before the runtime
+   work as documentation; we'll cite the issue from the doc.
