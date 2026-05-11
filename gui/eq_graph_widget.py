@@ -38,10 +38,13 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPaintEvent,
+    QPalette,
     QPen,
     QPixmap,
     QRadialGradient,
 )
+
+from .widgets import ACCENT, ACCENT_DIM
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -106,20 +109,14 @@ DOT_PALETTE: list[tuple[str, str]] = [
     ("#9AAAB8", "#9AAAB840"),  # 10 — slate blue
 ]
 
-CURVE_COLOR = "#50E3C2"
-CURVE_BELOW_COLOR = "#FF7E8A"
-BG_TOP = "#1A1B2E"
-BG_BOTTOM = "#0B0C18"
-ZONE_BG_A = "#22223A"
-ZONE_BG_B = "#2C2C46"
-ZONE_TEXT = "#B5B5D8"
-GRID_MINOR = QColor(255, 255, 255, 18)
-GRID_MAJOR = QColor(255, 255, 255, 55)
-AXIS_TEXT = "#8A8FAE"
-HOVER_LINE = QColor(255, 255, 255, 80)
-EMPTY_HINT_COLOR = "#8A8FAE"
-TOOLTIP_BG = QColor(20, 22, 38, 230)
-TOOLTIP_TEXT = "#E0E5FF"
+# Curve uses the app's green accent (matches the rest of the
+# SteelVoiceMix UI). The below-zero color is a muted warm that
+# pairs cleanly with green at low alpha. Background / grid / text
+# colors are derived from the Qt palette per-paint so the graph
+# adapts to light + dark themes automatically.
+CURVE_COLOR = ACCENT          # "#4CAF50"
+CURVE_BELOW_COLOR = "#E07A8E"  # dusty warm, complements green
+CURVE_GLOW_COLOR = ACCENT_DIM  # "#357935"
 
 
 def _hz_to_x(hz: float, plot_left: float, plot_right: float) -> float:
@@ -254,24 +251,40 @@ class EqBandInspector(QFrame):
         self._loading = False
         self.setObjectName("eq_band_inspector")
         self.setFrameShape(QFrame.NoFrame)
-        self.setStyleSheet(
-            "QFrame#eq_band_inspector {"
-            "  background-color: rgba(20, 22, 38, 235);"
-            "  border: 1px solid rgba(255,255,255,60);"
-            "  border-radius: 7px;"
-            "}"
-            "QLabel { color: #B5B5D8; background: transparent; "
-            "  border: none; font-size: 9pt; }"
-            "QLabel#title { color: #FFFFFF; font-weight: bold; "
-            "  font-size: 10pt; }"
-            "QComboBox, QDoubleSpinBox {"
-            "  background: #2C2C46; color: #E0E5FF;"
-            "  border: 1px solid rgba(255,255,255,40);"
-            "  border-radius: 4px; padding: 2px 6px;"
-            "  font-size: 9pt; min-width: 70px;"
-            "}"
-            "QComboBox::drop-down { border: none; }"
-        )
+        # Click events on the frame's padding (or any non-interactive
+        # QLabel child) would otherwise bubble up to the parent graph
+        # and trigger a placement at the click position — i.e. the
+        # inspector spawning a phantom dot under itself.
+        self.setAttribute(Qt.WA_NoMousePropagation, True)
+        self.setStyleSheet(f"""
+            QFrame#eq_band_inspector {{
+                background-color: palette(window);
+                border: 1px solid palette(mid);
+                border-radius: 7px;
+            }}
+            QLabel {{
+                color: palette(text);
+                background: transparent;
+                border: none;
+                font-size: 9pt;
+            }}
+            QLabel#title {{
+                color: {ACCENT};
+                font-weight: bold;
+                font-size: 10pt;
+            }}
+            QComboBox, QDoubleSpinBox {{
+                background: palette(base);
+                color: palette(text);
+                border: 1px solid palette(mid);
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 9pt;
+                min-width: 70px;
+            }}
+            QComboBox:hover, QDoubleSpinBox:hover {{ border-color: {ACCENT}; }}
+            QComboBox::drop-down {{ border: none; }}
+        """)
         grid = QGridLayout(self)
         grid.setContentsMargins(10, 8, 10, 10)
         grid.setHorizontalSpacing(8)
@@ -340,6 +353,12 @@ class EqBandInspector(QFrame):
             return
         self._sync_fields_from_band()
         self._reposition()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        # Belt and braces alongside WA_NoMousePropagation — if a
+        # future Qt change loosens propagation rules, the explicit
+        # accept() still keeps the click inside the inspector.
+        event.accept()
 
     def _sync_fields_from_band(self) -> None:
         if self._idx < 0 or self._idx >= len(self._graph._bands):
@@ -542,10 +561,19 @@ class EqGraphWidget(QWidget):
                 return
             new_freq, new_gain = self._click_to_band_coords(pos)
             band = self._bands[best_idx]
-            ftype = str(band.get("type", "peaking"))
-            if ftype not in ("lowshelf", "highshelf"):
-                band["freq"] = new_freq
+            # Placement always honours the click position — including
+            # for shelf slots, which would otherwise snap to their
+            # default corner freq (32 Hz or 16 kHz) and leave the dot
+            # nowhere near the cursor. Converting shelves to peaking
+            # on placement is acceptable: the daemon accepts any
+            # filter type per slot, and the original shelf nature is
+            # only meaningful at the corner anyway. If the user
+            # wants the slot back as a shelf, the inspector's type
+            # combo restores it.
+            band["freq"] = new_freq
             band["gain"] = new_gain
+            if str(band.get("type", "peaking")) in ("lowshelf", "highshelf"):
+                band["type"] = "peaking"
             self._curve_points = None
             self.bandChanged.emit(best_idx, float(band["freq"]), new_gain)
         self._set_selected(best_idx)
@@ -767,9 +795,10 @@ class EqGraphWidget(QWidget):
 
     def _build_static_background(self) -> QPixmap:
         """Render the parts that don't change between paints — the
-        gradient backdrop, zone strip, dB/Hz grid, axis labels, plot
-        border — into a pixmap. Reused on every paint until the
-        widget is resized or the zone list is replaced."""
+        backdrop, zone strip, dB/Hz grid, axis labels, plot border —
+        into a pixmap. Reused on every paint until the widget is
+        resized, the zone list is replaced, or the palette changes
+        (light/dark theme toggle)."""
         w = max(1, self.width())
         h = max(1, self.height())
         dpr = self.devicePixelRatioF()
@@ -779,17 +808,24 @@ class EqGraphWidget(QWidget):
         p = QPainter(pix)
         p.setRenderHint(QPainter.Antialiasing, True)
         p.setRenderHint(QPainter.TextAntialiasing, True)
+        # Pull backdrop from the Qt palette so the graph fits the
+        # rest of the app's tab-card chrome in both light and dark
+        # themes. Subtle vertical gradient (base → slightly-darker
+        # base) gives the plot a touch of depth without breaking
+        # theme cohesion.
+        pal = self.palette()
+        base = pal.color(QPalette.ColorRole.Base)
         bg_grad = QLinearGradient(0, 0, 0, h)
-        bg_grad.setColorAt(0.0, QColor(BG_TOP))
-        bg_grad.setColorAt(1.0, QColor(BG_BOTTOM))
+        bg_grad.setColorAt(0.0, base.lighter(108))
+        bg_grad.setColorAt(1.0, base.darker(110))
         p.fillRect(0, 0, w, h, bg_grad)
         rect = self._plot_rect()
-        self._paint_zones(p, rect)
-        self._paint_grid(p, rect)
+        self._paint_zones(p, rect, pal)
+        self._paint_grid(p, rect, pal)
         p.end()
         return pix
 
-    def _paint_zones(self, p: QPainter, rect: QRectF) -> None:
+    def _paint_zones(self, p: QPainter, rect: QRectF, pal: QPalette) -> None:
         strip_h = self.PLOT_PAD_TOP - 10
         strip_top = 5
         font = QFont(self.font())
@@ -798,52 +834,62 @@ class EqGraphWidget(QWidget):
         font.setLetterSpacing(QFont.AbsoluteSpacing, 0.6)
         p.setFont(font)
         fm = QFontMetrics(font)
-        zone_pen = QPen(QColor(ZONE_TEXT))
+        zone_a = pal.color(QPalette.ColorRole.AlternateBase)
+        zone_b = pal.color(QPalette.ColorRole.Midlight)
+        zone_text = pal.color(QPalette.ColorRole.Text)
+        divider = pal.color(QPalette.ColorRole.Mid)
         for i, (label, f_lo, f_hi) in enumerate(self._zones):
             x_lo = _hz_to_x(f_lo, rect.left(), rect.right())
             x_hi = _hz_to_x(f_hi, rect.left(), rect.right())
             zone_rect = QRectF(x_lo, strip_top, max(1.0, x_hi - x_lo), strip_h)
-            shade = QColor(ZONE_BG_A) if i % 2 == 0 else QColor(ZONE_BG_B)
-            p.fillRect(zone_rect, shade)
+            p.fillRect(zone_rect, zone_a if i % 2 == 0 else zone_b)
             if i > 0:
-                p.setPen(QPen(QColor(255, 255, 255, 24), 1))
+                p.setPen(QPen(divider, 1))
                 p.drawLine(QPointF(x_lo, strip_top + 2),
                            QPointF(x_lo, strip_top + strip_h - 2))
-            p.setPen(zone_pen)
+            p.setPen(QPen(zone_text))
             text = label.upper()
             if fm.horizontalAdvance(text) > zone_rect.width() - 6:
                 text = fm.elidedText(text, Qt.ElideRight, int(zone_rect.width() - 6))
             p.drawText(zone_rect, Qt.AlignCenter, text)
 
-    def _paint_grid(self, p: QPainter, rect: QRectF) -> None:
+    def _paint_grid(self, p: QPainter, rect: QRectF, pal: QPalette) -> None:
+        # Grid lines derive from palette(text) at low alpha so they
+        # work in light + dark themes. Major / minor split: 0 dB
+        # baseline + decade boundaries get stronger lines than the
+        # 1/3-decade in-between.
+        text_color = pal.color(QPalette.ColorRole.Text)
+        minor = QColor(text_color); minor.setAlpha(28)
+        major = QColor(text_color); major.setAlpha(75)
+        axis_text = pal.color(QPalette.ColorRole.PlaceholderText)
+        border = QColor(text_color); border.setAlpha(60)
         font = QFont(self.font())
         font.setPointSizeF(max(7.5, font.pointSizeF() - 1.5))
         p.setFont(font)
         for db in (-12, -6, 0, 6, 12):
             y = _db_to_y(float(db), rect.top(), rect.bottom())
-            p.setPen(QPen(GRID_MAJOR if db == 0 else GRID_MINOR, 1))
+            p.setPen(QPen(major if db == 0 else minor, 1))
             p.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
-            p.setPen(QColor(AXIS_TEXT))
+            p.setPen(QPen(axis_text))
             label = "0" if db == 0 else f"{db:+d}"
             p.drawText(
                 QRectF(0, y - 8, rect.left() - 6, 16),
                 Qt.AlignRight | Qt.AlignVCenter,
                 label,
             )
-        # Frequency grid: 1/3-decade lines minor, decade lines major.
-        for hz, label, major in (
+        for hz, label, is_major in (
             (30, "30", False), (100, "100", True), (300, "300", False),
             (1000, "1k", True), (3000, "3k", False), (10000, "10k", True),
         ):
             x = _hz_to_x(hz, rect.left(), rect.right())
-            p.setPen(QPen(GRID_MAJOR if major else GRID_MINOR, 1))
+            p.setPen(QPen(major if is_major else minor, 1))
             p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
-            p.setPen(QColor(AXIS_TEXT))
+            p.setPen(QPen(axis_text))
             p.drawText(
                 QRectF(x - 24, rect.bottom() + 5, 48, 16),
                 Qt.AlignCenter, label,
             )
-        p.setPen(QPen(QColor(255, 255, 255, 50), 1.0))
+        p.setPen(QPen(border, 1.0))
         p.drawRoundedRect(rect, 5.0, 5.0)
 
     def _compute_curve_points(self, rect: QRectF) -> list[QPointF]:
@@ -918,7 +964,7 @@ class EqGraphWidget(QWidget):
         font.setPointSizeF(max(11.0, font.pointSizeF() + 1.0))
         font.setItalic(True)
         p.setFont(font)
-        p.setPen(QColor(EMPTY_HINT_COLOR))
+        p.setPen(self.palette().color(QPalette.ColorRole.PlaceholderText))
         p.drawText(rect, Qt.AlignCenter,
                    self.tr("Click anywhere on the graph to add a point"))
 
@@ -982,7 +1028,10 @@ class EqGraphWidget(QWidget):
         # don't double-decorate.
         if self._dot_at(pos) >= 0:
             return
-        p.setPen(QPen(HOVER_LINE, 1, Qt.DashLine))
+        pal = self.palette()
+        hover_color = QColor(pal.color(QPalette.ColorRole.Text))
+        hover_color.setAlpha(110)
+        p.setPen(QPen(hover_color, 1, Qt.DashLine))
         p.drawLine(QPointF(pos.x(), rect.top()), QPointF(pos.x(), rect.bottom()))
         hz = _x_to_hz(pos.x(), rect.left(), rect.right())
         db = self._curve_db_at_x(pos.x(), rect)
@@ -999,10 +1048,13 @@ class EqGraphWidget(QWidget):
             ox = pos.x() - 12 - tw - 2 * pad_x
         oy = max(rect.top() + 4, pos.y() - th / 2 - pad_y)
         pill = QRectF(ox, oy, tw + 2 * pad_x, th + 2 * pad_y)
+        tooltip_bg = pal.color(QPalette.ColorRole.ToolTipBase)
+        # Use the standard tooltip pair from the palette so the
+        # pill matches Qt's native tooltips in either theme.
         p.setPen(Qt.NoPen)
-        p.setBrush(TOOLTIP_BG)
+        p.setBrush(tooltip_bg)
         p.drawRoundedRect(pill, 6, 6)
-        p.setPen(QColor(TOOLTIP_TEXT))
+        p.setPen(QPen(pal.color(QPalette.ColorRole.ToolTipText)))
         p.drawText(pill, Qt.AlignCenter, text)
 
     def _paint_slot_full_banner(self, p: QPainter, rect: QRectF) -> None:
