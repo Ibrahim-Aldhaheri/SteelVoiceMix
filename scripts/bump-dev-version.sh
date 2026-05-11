@@ -130,6 +130,19 @@ mv "$tmp_py" "$PY"
 mv "$tmp_cargo" "$CARGO"
 trap - EXIT
 
+# Cargo.lock has to track Cargo.toml's version on the local crate
+# line or `cargo build --locked` (used in CI) refuses to build.
+# `cargo update -p steelvoicemix --offline` rewrites just our crate's
+# version pin; no network required, no other deps churn. Skipped on a
+# no-op bump where Cargo.toml didn't change.
+if [[ "$cargo_diff" -eq 2 ]] && command -v cargo >/dev/null; then
+    if cargo update -p steelvoicemix --offline >/dev/null 2>&1; then
+        echo "  Cargo.lock  (updated local crate to $cargo_new)"
+    else
+        echo "  Cargo.lock  WARN: cargo update failed; CI may reject — fix before push" >&2
+    fi
+fi
+
 echo "Bumped: $current → $new"
 echo "  $SPEC"
 echo "  $PY"
