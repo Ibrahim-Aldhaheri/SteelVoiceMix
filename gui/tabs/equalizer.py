@@ -33,12 +33,16 @@ from ..eq_graph_widget import EqGraphWidget
 from ..searchable_select import SearchableSelect
 
 from ..eq_presets import (
+    delete_user_override,
     delete_user_preset,
     find_preset,
+    has_user_override,
     is_user_preset,
     list_presets,
+    load_user_override,
     next_custom_name,
     rename_user_preset,
+    save_user_override,
     save_user_preset,
 )
 from ..eq_test_audio import CHANNEL_TO_SINK, TEST_AUDIO_CATALOGUE
@@ -93,6 +97,40 @@ def _format_freq(hz: float) -> str:
     if abs(khz - round(khz)) < 0.05:
         return f"{int(round(khz))} kHz"
     return f"{khz:.1f} kHz"
+
+
+# Macro zone splits — bands with freq < BASS_VOICE_HZ get the bass
+# trim, < VOICE_TREBLE_HZ get the voice trim, otherwise the treble
+# trim. Boundaries chosen to match common DAW bass/mid/treble
+# splits; tweakable here in one place.
+MACRO_BASS_VOICE_HZ = 250.0
+MACRO_VOICE_TREBLE_HZ = 4000.0
+
+
+def _macro_trim_for_freq(freq_hz: float, macros: dict[str, float]) -> float:
+    """Pick which macro slider applies to a band of frequency
+    `freq_hz`, return the offset in dB."""
+    if freq_hz < MACRO_BASS_VOICE_HZ:
+        return float(macros.get("bass", 0.0))
+    if freq_hz < MACRO_VOICE_TREBLE_HZ:
+        return float(macros.get("voice", 0.0))
+    return float(macros.get("treble", 0.0))
+
+
+def _apply_macros_to_bands(
+    bands: list[dict], macros: dict[str, float],
+) -> list[dict]:
+    """Return a copy of `bands` with each band's gain offset by the
+    macro for its zone. Used at send time so the daemon receives
+    the effective gains while the stored band values stay untouched."""
+    out: list[dict] = []
+    for b in bands:
+        adj = dict(b)
+        trim = _macro_trim_for_freq(float(b.get("freq", 1000.0)), macros)
+        if abs(trim) > 1e-4:
+            adj["gain"] = max(-24.0, min(24.0, float(b.get("gain", 0.0)) + trim))
+        out.append(adj)
+    return out
 
 
 def _band_name_for(freq: float) -> str:
@@ -185,6 +223,28 @@ class EqualizerTab(QWidget):
         self._active_preset_by_channel: dict[str, str] = {
             ch: str(persisted_active.get(ch, "") or "")
             for ch in ("game", "chat", "media", "hdmi", "mic")
+        }
+
+        # Bass / Voice / Treble macro values per channel. Each macro
+        # is a single ±12 dB offset that tilts a slice of the
+        # spectrum — bass for <250 Hz bands, voice for 250 Hz–4 kHz,
+        # treble for >4 kHz. Stored separately from band gains and
+        # applied at send time so the user can dial them up/down
+        # without permanently shifting the underlying band values.
+        # Persisted alongside band overrides in the preset's
+        # override file.
+        self._macros_by_channel: dict[str, dict[str, float]] = {
+            ch: {"bass": 0.0, "voice": 0.0, "treble": 0.0}
+            for ch in ("game", "chat", "media", "hdmi", "mic")
+        }
+
+        # Original preset bands captured at load time. Reset button
+        # restores from here. For bundled / built-in presets these
+        # are the package defaults; for user presets they're
+        # whatever was on disk at load. Refreshed on every preset
+        # load.
+        self._preset_defaults_by_channel: dict[str, list[dict]] = {
+            ch: [] for ch in ("game", "chat", "media", "hdmi", "mic")
         }
 
         # Slider commits are debounced. While the user drags, we just
@@ -301,7 +361,21 @@ class EqualizerTab(QWidget):
         # require explicit confirmation: saving the current state,
         # renaming a user preset, deleting a user preset.
         preset_btn_row = QHBoxLayout()
-        self.preset_save_btn = QPushButton(self.tr("Save…"))
+        # Reset button — restores the preset's defaults (bundled
+        # values for bundled / built-in presets, on-disk values for
+        # user presets) and clears the Bass / Voice / Treble macros.
+        # Enabled only when an override exists or macros are non-zero.
+        self.preset_reset_btn = QPushButton(self.tr("Reset"))
+        self.preset_reset_btn.setToolTip(self.tr(
+            "Restore this preset's defaults and clear the "
+            "Bass / Voice / Treble macros."
+        ))
+        self.preset_reset_btn.clicked.connect(self._on_preset_reset)
+        self.preset_reset_btn.setEnabled(False)
+        self.preset_save_btn = QPushButton(self.tr("Save as…"))
+        self.preset_save_btn.setToolTip(self.tr(
+            "Save the current bands as a new user preset."
+        ))
         self.preset_save_btn.clicked.connect(self._on_preset_save)
         self.preset_rename_btn = QPushButton(self.tr("Rename…"))
         self.preset_rename_btn.clicked.connect(self._on_preset_rename)
@@ -309,6 +383,7 @@ class EqualizerTab(QWidget):
         self.preset_delete_btn = QPushButton(self.tr("Delete"))
         self.preset_delete_btn.clicked.connect(self._on_preset_delete)
         self.preset_delete_btn.setEnabled(False)
+        preset_btn_row.addWidget(self.preset_reset_btn)
         preset_btn_row.addWidget(self.preset_save_btn)
         preset_btn_row.addWidget(self.preset_rename_btn)
         preset_btn_row.addWidget(self.preset_delete_btn)
@@ -461,9 +536,58 @@ class EqualizerTab(QWidget):
             self._on_graph_band_released
         )
 
+        # Graph page wraps the graph widget plus a row of three
+        # macro sliders (Bass / Voice / Treble). The sliders tilt
+        # the curve in their frequency zones — bass <250 Hz, voice
+        # 250 Hz–4 kHz, treble >4 kHz — and the daemon receives the
+        # effective bands (stored gain + macro trim) so what you
+        # hear matches the drawn curve.
+        graph_page = QWidget()
+        graph_page_layout = QVBoxLayout(graph_page)
+        graph_page_layout.setContentsMargins(0, 0, 0, 0)
+        graph_page_layout.setSpacing(8)
+        graph_page_layout.addWidget(self.eq_graph, 1)
+        macros_row = QHBoxLayout()
+        macros_row.setSpacing(12)
+        self.macro_sliders: dict[str, NoWheelSlider] = {}
+        self.macro_value_labels: dict[str, QLabel] = {}
+        for key, label_text in (
+            ("bass",   self.tr("Bass")),
+            ("voice",  self.tr("Voice")),
+            ("treble", self.tr("Treble")),
+        ):
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            col.setAlignment(Qt.AlignHCenter)
+            value_lbl = QLabel("0.0")
+            value_lbl.setAlignment(Qt.AlignCenter)
+            value_lbl.setStyleSheet("font-size: 10px; font-weight: bold; min-width: 36px;")
+            col.addWidget(value_lbl)
+            slider = NoWheelSlider(Qt.Horizontal)
+            slider.setRange(-120, 120)   # 0.1 dB units, ±12 dB
+            slider.setValue(0)
+            slider.setTickPosition(QSlider.NoTicks)
+            slider.setFixedHeight(20)
+            slider.setMinimumWidth(120)
+            slider.valueChanged.connect(
+                lambda v, k=key, lbl=value_lbl: self._on_macro_changed(k, v, lbl)
+            )
+            slider.sliderReleased.connect(
+                lambda k=key, s=slider: self._on_macro_released(k, s)
+            )
+            self.macro_sliders[key] = slider
+            self.macro_value_labels[key] = value_lbl
+            col.addWidget(slider)
+            name_lbl = QLabel(label_text)
+            name_lbl.setAlignment(Qt.AlignCenter)
+            name_lbl.setStyleSheet("font-size: 10px; font-weight: bold;")
+            col.addWidget(name_lbl)
+            macros_row.addLayout(col, 1)
+        graph_page_layout.addLayout(macros_row)
+
         self.eq_view_stack = QStackedWidget()
         self.eq_view_stack.addWidget(sliders_page)
-        self.eq_view_stack.addWidget(self.eq_graph)
+        self.eq_view_stack.addWidget(graph_page)
 
         # Restore persisted view mode (defaults to sliders).
         initial_view = str(self._settings.get("eq_view_mode") or "sliders")
@@ -1058,21 +1182,28 @@ class EqualizerTab(QWidget):
         self.eq_toggle.blockSignals(was_blocked)
 
     def on_bands_changed(self, channel: str, bands: list) -> None:
-        """Daemon broadcast: bands for `channel` changed (perhaps because
-        we just sent the change, perhaps from another client or a preset
-        load). Update the local cache; if it's the channel currently on
-        screen, refresh sliders + labels too.
+        """Daemon broadcast: bands for `channel` changed.
 
-        We deliberately do NOT reconcile the active-preset name here —
-        every band edit + every chain respawn echoes a broadcast back,
-        and re-walking the preset list each time can flip the combo to
-        a different preset that happens to match by float tolerance
-        (the 'pink noise played, EQ flipped to Podcast' bug). The
-        active-preset name is owned by whoever triggered the change:
-        _apply_preset, _maybe_fork_to_custom, _on_auto_applied, etc."""
+        Daemon receives effective bands (stored gain + macro trim
+        per zone) so the chain matches the drawn curve. The echo
+        carries those effective gains. To keep the stored bands
+        free of macro double-application on subsequent edits, we
+        reverse the macro fold before caching."""
         if channel not in self._bands_by_channel:
             return
-        self._bands_by_channel[channel] = list(bands)
+        macros = self._macros_by_channel.get(channel, {})
+        if any(abs(v) > 1e-4 for v in macros.values()):
+            stored = []
+            for b in bands:
+                adj = dict(b)
+                trim = _macro_trim_for_freq(
+                    float(b.get("freq", 1000.0)), macros,
+                )
+                adj["gain"] = float(b.get("gain", 0.0)) - trim
+                stored.append(adj)
+            self._bands_by_channel[channel] = stored
+        else:
+            self._bands_by_channel[channel] = list(bands)
         if channel == self._current_channel:
             self._render_sliders_for_channel(channel)
 
@@ -1082,14 +1213,33 @@ class EqualizerTab(QWidget):
         reconcile the active-preset name from the loaded bands so the
         preset combo doesn't show 'Flat' while the sliders sit on a
         non-flat preset (the bug we hit on first restart after upgrade
-        from a stable that didn't persist active_preset)."""
+        from a stable that didn't persist active_preset).
+
+        If a per-channel active preset has a stored override, load
+        the override's bands + macros instead of the daemon's
+        snapshot — the override is what the user expects to see
+        after a restart."""
         for ch in ("game", "chat", "media", "hdmi", "mic"):
-            if ch in state:
+            if ch not in state:
+                continue
+            active = self._active_preset_by_channel.get(ch, "")
+            override = load_user_override(active, ch) if active else None
+            if override is not None:
+                self._bands_by_channel[ch] = [dict(b) for b in override["bands"]]
+                self._macros_by_channel[ch] = dict(override["macros"])
+                preset = find_preset(active, ch)
+                if preset is not None:
+                    self._preset_defaults_by_channel[ch] = [
+                        dict(b) for b in preset["bands"]
+                    ]
+            else:
                 self._bands_by_channel[ch] = list(state[ch])
-                self._reconcile_active_preset(ch)
+                self._macros_by_channel[ch] = {"bass": 0.0, "voice": 0.0, "treble": 0.0}
+            self._reconcile_active_preset(ch)
         # Full-state snapshots win unconditionally — drop any
         # in-flight local-authority window.
         self.eq_graph.reset_local_authority()
+        self._sync_macros_to_widgets(self._current_channel)
         self._render_sliders_for_channel(self._current_channel)
         self._refresh_preset_combo()
 
@@ -1242,54 +1392,72 @@ class EqualizerTab(QWidget):
 
     def _commit_pending_changes(self) -> None:
         """Flush queued band-gain changes to the daemon for the currently
-        selected channel. If we've forked to a Custom preset, persist the
-        updated bands so the saved file stays in sync with the sliders."""
+        selected channel.
+
+        The daemon receives gain with the active channel's macro for
+        that band's zone folded in — same math as set-eq-channel /
+        set-eq-band paths — so the audible response stays consistent
+        with the drawn curve. Persistence: see _persist_active_mods.
+        """
         channel = self._current_channel
-        for band, value_tenths in self._pending_band_value.items():
+        macros = self._macros_by_channel[channel]
+        bands = self._bands_by_channel[channel]
+        for band_num, value_tenths in self._pending_band_value.items():
             gain_db = value_tenths / 10.0
+            # Apply the macro offset for this band's frequency zone.
+            slot = band_num - 1
+            if 0 <= slot < len(bands):
+                trim = _macro_trim_for_freq(
+                    float(bands[slot].get("freq", 1000.0)), macros,
+                )
+                gain_db = max(-24.0, min(24.0, gain_db + trim))
             self._daemon.send_command(
                 "set-eq-band-gain",
                 channel=channel,
-                band=band,
+                band=band_num,
                 gain_db=gain_db,
             )
         self._pending_band_value.clear()
-        # Auto-save: if a user preset is currently active, write the
-        # latest band state to its file so the dropdown stays a faithful
-        # snapshot of what's playing. Built-ins are read-only, so skip.
+        self._persist_active_mods(channel)
+        self._update_action_buttons()
+
+    def _persist_active_mods(self, channel: str) -> None:
+        """Write the current bands + macros to wherever modifications
+        for the active preset should land. Sonar-style: edits to a
+        bundled / built-in preset write a user override file, edits
+        to a user preset save in place. With no active preset there's
+        nowhere to save — modifications stay in-memory until the user
+        picks Save As."""
         active = self._active_preset_by_channel.get(channel, "")
-        if active and is_user_preset(active, channel):
-            try:
-                save_user_preset(
-                    active, channel, self._bands_by_channel[channel]
-                )
-            except ValueError:
-                # Sanitisation rejected the name, somehow. Don't surface
-                # a dialog mid-drag — log and move on.
-                pass
+        if not active:
+            return
+        bands = self._bands_by_channel[channel]
+        macros = self._macros_by_channel[channel]
+        try:
+            if is_user_preset(active, channel):
+                # User presets persist their macros via the same
+                # override path so a single Reset round-trips both.
+                save_user_preset(active, channel, bands)
+                if any(abs(v) > 1e-4 for v in macros.values()):
+                    save_user_override(active, channel, bands, macros)
+                else:
+                    delete_user_override(active, channel)
+            else:
+                # Bundled / built-in: override layer captures the mods
+                # so the source preset stays canonical for Reset.
+                save_user_override(active, channel, bands, macros)
+        except ValueError:
+            # Sanitisation rejected the name — log and skip; this
+            # is auto-save, not user-driven, so a dialog would be
+            # noise.
+            pass
 
     def _maybe_fork_to_custom(self) -> None:
-        """If the user just started editing while a built-in (or nothing)
-        is selected, fork the current bands into a new Custom N user
-        preset and select it. Subsequent edits then update Custom N in
-        place via the auto-save in `_commit_pending_changes`. Idempotent:
-        if a Custom N is already active, no-op."""
-        channel = self._current_channel
-        active = self._active_preset_by_channel.get(channel, "")
-        if active and is_user_preset(active, channel):
-            return
-        new_name = next_custom_name(channel)
-        try:
-            save_user_preset(
-                new_name, channel, self._bands_by_channel[channel]
-            )
-        except ValueError:
-            return
-        self._active_preset_by_channel[channel] = new_name
-        self._persist_active_presets()
-        # _refresh_preset_combo handles the star-prefix + favourites
-        # sorting and re-selects the active preset for us.
-        self._refresh_preset_combo()
+        """Deprecated no-op — kept so any remaining call sites don't
+        break. Sonar-style edits write to an override file for the
+        active preset instead of forking to Custom N. The
+        `next_custom_name` path is still alive for explicit "Save
+        As" via the preset Save button."""
 
     def _on_channel_changed(self, _text: str) -> None:
         """Combo box changed — read the selected row's userData (the
@@ -1311,6 +1479,7 @@ class EqualizerTab(QWidget):
         # immediately even if the user was rapidly editing on the
         # outgoing channel.
         self.eq_graph.reset_local_authority()
+        self._sync_macros_to_widgets(key)
         self._render_sliders_for_channel(key)
         # Preset list is channel-scoped — repopulate the dropdown so the
         # user only sees presets for the channel they're looking at.
@@ -1394,10 +1563,19 @@ class EqualizerTab(QWidget):
 
     def _update_action_buttons(self) -> None:
         name = self._selected_preset_name()
-        editable = bool(name) and is_user_preset(name, self._current_channel)
+        channel = self._current_channel
+        editable = bool(name) and is_user_preset(name, channel)
         self.preset_delete_btn.setEnabled(editable)
         self.preset_rename_btn.setEnabled(editable)
-        if name and is_favourite(self._settings, self._current_channel, name):
+        # Reset is meaningful when the loaded preset has been modified
+        # — either an override file exists, or any macro is non-zero.
+        active = self._active_preset_by_channel.get(channel, "")
+        macros_active = any(
+            abs(v) > 1e-4 for v in self._macros_by_channel.get(channel, {}).values()
+        )
+        has_override = bool(active) and has_user_override(active, channel)
+        self.preset_reset_btn.setEnabled(bool(active) and (has_override or macros_active))
+        if name and is_favourite(self._settings, channel, name):
             self.preset_fav_btn.setText("★")
             self.preset_fav_btn.setToolTip(
                 "Remove this preset from favourites"
@@ -1481,9 +1659,15 @@ class EqualizerTab(QWidget):
         the dropdown's `activated` signal, by the Favourites quick-
         bar buttons, and by anywhere else that wants to apply a
         preset without going through the user-driven combo selection.
-        Updates the local band cache, re-renders the sliders, sends
-        the atomic set-eq-channel to the daemon, and marks the preset
-        active so subsequent slider edits know whether to fork."""
+
+        Sonar-style behaviour: if the user has previously modified
+        this preset (saved as an override), the modified bands +
+        macros load; otherwise the preset's defaults load with
+        zero macros. The defaults are captured in
+        `_preset_defaults_by_channel` so the Reset button can
+        restore them. The daemon receives the effective bands
+        (stored + macros applied) so what you hear matches the
+        drawn curve."""
         if not name:
             return
         preset = find_preset(name, self._current_channel)
@@ -1494,20 +1678,33 @@ class EqualizerTab(QWidget):
                 f"No preset named '{name}' on the {self._current_channel} channel.",
             )
             return
-        self._bands_by_channel[self._current_channel] = [
+        channel = self._current_channel
+        # Snapshot the factory defaults for Reset BEFORE we look at
+        # overrides. `preset["bands"]` is the bundled/built-in/user-
+        # saved file value, untouched by any user mods.
+        self._preset_defaults_by_channel[channel] = [
             dict(b) for b in preset["bands"]
         ]
+        override = load_user_override(name, channel)
+        if override is not None:
+            bands = [dict(b) for b in override["bands"]]
+            self._macros_by_channel[channel] = dict(override["macros"])
+        else:
+            bands = [dict(b) for b in preset["bands"]]
+            self._macros_by_channel[channel] = {"bass": 0.0, "voice": 0.0, "treble": 0.0}
+        self._bands_by_channel[channel] = bands
         # Preset load is a deliberate full-state replacement — drop
         # the graph's local-authority window so the new bands paint
         # immediately, not after the rolling timeout.
         self.eq_graph.reset_local_authority()
-        self._render_sliders_for_channel(self._current_channel)
+        self._render_sliders_for_channel(channel)
+        self._sync_macros_to_widgets(channel)
         self._daemon.send_command(
             "set-eq-channel",
-            channel=self._current_channel,
-            bands=preset["bands"],
+            channel=channel,
+            bands=_apply_macros_to_bands(bands, self._macros_by_channel[channel]),
         )
-        self._active_preset_by_channel[self._current_channel] = name
+        self._active_preset_by_channel[channel] = name
         self._persist_active_presets()
         # Make sure the combo reflects what's now active — useful
         # when this was triggered by the favourites bar (combo had
@@ -1520,6 +1717,93 @@ class EqualizerTab(QWidget):
             finally:
                 self.preset_combo.blockSignals(was_blocked)
         self._update_action_buttons()
+
+    def _on_preset_reset(self) -> None:
+        """Restore the active preset's defaults and clear macros.
+        For bundled / built-in presets, deletes the user override
+        file. For user presets, reloads from disk (whatever the
+        saved values are). Sends set-eq-channel atomic with the
+        defaults so the daemon snaps cleanly."""
+        channel = self._current_channel
+        active = self._active_preset_by_channel.get(channel, "")
+        if not active:
+            return
+        # Drop any override layer so the next find_preset sees the
+        # bundled / built-in values. For user presets there's no
+        # override — delete_user_override is a no-op.
+        delete_user_override(active, channel)
+        defaults = self._preset_defaults_by_channel.get(channel)
+        if not defaults:
+            # Fallback: re-resolve via find_preset (defaults dict
+            # may be empty on first load after upgrade from a
+            # version without the snapshot).
+            preset = find_preset(active, channel)
+            if preset is None:
+                return
+            defaults = preset["bands"]
+        self._bands_by_channel[channel] = [dict(b) for b in defaults]
+        self._macros_by_channel[channel] = {"bass": 0.0, "voice": 0.0, "treble": 0.0}
+        self.eq_graph.reset_local_authority()
+        self._sync_macros_to_widgets(channel)
+        self._render_sliders_for_channel(channel)
+        self._daemon.send_command(
+            "set-eq-channel",
+            channel=channel,
+            bands=self._bands_by_channel[channel],
+        )
+        self._update_action_buttons()
+
+    def _on_macro_changed(
+        self, key: str, value_tenths: int, label: QLabel,
+    ) -> None:
+        """Macro slider drag tick. Updates the displayed value and
+        the in-memory macro state; the actual daemon commit fires on
+        release so we don't respawn the filter chain on every pixel
+        of slider travel."""
+        gain_db = value_tenths / 10.0
+        sign = "+" if gain_db > 0 else ""
+        label.setText(f"{sign}{gain_db:.1f}")
+        channel = self._current_channel
+        self._macros_by_channel[channel][key] = gain_db
+        # Live preview: graph curve recomputes via set_macros even
+        # before the daemon hears about it, so the user sees the
+        # tilt immediately.
+        self.eq_graph.set_macros(**self._macros_by_channel[channel])
+
+    def _on_macro_released(self, _key: str, _slider) -> None:
+        """Macro slider released — flush the channel's effective
+        bands to the daemon (a single set-eq-channel keeps the chain
+        respawn atomic) and persist the modification as an override.
+        Cheaper than per-band updates since macro touches up to 10
+        bands at once."""
+        channel = self._current_channel
+        bands = self._bands_by_channel[channel]
+        macros = self._macros_by_channel[channel]
+        self._daemon.send_command(
+            "set-eq-channel",
+            channel=channel,
+            bands=_apply_macros_to_bands(bands, macros),
+        )
+        self._persist_active_mods(channel)
+        self._update_action_buttons()
+
+    def _sync_macros_to_widgets(self, channel: str) -> None:
+        """Push the channel's macro values into the slider widgets
+        (blocked signals so we don't echo a set-eq-channel from a
+        programmatic slider update) and into the graph for the curve."""
+        macros = self._macros_by_channel[channel]
+        for key, slider in self.macro_sliders.items():
+            v = float(macros.get(key, 0.0))
+            value_tenths = int(round(v * 10))
+            was_blocked = slider.blockSignals(True)
+            try:
+                slider.setValue(value_tenths)
+            finally:
+                slider.blockSignals(was_blocked)
+            lbl = self.macro_value_labels[key]
+            sign = "+" if v > 0 else ""
+            lbl.setText(f"{sign}{v:.1f}")
+        self.eq_graph.set_macros(**macros)
 
     def _on_preset_save(self) -> None:
         suggested = self._selected_preset_name() or self.tr("My Preset")
@@ -1802,6 +2086,11 @@ class EqualizerTab(QWidget):
         if self._pending_band_value:
             self._commit_pending_changes()
         band = bands[band_idx]
+        macros = self._macros_by_channel[channel]
+        # Macro trim folded into gain so the daemon's filter chain
+        # reflects the slider tilt. Q / freq / type aren't affected.
+        effective_gain = max(-24.0, min(24.0, float(band.get("gain", 0.0)) +
+            _macro_trim_for_freq(float(band.get("freq", 1000.0)), macros)))
         self._daemon.send_command(
             "set-eq-band",
             channel=channel,
@@ -1809,16 +2098,10 @@ class EqualizerTab(QWidget):
             params={
                 "freq": float(band.get("freq", 1000.0)),
                 "q": float(band.get("q", 1.0)),
-                "gain": float(band.get("gain", 0.0)),
+                "gain": effective_gain,
                 "type": str(band.get("type", "peaking")),
                 "enabled": bool(band.get("enabled", True)),
             },
         )
-        # Re-apply auto-save for user presets — same as
-        # _commit_pending_changes does for the gain-only path.
-        active = self._active_preset_by_channel.get(channel, "")
-        if active and is_user_preset(active, channel):
-            try:
-                save_user_preset(active, channel, bands)
-            except ValueError:
-                pass
+        self._persist_active_mods(channel)
+        self._update_action_buttons()

@@ -493,6 +493,13 @@ class EqGraphWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._bands: list[dict] = []
+        # Bass / Voice / Treble macro offsets, in dB, applied to
+        # each band's gain at curve-compute time based on the
+        # band's centre frequency. Dots stay anchored to stored
+        # gain (band["gain"]); the curve shows stored + macro tilt
+        # for the band's zone. Same math the parent applies at
+        # send time so the daemon's response matches the drawing.
+        self._macros: dict[str, float] = {"bass": 0.0, "voice": 0.0, "treble": 0.0}
         self._zones: list[tuple[str, float, float]] = list(DEFAULT_ZONES)
         self._dragging_band: int | None = None
         self._drag_offset: tuple[float, float] = (0.0, 0.0)
@@ -541,6 +548,28 @@ class EqGraphWidget(QWidget):
         self._bands = [dict(b) for b in bands]
         self._curve_points = None
         self.update()
+
+    def set_macros(
+        self, bass: float = 0.0, voice: float = 0.0, treble: float = 0.0,
+    ) -> None:
+        """Replace the macro offsets. Curve recomputes to include
+        them; dots stay at their stored band gains."""
+        self._macros = {
+            "bass": float(bass), "voice": float(voice), "treble": float(treble),
+        }
+        self._curve_points = None
+        self.update()
+
+    def macros(self) -> dict[str, float]:
+        return dict(self._macros)
+
+    def _macro_for_freq(self, freq_hz: float) -> float:
+        # Same boundaries as the parent tab's _macro_trim_for_freq.
+        if freq_hz < 250.0:
+            return self._macros.get("bass", 0.0)
+        if freq_hz < 4000.0:
+            return self._macros.get("voice", 0.0)
+        return self._macros.get("treble", 0.0)
 
     def _bump_local_authority(self) -> None:
         self._local_authority_until_ms = (
@@ -833,7 +862,13 @@ class EqGraphWidget(QWidget):
         if self._curve_points is None:
             self._curve_points = self._compute_curve_points(rect)
 
-        if any(self._band_is_visible(b) for b in self._bands):
+        # "Empty" = no user dots AND no macros tilting the curve.
+        # Macros alone still draw a non-flat curve worth showing.
+        has_dots = any(self._band_is_visible(b) for b in self._bands)
+        has_macros = any(
+            abs(v) >= VISIBILITY_EPS_DB for v in self._macros.values()
+        )
+        if has_dots or has_macros:
             self._paint_curve(p, rect, self._curve_points)
         else:
             self._paint_empty_hint(p, rect)
@@ -947,11 +982,12 @@ class EqGraphWidget(QWidget):
         for band in self._bands:
             if not band.get("enabled", True):
                 continue
-            gain = float(band.get("gain", 0.0))
+            freq = float(band.get("freq", 1000.0))
+            gain = float(band.get("gain", 0.0)) + self._macro_for_freq(freq)
             if abs(gain) < 1e-4:
                 continue
             active.append(_biquad_coeffs(
-                float(band.get("freq", 1000.0)),
+                freq,
                 float(band.get("q", 1.0)),
                 gain,
                 str(band.get("type", "peaking")),

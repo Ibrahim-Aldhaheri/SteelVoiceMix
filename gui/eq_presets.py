@@ -295,6 +295,109 @@ def save_user_preset(name: str, channel: str, bands: list[dict]) -> str:
     return safe
 
 
+def user_override_dir(channel: str) -> Path:
+    """Where per-preset user modifications live — one file per
+    bundled / built-in preset that the user has tweaked. Keyed by
+    the same display name as the source preset, so loading a
+    preset checks here first and falls back to the bundled values
+    only when no override exists.
+
+    Stored separately from `user_preset_dir()` so an override for
+    `Apex Legends` doesn't shadow a user-created preset of the
+    same name in the dropdown."""
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    root = Path(base) / "steelvoicemix" / "preset_overrides" / channel
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def load_user_override(name: str, channel: str) -> dict | None:
+    """Return `{"bands": [...], "macros": {...}}` for an override
+    of `name`, or None when none exists. Malformed files are
+    treated as if the override didn't exist — we'd rather fall
+    back to the bundled defaults than crash the EQ tab."""
+    safe = _safe_filename(name)
+    if not safe:
+        return None
+    path = user_override_dir(channel) / f"{safe}.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning("Ignoring unreadable override %s: %s", path, e)
+        return None
+    bands = data.get("bands")
+    if not isinstance(bands, list) or len(bands) != NUM_BANDS:
+        log.warning("Ignoring override %s: wrong band count", path)
+        return None
+    macros = data.get("macros") or {}
+    # Coerce to floats with safe defaults so a partial macros dict
+    # doesn't crash the caller.
+    return {
+        "bands": bands,
+        "macros": {
+            "bass": float(macros.get("bass", 0.0)),
+            "voice": float(macros.get("voice", 0.0)),
+            "treble": float(macros.get("treble", 0.0)),
+        },
+    }
+
+
+def save_user_override(
+    name: str, channel: str, bands: list[dict],
+    macros: dict[str, float] | None = None,
+) -> None:
+    """Persist a user's modifications to a bundled / built-in preset.
+    The file at `user_override_dir/<safe-name>.json` is the
+    authoritative source for the modified state going forward; the
+    bundled file stays untouched and can be restored via Reset."""
+    safe = _safe_filename(name)
+    if not safe:
+        raise ValueError("Override name must contain at least one letter or digit.")
+    if len(bands) != NUM_BANDS:
+        raise ValueError(f"Override must have exactly {NUM_BANDS} bands; got {len(bands)}.")
+    macros = macros or {}
+    payload = {
+        "name": name,
+        "channel": channel,
+        "bands": bands,
+        "macros": {
+            "bass": float(macros.get("bass", 0.0)),
+            "voice": float(macros.get("voice", 0.0)),
+            "treble": float(macros.get("treble", 0.0)),
+        },
+    }
+    (user_override_dir(channel) / f"{safe}.json").write_text(
+        json.dumps(payload, indent=2)
+    )
+
+
+def delete_user_override(name: str, channel: str) -> bool:
+    """Drop the override file for `name`. Returns True if a file
+    was removed. Reset uses this to revert the preset back to its
+    bundled defaults."""
+    safe = _safe_filename(name)
+    if not safe:
+        return False
+    path = user_override_dir(channel) / f"{safe}.json"
+    if not path.is_file():
+        return False
+    try:
+        path.unlink()
+        return True
+    except OSError as e:
+        log.warning("Could not delete override %s: %s", path, e)
+        return False
+
+
+def has_user_override(name: str, channel: str) -> bool:
+    safe = _safe_filename(name)
+    if not safe:
+        return False
+    return (user_override_dir(channel) / f"{safe}.json").is_file()
+
+
 def delete_user_preset(name: str, channel: str) -> bool:
     """Delete a user-saved preset by display name. Returns True on
     success, False if the file didn't exist (e.g. for built-ins)."""
