@@ -8,3 +8,6 @@ build/
 
 # Rust
 target/
+
+# Local Claude harness state (Claude Code wakeups, lockfiles)
+.claude/
