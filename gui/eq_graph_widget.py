@@ -1055,55 +1055,28 @@ class EqGraphWidget(QWidget):
                    self.tr("Click anywhere on the graph to add a point"))
 
     def _paint_dots(self, p: QPainter, rect: QRectF) -> None:
+        # Flat, calm dots — solid fill, thin border, slightly
+        # brighter outline on the selected / dragged dot. No
+        # numbers, no glow halo, no radial-gradient sheen —
+        # cleaner read at a glance and stops competing with the
+        # curve for attention.
         for idx, band in enumerate(self._bands):
             # Dragged band always paints, even if its gain is
             # momentarily passing through 0 dB during the drag.
             if not self._band_is_visible(band) and self._dragging_band != idx:
                 continue
             dot = self._band_dot_pos(band)
-            core_hex, halo_hex = DOT_PALETTE[idx % len(DOT_PALETTE)]
+            core_hex, _halo_hex_unused = DOT_PALETTE[idx % len(DOT_PALETTE)]
             is_selected = (self._selected_band == idx)
             is_dragging = (self._dragging_band == idx)
             highlight = is_selected or is_dragging
-            r = DOT_RADIUS_PX + (1.5 if highlight else 0.0)
-            if is_selected and not is_dragging:
-                # Outer ring around the selected dot — telegraphs
-                # "scroll wheel adjusts this band's Q" without text.
-                ring_pen = QPen(QColor(255, 255, 255, 200), 1.6)
-                p.setPen(ring_pen)
-                p.setBrush(Qt.NoBrush)
-                p.drawEllipse(dot, r + 5.0, r + 5.0)
-            # Soft halo. Three stops so the bloom fades gracefully
-            # rather than ending in a hard ring.
-            halo_r = r * 2.4
-            halo = QRadialGradient(dot, halo_r)
-            halo.setColorAt(0.0, QColor(halo_hex))
-            halo.setColorAt(0.5, QColor(halo_hex))
-            halo.setColorAt(1.0, QColor(0, 0, 0, 0))
-            p.setPen(Qt.NoPen)
-            p.setBrush(QBrush(halo))
-            p.drawEllipse(dot, halo_r, halo_r)
-            # Core orb — radial gradient with the highlight offset
-            # toward the upper-left to give it a 3D feel.
-            core = QRadialGradient(
-                QPointF(dot.x() - r * 0.3, dot.y() - r * 0.3),
-                r * 1.4,
-            )
-            core.setColorAt(0.0, QColor(core_hex).lighter(135))
-            core.setColorAt(1.0, QColor(core_hex).darker(120))
-            p.setBrush(QBrush(core))
-            ring_alpha = 240 if highlight else 90
-            p.setPen(QPen(QColor(255, 255, 255, ring_alpha), 1.4))
+            r = DOT_RADIUS_PX + (1.0 if highlight else 0.0)
+            p.setBrush(QBrush(QColor(core_hex)))
+            border_color = self.palette().color(QPalette.ColorRole.Text)
+            border = QColor(border_color)
+            border.setAlpha(220 if highlight else 110)
+            p.setPen(QPen(border, 1.6 if highlight else 1.0))
             p.drawEllipse(dot, r, r)
-            # Slot number — small, white, only as a quick reference
-            # for cross-checking against the sliders view.
-            p.setPen(QColor("#FFFFFF"))
-            f = QFont(self.font())
-            f.setPointSizeF(max(7.5, f.pointSizeF() - 1.0))
-            f.setBold(True)
-            p.setFont(f)
-            p.drawText(QRectF(dot.x() - r, dot.y() - r, 2 * r, 2 * r),
-                       Qt.AlignCenter, str(idx + 1))
 
     def _paint_hover_crosshair(
         self, p: QPainter, rect: QRectF, pos: QPointF,

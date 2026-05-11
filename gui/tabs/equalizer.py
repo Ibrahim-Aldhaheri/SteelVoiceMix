@@ -1184,12 +1184,25 @@ class EqualizerTab(QWidget):
     def on_bands_changed(self, channel: str, bands: list) -> None:
         """Daemon broadcast: bands for `channel` changed.
 
-        Daemon receives effective bands (stored gain + macro trim
-        per zone) so the chain matches the drawn curve. The echo
-        carries those effective gains. To keep the stored bands
-        free of macro double-application on subsequent edits, we
-        reverse the macro fold before caching."""
+        For the **currently-viewed channel**, this is purely
+        informational — the GUI is the only source of band changes
+        (single-client architecture), so our local
+        `_bands_by_channel[current_channel]` is already authoritative
+        and reflects the user's last edit. Accepting the daemon
+        echo here would race with in-flight edits whose macros
+        differ from the macros that were active at send time
+        (e.g. user places a dot at macro=0, immediately moves the
+        macro slider to +5, daemon echoes the placement back —
+        we'd subtract the now-active +5 from the stored gains and
+        invent phantom dots at -5 dB across the macro's zone).
+
+        For **other channels**, the echo IS authoritative — we
+        haven't been editing them, so the daemon's view is the
+        truth. Still reverse-fold any macros for that channel so
+        subsequent edits don't double-apply."""
         if channel not in self._bands_by_channel:
+            return
+        if channel == self._current_channel:
             return
         macros = self._macros_by_channel.get(channel, {})
         if any(abs(v) > 1e-4 for v in macros.values()):
@@ -1204,8 +1217,6 @@ class EqualizerTab(QWidget):
             self._bands_by_channel[channel] = stored
         else:
             self._bands_by_channel[channel] = list(bands)
-        if channel == self._current_channel:
-            self._render_sliders_for_channel(channel)
 
     def on_full_state(self, state: dict) -> None:
         """Initial Status snapshot delivered every channel's band data
