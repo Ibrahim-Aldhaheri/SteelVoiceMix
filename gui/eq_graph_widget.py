@@ -407,6 +407,7 @@ class EqBandInspector(QFrame):
             return
         band["type"] = new_type
         self._graph._curve_points = None
+        self._graph._bump_local_authority()
         self._graph.update()
         self.band_edited.emit(self._idx)
 
@@ -419,6 +420,7 @@ class EqBandInspector(QFrame):
             return
         band["gain"] = new_gain
         self._graph._curve_points = None
+        self._graph._bump_local_authority()
         self._graph.update()
         self._reposition()
         self.band_edited.emit(self._idx)
@@ -432,6 +434,7 @@ class EqBandInspector(QFrame):
             return
         band["freq"] = new_freq
         self._graph._curve_points = None
+        self._graph._bump_local_authority()
         self._graph.update()
         self._reposition()
         self.band_edited.emit(self._idx)
@@ -445,6 +448,7 @@ class EqBandInspector(QFrame):
             return
         band["q"] = new_q
         self._graph._curve_points = None
+        self._graph._bump_local_authority()
         self._graph.update()
         self.band_edited.emit(self._idx)
 
@@ -475,6 +479,17 @@ class EqGraphWidget(QWidget):
     Q_MAX = 10.0
     Q_STEP_PER_NOTCH = 0.1
 
+    # Daemon echoes (bands_changed events) arrive ~50–200 ms after
+    # each set-eq-band the GUI sends. When the user places several
+    # dots in quick succession, those echoes interleave with the
+    # user's latest local edits and cause a brief flicker where the
+    # graph alternates between in-flight states until the daemon
+    # catches up. Window during which we treat the graph's own
+    # _bands as authoritative — set_bands() calls from the parent
+    # tab (which carry daemon state) are deferred for the slider
+    # grid only and skipped for the graph.
+    LOCAL_AUTHORITY_MS = 1200
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._bands: list[dict] = []
@@ -490,6 +505,10 @@ class EqGraphWidget(QWidget):
         # short timer so the user knows what happened without
         # cluttering steady-state.
         self._slot_full_banner_until_ms: int = 0
+        # Wall-clock until which the graph treats its own _bands as
+        # authoritative (rolling window, bumped on every local edit
+        # — see _bump_local_authority). Set to 0 = no window active.
+        self._local_authority_until_ms: int = 0
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumHeight(320)
         self.setMouseTracking(True)
@@ -501,14 +520,40 @@ class EqGraphWidget(QWidget):
         self.selectionChanged.connect(self._on_selection_changed_internal)
 
     def set_bands(self, bands: list[dict]) -> None:
-        """Replace the bands shown. Stores shallow copies. Skipped
-        while a drag is in progress so daemon echoes don't yank the
-        in-flight dot out from under the cursor."""
+        """Replace the bands shown. Stores shallow copies.
+
+        Skipped in two cases:
+          - User is actively dragging a dot. Otherwise daemon echoes
+            mid-drag would yank the dot out from under the cursor.
+          - User has edited the graph within LOCAL_AUTHORITY_MS.
+            During rapid multi-dot placement, daemon echoes arrive
+            slightly out of step with the user's latest local
+            state; deferring overwrites keeps the graph visually
+            stable until the daemon catches up. After the window
+            expires the next set_bands call wins, snapping the
+            graph to the authoritative daemon state.
+        """
         if self._dragging_band is not None:
+            return
+        now_ms = QDateTime.currentMSecsSinceEpoch()
+        if now_ms < self._local_authority_until_ms:
             return
         self._bands = [dict(b) for b in bands]
         self._curve_points = None
         self.update()
+
+    def _bump_local_authority(self) -> None:
+        self._local_authority_until_ms = (
+            QDateTime.currentMSecsSinceEpoch() + self.LOCAL_AUTHORITY_MS
+        )
+
+    def reset_local_authority(self) -> None:
+        """Force the next set_bands call to apply unconditionally,
+        regardless of the local-authority window. Use on context
+        switches (channel change, preset load via combo) where the
+        incoming data is for a different scope than the user's
+        recent edits."""
+        self._local_authority_until_ms = 0
 
     def set_zones(self, zones: list[tuple[str, float, float]] | None) -> None:
         self._zones = list(zones) if zones else list(DEFAULT_ZONES)
@@ -575,6 +620,7 @@ class EqGraphWidget(QWidget):
             if str(band.get("type", "peaking")) in ("lowshelf", "highshelf"):
                 band["type"] = "peaking"
             self._curve_points = None
+            self._bump_local_authority()
             self.bandChanged.emit(best_idx, float(band["freq"]), new_gain)
         self._set_selected(best_idx)
         self._dragging_band = best_idx
@@ -596,6 +642,7 @@ class EqGraphWidget(QWidget):
         band = self._bands[idx]
         band["gain"] = 0.0
         self._curve_points = None
+        self._bump_local_authority()
         if self._selected_band == idx:
             self._set_selected(-1)
         self.bandChanged.emit(idx, float(band.get("freq", 1000.0)), 0.0)
@@ -623,6 +670,7 @@ class EqGraphWidget(QWidget):
             return
         band["q"] = q
         self._curve_points = None
+        self._bump_local_authority()
         self.bandQChanged.emit(idx, q)
         self.bandReleased.emit(idx)
         self.update()
@@ -666,6 +714,7 @@ class EqGraphWidget(QWidget):
         band["freq"] = new_freq
         band["gain"] = new_gain
         self._curve_points = None
+        self._bump_local_authority()
         self.bandChanged.emit(idx, new_freq, new_gain)
         # Inspector spinners track the drag so the user can read the
         # in-flight values without releasing — and reposition follows
@@ -700,6 +749,7 @@ class EqGraphWidget(QWidget):
             if math.hypot(pos.x() - dot.x(), pos.y() - dot.y()) <= DOT_HIT_RADIUS_PX:
                 band["gain"] = 0.0
                 self._curve_points = None
+                self._bump_local_authority()
                 if self._selected_band == idx:
                     self._set_selected(-1)
                 self.bandChanged.emit(idx, float(band.get("freq", 1000.0)), 0.0)

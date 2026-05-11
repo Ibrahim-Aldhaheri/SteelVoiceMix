@@ -1087,6 +1087,9 @@ class EqualizerTab(QWidget):
             if ch in state:
                 self._bands_by_channel[ch] = list(state[ch])
                 self._reconcile_active_preset(ch)
+        # Full-state snapshots win unconditionally — drop any
+        # in-flight local-authority window.
+        self.eq_graph.reset_local_authority()
         self._render_sliders_for_channel(self._current_channel)
         self._refresh_preset_combo()
 
@@ -1303,6 +1306,11 @@ class EqualizerTab(QWidget):
         # Test audio is bound to the previous channel's sink — kill it
         # so the user doesn't keep hearing the old chain after switching.
         self._on_test_stop()
+        # Drop the graph's local-authority window — it applied to the
+        # previous channel; the new channel's bands must paint
+        # immediately even if the user was rapidly editing on the
+        # outgoing channel.
+        self.eq_graph.reset_local_authority()
         self._render_sliders_for_channel(key)
         # Preset list is channel-scoped — repopulate the dropdown so the
         # user only sees presets for the channel they're looking at.
@@ -1489,6 +1497,10 @@ class EqualizerTab(QWidget):
         self._bands_by_channel[self._current_channel] = [
             dict(b) for b in preset["bands"]
         ]
+        # Preset load is a deliberate full-state replacement — drop
+        # the graph's local-authority window so the new bands paint
+        # immediately, not after the rolling timeout.
+        self.eq_graph.reset_local_authority()
         self._render_sliders_for_channel(self._current_channel)
         self._daemon.send_command(
             "set-eq-channel",
