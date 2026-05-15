@@ -1005,8 +1005,27 @@ impl Mixer {
                         last_mic_health = Instant::now();
                     }
                     if last_sink_health.elapsed() >= SINK_HEALTH_INTERVAL {
-                        let respawned =
-                            self.sinks.lock().unwrap().check_sinks_alive();
+                        let (respawned, relinked) = {
+                            let mut sinks = self.sinks.lock().unwrap();
+                            let respawned = sinks.check_sinks_alive();
+                            // Skip the link probe when we just rebuilt
+                            // the whole graph — every link was just
+                            // re-issued by the spawn path.
+                            let relinked = if respawned {
+                                false
+                            } else {
+                                sinks.check_links_alive()
+                            };
+                            (respawned, relinked)
+                        };
+                        if relinked {
+                            info!(
+                                "Sink-graph link watchdog re-established \
+                                 broken pw-link edges (likely after \
+                                 wireplumber severed them on an idle \
+                                 alsa_output suspend)"
+                            );
+                        }
                         if respawned {
                             // Push the current dial value back through
                             // the freshly-rebuilt sinks so the user's

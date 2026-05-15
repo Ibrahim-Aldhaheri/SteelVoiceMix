@@ -352,6 +352,140 @@ impl SinkManager {
         true
     }
 
+    /// Every `pw-link` edge the daemon is responsible for, given the
+    /// current state. Used by the link-health watchdog to re-issue any
+    /// link that PipeWire / WirePlumber has silently torn down.
+    ///
+    /// Why this is needed: the surround chain and EQ chains ship with
+    /// `node.autoconnect = false` + `node.dont-reconnect = true` so
+    /// WirePlumber won't auto-create their downstream links. The daemon
+    /// issues an explicit `pw-link` at spawn time and that's the SOLE
+    /// source of those edges. When the headset alsa output transiently
+    /// suspends (post-resume USB re-init, idle suspend, profile churn),
+    /// WirePlumber can sever the surround→headset edge and nothing in
+    /// PipeWire brings it back — audio goes silent until the daemon
+    /// re-issues `pw-link`.
+    ///
+    /// The mic chain uses `node.target` inside its config (WirePlumber-
+    /// driven routing), so it's NOT subject to this hazard and is not
+    /// included here.
+    fn expected_pw_links(&self) -> Vec<(String, String)> {
+        let mut edges: Vec<(String, String)> = Vec::new();
+        if self.surround_chain.is_some() {
+            if let Some(headset) = self.output_sink.as_deref() {
+                for ch in ["FL", "FR"] {
+                    edges.push((
+                        format!("effect_output.{SURROUND_SINK_NAME}:output_{ch}"),
+                        format!("{headset}:playback_{ch}"),
+                    ));
+                }
+            }
+        }
+        let headphone_target = self.headphone_path_target();
+        let channels: [(Option<&SinkModules>, &str, EqChannel); 4] = [
+            (self.game.as_ref(), EQ_GAME_SINK, EqChannel::Game),
+            (self.chat.as_ref(), EQ_CHAT_SINK, EqChannel::Chat),
+            (self.media.as_ref(), EQ_MEDIA_SINK, EqChannel::Media),
+            (self.hdmi.as_ref(), EQ_HDMI_SINK, EqChannel::Hdmi),
+        ];
+        for (slot, eq_name, channel) in channels {
+            let Some(slot) = slot else { continue };
+            if slot.eq.is_none() {
+                continue;
+            }
+            let target = match channel {
+                EqChannel::Hdmi => self.hdmi_target.clone(),
+                _ => headphone_target.clone(),
+            };
+            let Some(target) = target else { continue };
+            for ch in ["FL", "FR"] {
+                edges.push((
+                    format!("effect_output.{eq_name}:output_{ch}"),
+                    format!("{target}:playback_{ch}"),
+                ));
+            }
+        }
+        edges
+    }
+
+    /// Watchdog — verify every daemon-owned `pw-link` edge still exists
+    /// in PipeWire's graph and re-issue `pw-link` for any that vanished.
+    /// Returns true when at least one link had to be re-established.
+    ///
+    /// Symptom this fixes: post-suspend, the daemon's reconnect sequence
+    /// finishes cleanly (HID rebound, surround chain spawned, EQ chains
+    /// spawned, explicit `pw-link` calls all logged as success) — and
+    /// then ~seconds later WirePlumber severs the surround→headset link
+    /// while the headset alsa output briefly suspends, leaving audio
+    /// dead. `check_sinks_alive` doesn't catch this because every
+    /// null-sink we own is still alive; only the surround→headset link
+    /// is missing.
+    pub fn check_links_alive(&mut self) -> bool {
+        let expected = self.expected_pw_links();
+        if expected.is_empty() {
+            return false;
+        }
+        let listed = match Command::new("pw-link").arg("-lo").output() {
+            Ok(o) if o.status.success() => o.stdout,
+            // pw-link unreachable (pipewire socket transient down) —
+            // skip this tick; the next one will retry.
+            _ => return false,
+        };
+        let stdout = String::from_utf8_lossy(&listed);
+        // `pw-link -lo` groups by output port. The format is:
+        //     <output-port>
+        //       |-> <input-port>
+        //       |-> <input-port>
+        // Build the live (from, to) set in one pass.
+        let mut existing: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
+        let mut current_out: Option<String> = None;
+        for line in stdout.lines() {
+            let trimmed = line.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("|-> ") {
+                if let Some(from) = current_out.as_deref() {
+                    existing.insert((from.to_string(), rest.trim().to_string()));
+                }
+            } else if !trimmed.is_empty() && trimmed == line {
+                // Non-indented, non-empty line → new output port.
+                current_out = Some(line.trim().to_string());
+            }
+        }
+        let mut relinked = false;
+        for (from, to) in &expected {
+            if existing.contains(&(from.clone(), to.clone())) {
+                continue;
+            }
+            warn!("pw-link edge missing — re-establishing {from} → {to}");
+            let res = Command::new("pw-link")
+                .args([from, to])
+                .stderr(Stdio::piped())
+                .stdout(Stdio::null())
+                .output();
+            match res {
+                Ok(out) if out.status.success() => {
+                    info!("Re-linked {from} → {to}");
+                    relinked = true;
+                }
+                Ok(out) => {
+                    let err = String::from_utf8_lossy(&out.stderr)
+                        .trim()
+                        .to_string();
+                    // "File exists" means WirePlumber re-linked between
+                    // our probe and our re-issue — fine, treat as success.
+                    if err.contains("File exists") {
+                        continue;
+                    }
+                    warn!(
+                        "pw-link re-establish failed: {from} → {to}: {err}"
+                    );
+                }
+                Err(e) => warn!("pw-link spawn failed for {from} → {to}: {e}"),
+            }
+        }
+        relinked
+    }
+
     /// Auto-detect the Arctis Nova Pro Wireless capture (microphone)
     /// source via pactl. Symmetric to `find_output_sink` — looks for
     /// the same OUTPUT_MATCH substring but on the input list. Returns
