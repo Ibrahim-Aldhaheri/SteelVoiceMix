@@ -121,7 +121,7 @@ jobs:
         # repeated refreshes update an open PR rather than piling
         # up stale ones; old `delete-branch: true` cleans the
         # branch when the PR is merged or closed.
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           base: dev
