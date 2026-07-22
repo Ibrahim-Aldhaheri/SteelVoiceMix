@@ -237,6 +237,9 @@ class MixerGUI(QMainWindow):
         footer = QHBoxLayout()
         footer.setSpacing(8)
         self.update_label = QLabel(self.tr("Up to date"))
+        # Plain text: this later shows a release tag fetched from GitHub;
+        # AutoText would render markup in a crafted tag as HTML.
+        self.update_label.setTextFormat(Qt.PlainText)
         self.update_label.setStyleSheet(
             "color: palette(placeholder-text); font-size: 10px;"
         )

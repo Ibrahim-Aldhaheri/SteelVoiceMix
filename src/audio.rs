@@ -37,6 +37,26 @@ pub const OUTPUT_MATCH: &str = "SteelSeries_Arctis_Nova_Pro_Wireless";
 /// uninstall scripts use to recognise their targets.
 pub const MANAGED_SINK_PREFIX: &str = "Steel";
 
+/// Reject HRIR paths that can't be safely interpolated into the
+/// generated SPA-JSON PipeWire config (`filename = "{hrir}"` in
+/// surround_chain::render_conf). A path containing a double-quote,
+/// backslash, or any control character (newline/CR included) could
+/// break out of the JSON string and inject arbitrary graph/module
+/// directives into the config we then run as `pipewire -c`. Real HRIR
+/// wav paths never contain these, so a clean reject is safe — we don't
+/// try to escape, we refuse. This is the enforcement point for the
+/// path whether it arrived over the IPC socket, from daemon.json, or
+/// from a running-chain rewire.
+fn hrir_path_is_safe(path: &std::path::Path) -> bool {
+    match path.to_str() {
+        // Non-UTF-8 paths can't be rendered into the config either.
+        None => false,
+        Some(s) => !s
+            .chars()
+            .any(|c| c == '"' || c == '\\' || c.is_control()),
+    }
+}
+
 struct SinkModules {
     null_sink_id: u32,
     loopback_id: u32,
@@ -618,6 +638,17 @@ impl SinkManager {
         let Some(path) = self.surround_hrir.clone() else {
             return;
         };
+        if !hrir_path_is_safe(&path) {
+            error!(
+                "Refusing surround chain: HRIR path has unsafe characters \
+                 (quote/backslash/control) that could inject into the \
+                 PipeWire config: {}",
+                path.display()
+            );
+            self.surround_hrir = None;
+            self.surround_enabled = false;
+            return;
+        }
         let Some(headset) = self.output_sink.clone() else {
             // No headset yet — leave the flag set so the next
             // `create_sinks` re-spawns once the headset is detected.

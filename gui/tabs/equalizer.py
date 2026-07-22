@@ -742,6 +742,11 @@ class EqualizerTab(QWidget):
         self.auto_game_toggle.toggled.connect(self._toggle_auto_game)
 
         self.detected_label = QLabel(self.tr("Currently detected: none"))
+        # Force plain text: this label shows a PipeWire application.name
+        # harvested from other running apps (any local process can set
+        # an arbitrary stream name). The default AutoText format would
+        # render name-embedded HTML, allowing UI spoofing inside our GUI.
+        self.detected_label.setTextFormat(Qt.PlainText)
         self.detected_label.setWordWrap(True)
         self.detected_label.setStyleSheet(
             "font-size: 10px; padding: 4px 0; "

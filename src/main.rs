@@ -29,12 +29,18 @@ use protocol::{
 use routing::{spawn_router, RouterState};
 
 fn socket_path() -> PathBuf {
-    // Use XDG_RUNTIME_DIR if available, fallback to /tmp
+    // Prefer $XDG_RUNTIME_DIR (/run/user/<uid>, mode 0700, per-user).
+    // Fall back to /run/user/<uid> directly rather than a bare file in
+    // the world-writable /tmp: a predictable /tmp/steelvoicemix-<uid>
+    // .sock can be squatted or connected to by another local user.
+    // The socket is additionally chmod'd 0600 after bind (see below),
+    // but the private runtime dir is the primary protection. Keep this
+    // in sync with the GUI (gui/settings.py) and CLI fallbacks.
+    let uid = unsafe { libc::getuid() };
     if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
         PathBuf::from(dir).join("steelvoicemix.sock")
     } else {
-        PathBuf::from("/tmp")
-            .join(format!("steelvoicemix-{}.sock", unsafe { libc::getuid() }))
+        PathBuf::from(format!("/run/user/{uid}")).join("steelvoicemix.sock")
     }
 }
 
@@ -1163,6 +1169,16 @@ fn main() {
 
         match UnixListener::bind(&sock_path) {
             Ok(listener) => {
+                // Restrict the socket to the owner (0600). Defence in
+                // depth on top of the private runtime dir: even if the
+                // socket ever lands somewhere world-traversable, no
+                // other local user can connect() without write access.
+                if let Err(e) = std::fs::set_permissions(
+                    &sock_path,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o600),
+                ) {
+                    warn!("Could not chmod 0600 {}: {e}", sock_path.display());
+                }
                 info!("Socket server listening on {}", sock_path.display());
                 // Set non-blocking so we can check `running`
                 listener

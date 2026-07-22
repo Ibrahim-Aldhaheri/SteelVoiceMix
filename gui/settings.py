@@ -184,11 +184,18 @@ MAX_FAVOURITES_PER_CHANNEL = 5
 
 
 def socket_path() -> str:
-    """Match the Rust daemon's socket location (XDG_RUNTIME_DIR preferred)."""
+    """Match the Rust daemon's socket location (XDG_RUNTIME_DIR preferred).
+
+    Falls back to /run/user/<uid> (private, 0700) rather than a
+    predictable name in the world-writable /tmp — a /tmp socket can be
+    squatted or connected to by another local user, letting them
+    impersonate the daemon to this GUI. Kept in lockstep with the
+    daemon's socket_path() in src/main.rs and the CLI's fallback.
+    """
     xdg = os.environ.get("XDG_RUNTIME_DIR")
     if xdg:
         return os.path.join(xdg, f"{APP_NAME}.sock")
-    return f"/tmp/{APP_NAME}-{os.getuid()}.sock"
+    return f"/run/user/{os.getuid()}/{APP_NAME}.sock"
 
 
 def _migrate_legacy() -> dict[str, Any] | None:
