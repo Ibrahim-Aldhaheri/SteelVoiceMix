@@ -36,7 +36,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
-from .eq_presets import bundled_asm_dir, list_presets
+from .eq_presets import list_bundled_asm_presets, list_presets
 from .settings import save as save_settings
 
 log = logging.getLogger(__name__)
@@ -75,18 +75,32 @@ def _normalise(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", name.lower())
 
 
-def _bundled_asm_index() -> dict[str, Path]:
-    """Map normalised filename → file path for every bundled Game-
-    channel ASM preset. Built once on demand; small enough (~400
-    entries) that recomputing per scan would still be cheap, but
-    caching keeps the watcher thread snappy."""
-    out: dict[str, Path] = {}
-    d = bundled_asm_dir("game")
-    if not d.is_dir():
-        return out
-    for path in d.glob("*.json"):
-        out[_normalise(path.stem)] = path
-    return out
+# Cached normalised-name → display-name index for the bundled Game
+# presets. The bundle is read-only at runtime (refreshed only by the
+# maintainer via scripts/fetch_asm_presets.py), so building it once
+# and memoising is safe and keeps the per-scan matcher cheap.
+_asm_index_cache: dict[str, str] | None = None
+
+
+def _bundled_asm_index() -> dict[str, str]:
+    """Map normalised display-name → display-name for every bundled
+    Game-channel ASM preset.
+
+    Keyed on the preset's *display name* (the JSON `name` field), NOT
+    the filename stem. The two diverge whenever the name contains a
+    character the filename sanitiser strips (apostrophe, colon, '!',
+    '#') — e.g. file ``Baldurs Gate 3.json`` holds name
+    ``Baldur's Gate 3``. Returning the real display name is what lets
+    the downstream ``find_preset_bands()`` resolve the preset; keying
+    on the stem silently broke auto-EQ for ~23 presets."""
+    global _asm_index_cache
+    if _asm_index_cache is None:
+        _asm_index_cache = {
+            _normalise(name): name
+            for entry in list_bundled_asm_presets("game")
+            if (name := entry.get("name"))
+        }
+    return _asm_index_cache
 
 
 def _runtime_aliases(channel: str) -> dict[str, str]:
@@ -152,20 +166,31 @@ def match_asm_preset(game_name: str) -> str | None:
     if not target:
         return None
     index = _bundled_asm_index()
-    keys = list(index.keys())
-    matches = difflib.get_close_matches(target, keys, n=1, cutoff=_FUZZY_THRESHOLD)
+    matches = difflib.get_close_matches(
+        target, list(index), n=1, cutoff=_FUZZY_THRESHOLD
+    )
     if not matches:
         return None
-    return index[matches[0]].stem
+    return index[matches[0]]
 
 
 def find_preset_bands(preset_name: str) -> list[dict] | None:
     """Look up a preset by display name across the three sources
     (built-in / bundled ASM / user). Returns the bands list, or None
     if the name is unknown."""
-    for entry in list_presets("game"):
+    presets = list_presets("game")
+    for entry in presets:
         if entry.get("name") == preset_name:
             return list(entry.get("bands") or [])
+    # Fallback: tolerate display-name/stem drift so a preset name that
+    # was stored in the filename-sanitised form (e.g. a manual alias
+    # value "Baldurs Gate 3", or persisted runtime state) still
+    # resolves to the real preset "Baldur's Gate 3".
+    target = _normalise(preset_name)
+    if target:
+        for entry in presets:
+            if _normalise(entry.get("name", "")) == target:
+                return list(entry.get("bands") or [])
     return None
 
 
@@ -722,6 +747,11 @@ class GameProfileManager(QObject):
                     "--app-name=SteelVoiceMix",
                     "--icon=steelvoicemix",
                     "--expire-time=4000",
+                    # `--` terminates option parsing: `body` embeds an
+                    # attacker-controllable PipeWire application.name, so
+                    # without this a name beginning with '-' would be
+                    # parsed as a notify-send flag.
+                    "--",
                     "Auto EQ",
                     body,
                 ],
