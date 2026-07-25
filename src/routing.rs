@@ -23,6 +23,7 @@ use std::time::Duration;
 use log::{debug, info, warn};
 use serde::Deserialize;
 
+use crate::lockext::LockExt;
 use crate::audio::MEDIA_SINK;
 
 /// Process binaries we route to Media by default. User-extensible later
@@ -101,7 +102,7 @@ fn scan_and_route(state: &RouterState) -> Result<(), String> {
     }
 
     let inputs = list_sink_inputs()?;
-    let mut seen = state.seen.lock().unwrap();
+    let mut seen = state.seen.lock_or_recover();
     for input in inputs {
         if seen.contains(&input.index) {
             continue;

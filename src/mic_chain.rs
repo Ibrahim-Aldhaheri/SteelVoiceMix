@@ -101,6 +101,14 @@ impl MicChainHandle {
         if !spec.has_active_features() {
             return None;
         }
+        if !node_name_is_safe(spec.mic_source) {
+            warn!(
+                "Refusing mic chain: source node name has characters that \
+                 would corrupt the PipeWire config: {:?}",
+                spec.mic_source
+            );
+            return None;
+        }
         let dir = conf_dir()?;
         let conf_path = dir.join(format!("{CHAIN_NAME}.conf"));
         let conf = render_conf(spec);
@@ -462,4 +470,15 @@ context.modules = [
         name = CHAIN_NAME,
         mic_source = spec.mic_source,
     )
+}
+
+/// Node names are interpolated into the generated SPA-JSON config that
+/// we then run as `pipewire -c`. They come from parsing `pactl` output
+/// rather than from IPC, so this isn't directly attacker-reachable —
+/// but a node whose name contains a quote or newline would corrupt the
+/// config, so treat it the same way audio.rs treats the HRIR path.
+pub fn node_name_is_safe(name: &str) -> bool {
+    !name
+        .chars()
+        .any(|c| c == '"' || c == '\\' || c.is_control())
 }

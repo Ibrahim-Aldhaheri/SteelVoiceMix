@@ -4,13 +4,14 @@ mod display;
 mod filter_chain;
 mod hid;
 mod hotplug;
+mod lockext;
 mod mic_chain;
 mod mixer;
 mod protocol;
 mod routing;
 mod surround_chain;
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +20,7 @@ use std::thread;
 
 use log::{error, info, warn};
 
+use crate::lockext::LockExt;
 use audio::SinkManager;
 use filter_chain::{FilterChainHandle, FilterChainSpec};
 use mixer::{broadcast_event, Mixer, MixerState, SharedSinks};
@@ -47,7 +49,7 @@ fn socket_path() -> PathBuf {
 /// Snapshot current MixerState into a Status event. Used both for the
 /// one-shot `status` query and the initial push on `subscribe`.
 fn snapshot_status(state: &Arc<Mutex<MixerState>>) -> DaemonEvent {
-    let st = state.lock().unwrap();
+    let st = state.lock_or_recover();
     DaemonEvent::Status {
         connected: st.connected,
         game_vol: st.game_vol,
@@ -96,12 +98,12 @@ fn handle_mic_feature_update(
     strength: u8,
 ) {
     let new_state: MicState = {
-        let mut st = state.lock().unwrap();
+        let mut st = state.lock_or_recover();
         update(&mut st.mic_state);
         st.mic_state
     };
     let default_active = {
-        let mut sm = sinks.lock().unwrap();
+        let mut sm = sinks.lock_or_recover();
         sm.set_mic_state(new_state)
     };
     persist_sink_state(state);
@@ -123,7 +125,7 @@ fn handle_mic_feature_update(
 /// Persist sink-toggle preferences. Reads all flags from the current
 /// MixerState so a change to one doesn't clobber the others.
 fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
-    let st = state.lock().unwrap();
+    let st = state.lock_or_recover();
     config::save(&config::DaemonState {
         media_sink_enabled: st.media_sink_enabled,
         hdmi_sink_enabled: st.hdmi_sink_enabled,
@@ -154,6 +156,68 @@ fn persist_sink_state(state: &Arc<Mutex<MixerState>>) {
     });
 }
 
+/// Longest command line we'll accept from a client. `BufRead::lines`
+/// grows its buffer until it finds a newline, so without a ceiling a
+/// peer that streams bytes and never sends `\n` walks the daemon into
+/// the OOM killer. Real commands are a few hundred bytes; 64 KiB is
+/// enormous headroom (a full 10-band EQ payload is well under 4 KiB).
+const MAX_COMMAND_LEN: u64 = 64 * 1024;
+
+/// Cap on simultaneously-connected clients. One thread is spawned per
+/// connection, so an unbounded accept loop is a cheap way to exhaust
+/// thread/memory limits. The GUI uses two (one subscribe, one
+/// request/response); the CLI adds one more per invocation.
+const MAX_CLIENTS: usize = 16;
+
+/// Verify the connecting process runs as the same uid as the daemon.
+/// The socket already lives in a 0700 runtime dir and is chmod 0600,
+/// so this is defence in depth — it closes the window where the socket
+/// is somehow reachable (a misconfigured runtime dir, a future change
+/// to socket_path) and makes the trust boundary explicit in code
+/// rather than implicit in filesystem permissions.
+///
+/// Uses `SO_PEERCRED` via libc rather than `UnixStream::peer_cred()`,
+/// which is still unstable in std as of the toolchains we build on.
+fn peer_is_same_uid(stream: &UnixStream) -> bool {
+    use std::os::unix::io::AsRawFd;
+
+    let mut cred = libc::ucred {
+        pid: 0,
+        uid: u32::MAX,
+        gid: u32::MAX,
+    };
+    let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    // SAFETY: `cred` and `len` are correctly sized and aligned for
+    // SO_PEERCRED on Linux, and `stream` owns a valid socket fd for
+    // the duration of the call.
+    let rc = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            std::ptr::addr_of_mut!(cred).cast::<libc::c_void>(),
+            &mut len,
+        )
+    };
+    if rc != 0 {
+        // If the kernel won't tell us who's calling, fail closed.
+        warn!(
+            "Cannot read peer credentials, refusing client: {}",
+            std::io::Error::last_os_error()
+        );
+        return false;
+    }
+    let ours = unsafe { libc::getuid() };
+    if cred.uid != ours {
+        warn!(
+            "Rejecting socket client from uid {} (daemon runs as {})",
+            cred.uid, ours
+        );
+        return false;
+    }
+    true
+}
+
 fn handle_client(
     stream: UnixStream,
     state: Arc<Mutex<MixerState>>,
@@ -162,21 +226,42 @@ fn handle_client(
     router: Arc<RouterState>,
     running: Arc<AtomicBool>,
 ) {
+    if !peer_is_same_uid(&stream) {
+        return;
+    }
+
     let peer_stream = match stream.try_clone() {
         Ok(s) => s,
         Err(_) => return,
     };
 
-    let reader = BufReader::new(stream);
+    // .take() bounds the whole conversation's *read* side per line:
+    // we re-arm the limit each iteration so a long session of normal
+    // commands is fine, but any single line over the cap ends the
+    // connection instead of growing the buffer without limit.
+    let mut reader = BufReader::new(stream);
 
-    for line in reader.lines() {
+    loop {
         if !running.load(Ordering::Relaxed) {
             break;
         }
-        let line = match line {
-            Ok(l) => l,
+        let mut line = String::new();
+        let n = match (&mut reader)
+            .take(MAX_COMMAND_LEN)
+            .read_line(&mut line)
+        {
+            Ok(0) => break, // clean EOF
+            Ok(n) => n,
             Err(_) => break,
         };
+        // Hit the ceiling without a newline → oversized/hostile line.
+        if n as u64 == MAX_COMMAND_LEN && !line.ends_with('\n') {
+            warn!(
+                "Client sent a line over {MAX_COMMAND_LEN} bytes; \
+                 dropping connection"
+            );
+            break;
+        }
         if line.trim().is_empty() {
             continue;
         }
@@ -201,11 +286,11 @@ fn handle_client(
             }
             ClientCommand::AddMediaSink => {
                 let enabled = {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     sm.enable_media()
                 };
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.media_sink_enabled = enabled;
                 }
                 persist_sink_state(&state);
@@ -214,11 +299,11 @@ fn handle_client(
             }
             ClientCommand::RemoveMediaSink => {
                 let enabled = {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     sm.disable_media()
                 };
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.media_sink_enabled = enabled;
                 }
                 persist_sink_state(&state);
@@ -227,11 +312,11 @@ fn handle_client(
             }
             ClientCommand::AddHdmiSink => {
                 let enabled = {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     sm.enable_hdmi()
                 };
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.hdmi_sink_enabled = enabled;
                 }
                 persist_sink_state(&state);
@@ -240,11 +325,11 @@ fn handle_client(
             }
             ClientCommand::RemoveHdmiSink => {
                 let enabled = {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     sm.disable_hdmi()
                 };
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.hdmi_sink_enabled = enabled;
                 }
                 persist_sink_state(&state);
@@ -256,7 +341,7 @@ fn handle_client(
                     .enabled
                     .store(enabled, std::sync::atomic::Ordering::Relaxed);
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.auto_route_browsers = enabled;
                 }
                 persist_sink_state(&state);
@@ -268,7 +353,7 @@ fn handle_client(
             }
             ClientCommand::SetEqEnabled { enabled } => {
                 let actual = {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     if enabled {
                         sm.enable_eq()
                     } else {
@@ -276,7 +361,7 @@ fn handle_client(
                     }
                 };
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.eq_enabled = actual;
                 }
                 persist_sink_state(&state);
@@ -292,7 +377,7 @@ fn handle_client(
                 gain_db,
             } => {
                 let result = {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     sm.set_eq_band_gain(channel, band, gain_db)
                 };
                 if result.is_none() {
@@ -302,9 +387,9 @@ fn handle_client(
                     );
                     continue;
                 }
-                let new_state_all = sinks.lock().unwrap().eq_state();
+                let new_state_all = sinks.lock_or_recover().eq_state();
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.eq_state = new_state_all;
                 }
                 persist_sink_state(&state);
@@ -324,7 +409,7 @@ fn handle_client(
             }
             ClientCommand::SetEqChannel { channel, bands } => {
                 let result = {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     sm.set_eq_channel_bands(channel, bands)
                 };
                 if result.is_none() {
@@ -334,9 +419,9 @@ fn handle_client(
                     );
                     continue;
                 }
-                let new_state_all = sinks.lock().unwrap().eq_state();
+                let new_state_all = sinks.lock_or_recover().eq_state();
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.eq_state = new_state_all;
                 }
                 persist_sink_state(&state);
@@ -355,11 +440,11 @@ fn handle_client(
             }
             ClientCommand::ResetState => {
                 {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     sm.reset_to_defaults();
                 }
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.media_sink_enabled = false;
                     st.hdmi_sink_enabled = false;
                     st.auto_route_browsers = false;
@@ -489,11 +574,11 @@ fn handle_client(
             }
             ClientCommand::SetSurroundEnabled { enabled } => {
                 let actual = {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     sm.set_surround_enabled(enabled)
                 };
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.surround_enabled = actual;
                 }
                 persist_sink_state(&state);
@@ -512,11 +597,11 @@ fn handle_client(
                     .filter(|s| !s.is_empty())
                     .map(std::path::PathBuf::from);
                 let stored = {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     sm.set_surround_hrir(new_path.clone())
                 };
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.surround_hrir_path = stored.clone();
                     // set_surround_hrir disables surround if the path
                     // gets cleared while running — mirror that here.
@@ -610,7 +695,7 @@ fn handle_client(
                     current_chat,
                     restored_chatmix,
                 ) = {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     let was_enabled = st.volume_boost.for_channel(channel).enabled;
                     if let Some(slot) = st.volume_boost.for_channel_mut(channel) {
                         *slot = new_boost;
@@ -692,7 +777,7 @@ fn handle_client(
             ClientCommand::SetSidetone { level } => {
                 let clamped = level.min(128);
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.sidetone_level = clamped;
                 }
                 persist_sink_state(&state);
@@ -705,7 +790,7 @@ fn handle_client(
             ClientCommand::SetOledBrightness { level } => {
                 let clamped = level.clamp(1, 10);
                 let oled_present = {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.oled_brightness = clamped;
                     st.oled_present
                 };
@@ -723,7 +808,7 @@ fn handle_client(
             }
             ClientCommand::SetAncMode { mode } => {
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.anc_mode = mode;
                 }
                 persist_sink_state(&state);
@@ -736,7 +821,7 @@ fn handle_client(
             ClientCommand::SetAncTransparentLevel { level } => {
                 let clamped = level.clamp(1, 10);
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.anc_transparent_level = clamped;
                 }
                 persist_sink_state(&state);
@@ -748,7 +833,7 @@ fn handle_client(
             }
             ClientCommand::SetWirelessMode { mode } => {
                 let already = {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     let already = st.wireless_mode == mode;
                     if !already {
                         st.wireless_mode = mode;
@@ -776,7 +861,7 @@ fn handle_client(
             }
             ClientCommand::ToggleWirelessMode => {
                 let new_mode = {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     let flipped = st.wireless_mode.flipped();
                     st.wireless_mode = flipped;
                     flipped
@@ -790,7 +875,7 @@ fn handle_client(
             }
             ClientCommand::SetMicGain { gain } => {
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.mic_gain = gain;
                 }
                 persist_sink_state(&state);
@@ -800,7 +885,7 @@ fn handle_client(
             ClientCommand::SetMicVolume { level } => {
                 let clamped = level.clamp(1, 10);
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.mic_volume = clamped;
                 }
                 persist_sink_state(&state);
@@ -813,7 +898,7 @@ fn handle_client(
             ClientCommand::SetMicLedBrightness { level } => {
                 let clamped = level.clamp(1, 10);
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.mic_led_brightness = clamped;
                 }
                 persist_sink_state(&state);
@@ -825,7 +910,7 @@ fn handle_client(
             }
             ClientCommand::SetPmShutdown { value } => {
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.pm_shutdown = value;
                 }
                 persist_sink_state(&state);
@@ -837,7 +922,7 @@ fn handle_client(
             }
             ClientCommand::SetDeckControlEnabled { enabled } => {
                 let was = {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     let was = st.deck_control_enabled;
                     st.deck_control_enabled = enabled;
                     // Flipping false→true: reset all `applied_*`
@@ -874,7 +959,7 @@ fn handle_client(
             }
             ClientCommand::SetNotificationsEnabled { enabled } => {
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.notifications_enabled = enabled;
                 }
                 persist_sink_state(&state);
@@ -890,7 +975,7 @@ fn handle_client(
                 params,
             } => {
                 let result = {
-                    let mut sm = sinks.lock().unwrap();
+                    let mut sm = sinks.lock_or_recover();
                     sm.set_eq_band(channel, band, params)
                 };
                 if result.is_none() {
@@ -900,9 +985,9 @@ fn handle_client(
                     );
                     continue;
                 }
-                let new_state_all = sinks.lock().unwrap().eq_state();
+                let new_state_all = sinks.lock_or_recover().eq_state();
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock_or_recover();
                     st.eq_state = new_state_all;
                 }
                 persist_sink_state(&state);
@@ -921,7 +1006,7 @@ fn handle_client(
             }
             ClientCommand::Subscribe => {
                 let (tx, rx) = std::sync::mpsc::channel::<DaemonEvent>();
-                subscribers.lock().unwrap().push(tx);
+                subscribers.lock_or_recover().push(tx);
 
                 // Send current status immediately
                 {
@@ -1185,16 +1270,33 @@ fn main() {
                     .set_nonblocking(true)
                     .expect("Failed to set non-blocking");
 
+                // Live client count, decremented when a handler thread
+                // exits. Bounds how many threads a peer can force us to
+                // spawn by opening connections in a loop.
+                let clients = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
                 while running.load(Ordering::Relaxed) {
                     match listener.accept() {
                         Ok((stream, _)) => {
+                            if clients.load(Ordering::Relaxed) >= MAX_CLIENTS {
+                                warn!(
+                                    "Refusing connection: {MAX_CLIENTS} clients \
+                                     already connected"
+                                );
+                                // Dropping the stream closes it; the
+                                // client sees EOF and can retry.
+                                continue;
+                            }
                             let state = state.clone();
                             let subs = subscribers.clone();
                             let sinks = sinks.clone();
                             let router = router.clone();
                             let running = running.clone();
+                            let clients = clients.clone();
+                            clients.fetch_add(1, Ordering::Relaxed);
                             thread::spawn(move || {
                                 handle_client(stream, state, subs, sinks, router, running);
+                                clients.fetch_sub(1, Ordering::Relaxed);
                             });
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {

@@ -122,12 +122,21 @@ impl Device {
             };
 
             // Identify and open the two devices by their descriptors
-            let Some(oled_dev_idx) = device_reports.iter().position(|desc| desc[1] == 0xc0) else {
+            // `desc` is a device-reported HID report descriptor. Index
+            // only after a length check — a malfunctioning or hostile
+            // device returning a 0- or 1-byte descriptor would panic.
+            let Some(oled_dev_idx) = device_reports
+                .iter()
+                .position(|desc| desc.len() >= 2 && desc[1] == 0xc0)
+            else {
                 bail!("No OLED device found");
             };
             _ = device_reports.swap_remove(oled_dev_idx);
             let oled_dev = devices.swap_remove(oled_dev_idx);
-            let Some(info_dev_idx) = device_reports.iter().position(|desc| desc[1] == 0x00) else {
+            let Some(info_dev_idx) = device_reports
+                .iter()
+                .position(|desc| desc.len() >= 2 && desc[1] == 0x00)
+            else {
                 bail!("No info device found");
             };
             _ = device_reports.swap_remove(info_dev_idx);

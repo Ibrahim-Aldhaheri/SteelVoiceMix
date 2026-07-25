@@ -12,6 +12,7 @@ use crate::audio::{SinkManager, CHAT_SINK, GAME_SINK};
 use crate::config;
 use crate::display::ChatMixGauge;
 use crate::hid::{BatteryStatus, HidEvent, NovaDevice};
+use crate::lockext::LockExt;
 use crate::protocol::{
     AncMode, DaemonEvent, DeviceVariant, EqChannel, EqState, MicGain, MicState, PmShutdown,
     VolumeBoostState, WirelessMode,
@@ -26,7 +27,7 @@ pub fn broadcast_event(
     subscribers: &Arc<Mutex<Vec<std::sync::mpsc::Sender<DaemonEvent>>>>,
     event: DaemonEvent,
 ) {
-    let mut subs = subscribers.lock().unwrap();
+    let mut subs = subscribers.lock_or_recover();
     subs.retain(|tx| tx.send(event.clone()).is_ok());
 }
 
@@ -38,7 +39,7 @@ pub fn broadcast_event(
 /// current state so this stays consistent with main.rs's
 /// persist_sink_state helper for non-dial commands.
 fn persist_dial_state(state: &Arc<Mutex<MixerState>>) {
-    let st = state.lock().unwrap();
+    let st = state.lock_or_recover();
     config::save(&config::DaemonState {
         media_sink_enabled: st.media_sink_enabled,
         hdmi_sink_enabled: st.hdmi_sink_enabled,
@@ -351,7 +352,7 @@ impl Mixer {
     fn sync_pm_shutdown_from_device(&self, raw: u8) {
         let new_value = PmShutdown::from_byte(raw);
         let changed = {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state.lock_or_recover();
             let prior = st.pm_shutdown;
             st.pm_shutdown = new_value;
             st.applied_pm_shutdown = new_value.as_byte();
@@ -369,7 +370,7 @@ impl Mixer {
     fn sync_mic_led_from_device(&self, level: u8) {
         let clamped = level.clamp(1, 10);
         let changed = {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state.lock_or_recover();
             let prior = st.mic_led_brightness;
             st.mic_led_brightness = clamped;
             st.applied_mic_led_brightness = clamped;
@@ -389,7 +390,7 @@ impl Mixer {
     fn sync_wireless_from_device(&self, wireless_byte: u8) {
         let new_mode = WirelessMode::from_byte(wireless_byte);
         let changed = {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state.lock_or_recover();
             let prior = st.wireless_mode;
             st.wireless_mode = new_mode;
             // Lockstep: marks applied so the event loop won't try to
@@ -412,7 +413,7 @@ impl Mixer {
         let new_mode = AncMode::from_byte(anc_byte);
         let new_trans = trans_level.clamp(1, 10);
         let (mode_changed, trans_changed) = {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state.lock_or_recover();
             let mode_changed = st.anc_mode != new_mode;
             let trans_changed = st.anc_transparent_level != new_trans;
             st.anc_mode = new_mode;
@@ -446,7 +447,7 @@ impl Mixer {
         if !self.notify_enabled || !self.notify_available {
             return;
         }
-        let runtime_on = self.state.lock().unwrap().notifications_enabled;
+        let runtime_on = self.state.lock_or_recover().notifications_enabled;
         if !runtime_on {
             return;
         }
@@ -531,7 +532,7 @@ impl Mixer {
         // remembers across power cycles, but we re-send anyway in
         // case the user's been on a different machine since.
         let (level, deck_control_enabled) = {
-            let st = self.state.lock().unwrap();
+            let st = self.state.lock_or_recover();
             (st.sidetone_level, st.deck_control_enabled)
         };
         if deck_control_enabled {
@@ -553,7 +554,7 @@ impl Mixer {
         let variant = dev.variant();
         info!("Connected to Nova Pro variant: {variant:?}");
         let variant_changed = {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state.lock_or_recover();
             let prior = st.device_variant;
             st.device_variant = variant;
             prior != variant
@@ -567,7 +568,7 @@ impl Mixer {
         // The handle still exists so oled_present is true and the
         // GUI shows the Deck tab; controls are greyed-out client-side.
         let (initial_brightness, deck_control_enabled) = {
-            let st = self.state.lock().unwrap();
+            let st = self.state.lock_or_recover();
             (st.oled_brightness, st.deck_control_enabled)
         };
         let (mut display, present_now) = if deck_control_enabled {
@@ -594,7 +595,7 @@ impl Mixer {
             }
         };
         let was_present = {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state.lock_or_recover();
             let prior = st.oled_present;
             st.oled_present = present_now;
             if present_now {
@@ -607,13 +608,13 @@ impl Mixer {
         }
 
         {
-            let mut sinks = self.sinks.lock().unwrap();
+            let mut sinks = self.sinks.lock_or_recover();
             sinks.create_sinks(&output_sink);
         }
 
         let (init_game, init_chat) = self.resolve_initial_dial(&dev);
         let (game_boost, chat_boost) = {
-            let st = self.state.lock().unwrap();
+            let st = self.state.lock_or_recover();
             (
                 st.volume_boost.for_channel(EqChannel::Game),
                 st.volume_boost.for_channel(EqChannel::Chat),
@@ -623,7 +624,7 @@ impl Mixer {
         SinkManager::set_volume(CHAT_SINK, chat_boost.apply(init_chat));
 
         {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state.lock_or_recover();
             st.connected = true;
             st.game_vol = init_game;
             st.chat_vol = init_chat;
@@ -636,7 +637,7 @@ impl Mixer {
         });
         draw_or_drop(&mut display, init_game, init_chat);
         let (media_live, hdmi_live) = {
-            let sm = self.sinks.lock().unwrap();
+            let sm = self.sinks.lock_or_recover();
             (sm.media_enabled(), sm.hdmi_enabled())
         };
         let mut active_sinks: Vec<&str> = vec!["SteelGame", "SteelChat"];
@@ -668,11 +669,11 @@ impl Mixer {
         drop(display);
         let _ = dev.disable_chatmix();
         {
-            let mut sinks = self.sinks.lock().unwrap();
+            let mut sinks = self.sinks.lock_or_recover();
             sinks.destroy_sinks();
         }
         let was_present = {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state.lock_or_recover();
             st.connected = false;
             let was_present = st.oled_present;
             st.oled_present = false;
@@ -715,7 +716,7 @@ impl Mixer {
         // GUI-driven changes from MixerState and push them to the
         // device. Initialised from current state (already applied at
         // connect) so the first iteration doesn't double-send.
-        let mut last_sidetone = self.state.lock().unwrap().sidetone_level;
+        let mut last_sidetone = self.state.lock_or_recover().sidetone_level;
 
         while self.running.load(Ordering::Relaxed) {
             // Suspend/resume sniffer — runs FIRST so we never issue
@@ -752,7 +753,7 @@ impl Mixer {
             // writes (sidetone + OLED brightness + ANC + wireless +
             // mic gain/volume/LED) + the master deck-control gate.
             let snap = {
-                let st = self.state.lock().unwrap();
+                let st = self.state.lock_or_recover();
                 (
                     st.sidetone_level,
                     st.oled_brightness,
@@ -815,19 +816,19 @@ impl Mixer {
                     if let Some(ref d) = display {
                         d.set_brightness(want_bright);
                     }
-                    self.state.lock().unwrap().applied_oled_brightness = want_bright;
+                    self.state.lock_or_recover().applied_oled_brightness = want_bright;
                 }
                 if want_anc_mode.as_byte() != applied_anc_mode {
                     if let Err(e) = dev.set_anc_mode(want_anc_mode.as_byte()) {
                         warn!("Failed to apply ANC mode {want_anc_mode:?}: {e}");
                     }
-                    self.state.lock().unwrap().applied_anc_mode = want_anc_mode.as_byte();
+                    self.state.lock_or_recover().applied_anc_mode = want_anc_mode.as_byte();
                 }
                 if want_anc_trans != applied_anc_trans {
                     if let Err(e) = dev.set_anc_transparent_level(want_anc_trans) {
                         warn!("Failed to apply ANC transparent level {want_anc_trans}: {e}");
                     }
-                    self.state.lock().unwrap().applied_anc_transparent_level = want_anc_trans;
+                    self.state.lock_or_recover().applied_anc_transparent_level = want_anc_trans;
                 }
                 // Wireless mode write briefly drops the radio link;
                 // the compare-and-skip above is what protects against
@@ -841,35 +842,35 @@ impl Mixer {
                     if let Err(e) = dev.set_wireless_mode(want_wireless.as_byte()) {
                         warn!("Failed to apply wireless mode {want_wireless:?}: {e}");
                     }
-                    self.state.lock().unwrap().applied_wireless_mode = want_wireless.as_byte();
+                    self.state.lock_or_recover().applied_wireless_mode = want_wireless.as_byte();
                 }
                 if want_mic_gain.as_byte() != applied_mic_gain {
                     debug!("mic gain → {:?}", want_mic_gain);
                     if let Err(e) = dev.set_mic_gain(want_mic_gain.as_byte()) {
                         warn!("Failed to apply mic gain {want_mic_gain:?}: {e}");
                     }
-                    self.state.lock().unwrap().applied_mic_gain = want_mic_gain.as_byte();
+                    self.state.lock_or_recover().applied_mic_gain = want_mic_gain.as_byte();
                 }
                 if want_mic_vol != applied_mic_vol {
                     debug!("mic volume → {want_mic_vol}");
                     if let Err(e) = dev.set_mic_volume(want_mic_vol) {
                         warn!("Failed to apply mic volume {want_mic_vol}: {e}");
                     }
-                    self.state.lock().unwrap().applied_mic_volume = want_mic_vol;
+                    self.state.lock_or_recover().applied_mic_volume = want_mic_vol;
                 }
                 if want_mic_led != applied_mic_led {
                     debug!("mic LED brightness → {want_mic_led}");
                     if let Err(e) = dev.set_mic_led_brightness(want_mic_led) {
                         warn!("Failed to apply mic LED brightness {want_mic_led}: {e}");
                     }
-                    self.state.lock().unwrap().applied_mic_led_brightness = want_mic_led;
+                    self.state.lock_or_recover().applied_mic_led_brightness = want_mic_led;
                 }
                 if want_pm.as_byte() != applied_pm {
                     debug!("PM shutdown → {want_pm:?}");
                     if let Err(e) = dev.set_pm_shutdown(want_pm.as_byte()) {
                         warn!("Failed to apply PM shutdown {want_pm:?}: {e}");
                     }
-                    self.state.lock().unwrap().applied_pm_shutdown = want_pm.as_byte();
+                    self.state.lock_or_recover().applied_pm_shutdown = want_pm.as_byte();
                 }
             }
 
@@ -886,7 +887,7 @@ impl Mixer {
                     HidEvent::ChatMix { game_vol, chat_vol } => {
                         debug!("dial: game={game_vol}% chat={chat_vol}%");
                         let (game_boost, chat_boost) = {
-                            let st = self.state.lock().unwrap();
+                            let st = self.state.lock_or_recover();
                             (
                                 st.volume_boost.for_channel(EqChannel::Game),
                                 st.volume_boost.for_channel(EqChannel::Chat),
@@ -895,7 +896,7 @@ impl Mixer {
                         SinkManager::set_volume(GAME_SINK, game_boost.apply(game_vol));
                         SinkManager::set_volume(CHAT_SINK, chat_boost.apply(chat_vol));
                         {
-                            let mut st = self.state.lock().unwrap();
+                            let mut st = self.state.lock_or_recover();
                             st.game_vol = game_vol;
                             st.chat_vol = chat_vol;
                         }
@@ -926,7 +927,7 @@ impl Mixer {
                             self.sync_pm_shutdown_from_device(extras.pm_shutdown);
                         }
                         {
-                            let mut st = self.state.lock().unwrap();
+                            let mut st = self.state.lock_or_recover();
                             st.battery = Some(bat.clone());
                         }
                         self.broadcast(DaemonEvent::Battery {
@@ -938,7 +939,7 @@ impl Mixer {
                         debug!("anc-mode push: byte=0x{byte:02x}");
                         let mode = AncMode::from_byte(byte);
                         let changed = {
-                            let mut st = self.state.lock().unwrap();
+                            let mut st = self.state.lock_or_recover();
                             let prior = st.anc_mode;
                             st.anc_mode = mode;
                             // Mark applied in lockstep so the event
@@ -956,7 +957,7 @@ impl Mixer {
                         debug!("anc-transparent-level push: {level}");
                         let clamped = level.clamp(1, 10);
                         let changed = {
-                            let mut st = self.state.lock().unwrap();
+                            let mut st = self.state.lock_or_recover();
                             let prior = st.anc_transparent_level;
                             st.anc_transparent_level = clamped;
                             st.applied_anc_transparent_level = clamped;
@@ -1001,12 +1002,12 @@ impl Mixer {
                         last_battery_poll = Instant::now();
                     }
                     if last_mic_health.elapsed() >= MIC_HEALTH_INTERVAL {
-                        self.sinks.lock().unwrap().check_mic_health();
+                        self.sinks.lock_or_recover().check_mic_health();
                         last_mic_health = Instant::now();
                     }
                     if last_sink_health.elapsed() >= SINK_HEALTH_INTERVAL {
                         let (respawned, relinked) = {
-                            let mut sinks = self.sinks.lock().unwrap();
+                            let mut sinks = self.sinks.lock_or_recover();
                             let respawned = sinks.check_sinks_alive();
                             // Skip the link probe when we just rebuilt
                             // the whole graph — every link was just
@@ -1034,7 +1035,7 @@ impl Mixer {
                             // event). volume_boost gets re-applied by
                             // the same code path the dial handler uses.
                             let (game_vol, chat_vol, game_boost, chat_boost) = {
-                                let st = self.state.lock().unwrap();
+                                let st = self.state.lock_or_recover();
                                 (
                                     st.game_vol,
                                     st.chat_vol,
@@ -1079,7 +1080,7 @@ impl Mixer {
                 v
             }
             _ => {
-                let st = self.state.lock().unwrap();
+                let st = self.state.lock_or_recover();
                 let fallback = (st.game_vol, st.chat_vol);
                 info!(
                     "Dial position query silent — using last-known {}%/{}%",
@@ -1107,7 +1108,7 @@ impl Mixer {
                     self.sync_pm_shutdown_from_device(extras.pm_shutdown);
                 }
                 {
-                    let mut st = self.state.lock().unwrap();
+                    let mut st = self.state.lock_or_recover();
                     st.battery = Some(bat.clone());
                 }
                 self.broadcast(DaemonEvent::Battery {
