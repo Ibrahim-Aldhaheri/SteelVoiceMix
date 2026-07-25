@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only token: CI only builds and tests, it never writes to the repo.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -15,7 +19,7 @@ jobs:
     name: Rust build + test + clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # linux-native-basic-udev in hidapi dlopens libudev at runtime; the
       # dev header package is still the simplest way to satisfy pkg-config
@@ -23,11 +27,11 @@ jobs:
       - name: Install libudev headers
         run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           components: clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: cargo build --release
         run: cargo build --release --locked
@@ -42,8 +46,8 @@ jobs:
     name: Python syntax check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: py_compile all modules
@@ -59,6 +63,9 @@ jobs:
         # crash the GUI's QTranslator at startup. Cheap to check here.
         run: |
           set -e
-          for ts in gui/translations/*.ts; do
-            python3 -c "import xml.etree.ElementTree as ET; ET.parse('$ts')"
-          done
+          # Filenames go through argv, never spliced into the Python
+          # source — a quote in a future filename would otherwise be
+          # executable code here.
+          find gui/translations -name '*.ts' -print0 | xargs -0 python3 -c \
+            'import sys, xml.etree.ElementTree as ET
+for f in sys.argv[1:]: ET.parse(f)'

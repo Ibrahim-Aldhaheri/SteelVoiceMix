@@ -2,6 +2,13 @@
 Description=SteelVoiceMix — ChatMix for Arctis Nova Pro Wireless
 After=pipewire.service
 Wants=pipewire.service
+# Crash-loop backstop. systemd's default limit is 5 starts per
+# 10s, which RestartSec=5 can never reach — a deterministic
+# crash would restart forever, spamming the journal and
+# re-opening the device on every attempt. Widen the window so
+# the limiter actually trips and the unit enters failed state.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple

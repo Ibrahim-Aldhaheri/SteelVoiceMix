@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout dev with full history
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -34,6 +34,14 @@ jobs:
             echo "Could not parse Version: from steelvoicemix-dev.spec" >&2
             exit 1
           fi
+          # Whitelist the shape before it reaches any later command. This
+          # value is interpolated into shell steps below, so a spec typo
+          # like `1.0$(cmd)` must never get that far.
+          if ! printf '%s' "$VERSION" \
+              | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(~beta[0-9]+)?$'; then
+            echo "Refusing unrecognised Version: '$VERSION'" >&2
+            exit 1
+          fi
           # Tags can't contain ~ (RPM pre-release separator). Convert to
           # a hyphen so v0.3.2~beta1 becomes v0.3.2-beta1 — the spec
           # keeps the ~ for proper RPM vercmp ordering.
@@ -43,9 +51,11 @@ jobs:
 
       - name: Skip if tag already exists
         id: tag_check
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
-            echo "Tag ${{ steps.version.outputs.tag }} already exists — skipping."
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -55,21 +65,24 @@ jobs:
         if: steps.tag_check.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ steps.version.outputs.tag }}" \
-              -m "Dev beta ${{ steps.version.outputs.version }}"
-          git push origin "${{ steps.version.outputs.tag }}"
+          git tag -a "$TAG" -m "Dev beta $VERSION"
+          git push origin "$TAG"
 
       - name: Create GitHub prerelease
         if: steps.tag_check.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           # Best-effort changelog: most recent commit subject + body.
           NOTES=$(git log -1 --pretty=format:'%s%n%n%b' HEAD)
-          gh release create "${{ steps.version.outputs.tag }}" \
+          gh release create "$TAG" \
               --prerelease \
-              --title "Dev ${{ steps.version.outputs.version }}" \
+              --title "Dev $VERSION" \
               --notes "$NOTES"

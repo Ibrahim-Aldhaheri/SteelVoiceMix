@@ -3,6 +3,15 @@ name: Dependabot auto-merge
 # Auto-merges Dependabot PRs into whatever branch they target (dev per
 # dependabot.yml) once CI goes green — but only for patch and minor
 # bumps. Major version bumps wait for manual review.
+#
+# `--auto` only actually waits for CI if the target branch has required
+# status checks configured; without them GitHub merges immediately. The
+# `dev` branch protection therefore REQUIRES the CI jobs — don't remove
+# them or this silently becomes merge-on-open.
+#
+# github-actions bumps are excluded: a compromised action release would
+# land in workflows that hold write-scoped tokens, so those get human
+# review even for a patch bump.
 
 on: pull_request
 
@@ -17,10 +26,12 @@ jobs:
     steps:
       - name: Fetch update metadata
         id: meta
-        uses: dependabot/fetch-metadata@v3
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3
 
       - name: Enable auto-merge for patch/minor bumps
-        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        if: |
+          steps.meta.outputs.update-type != 'version-update:semver-major'
+          && steps.meta.outputs.package-ecosystem != 'github_actions'
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

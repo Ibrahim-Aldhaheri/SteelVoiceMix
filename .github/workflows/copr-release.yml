@@ -6,13 +6,24 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# This job holds the COPR API token — the credential that publishes
+# RPMs to every stable user. Keep the GitHub token read-only so a
+# compromise here can't also rewrite the repo.
+permissions:
+  contents: read
+
 jobs:
   copr-build:
     runs-on: ubuntu-latest
     steps:
+      # Pin the exact version. An unpinned install would run whatever
+      # was newest on PyPI at release time, in the same job that holds
+      # the COPR token. Bump deliberately, not implicitly.
       - name: Install copr-cli
-        run: pip install --user copr-cli
+        run: pip install --user 'copr-cli==2.5'
 
+      # Written AFTER the install so an install-time compromise has no
+      # token on disk to read.
       - name: Write COPR credentials
         env:
           COPR_CONFIG: ${{ secrets.COPR_CONFIG }}

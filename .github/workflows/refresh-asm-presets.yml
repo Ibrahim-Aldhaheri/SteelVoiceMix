@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout dev
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: dev
           # Don't leave the checkout token in .git/config. Otherwise
@@ -44,7 +44,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
 
@@ -63,15 +63,14 @@ jobs:
         # diffs; some minor churn the first time this runs is OK.
         run: python3 scripts/seed_alias_stubs.py
 
-      - name: Validate JSON + .ts XML
-        # Belt-and-braces — if either script wrote malformed JSON
-        # the PR shouldn't get opened.
-        run: |
-          set -e
-          python3 -c "import json; json.load(open('gui/presets/runtime_aliases.json'))"
-          for f in gui/presets/asm/*/*.json; do
-            python3 -c "import json; json.load(open('$f'))"
-          done
+      - name: Validate presets (schema + bounds + volume)
+        # This is the trust boundary for third-party content: everything
+        # under gui/presets/asm/ came from an upstream repo we don't
+        # control. Well-formed JSON is not enough — check the shape and
+        # the value ranges, and cap how much can land in one refresh, so
+        # a compromised or broken upstream can't flood the PR or slip
+        # nonsense band values into the shipped RPM.
+        run: python3 scripts/validate_presets.py
 
       - name: Compute diff summary
         # Counts what changed in `gui/presets/` so the PR body can
@@ -126,7 +125,7 @@ jobs:
         # repeated refreshes update an open PR rather than piling
         # up stale ones; old `delete-branch: true` cleans the
         # branch when the PR is merged or closed.
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           base: dev

@@ -84,7 +84,11 @@ COPR project (abokhalil/steelvoicemix) if you want fewer surprises.
 %autosetup -n {{{ git_dir_name }}}
 
 %build
-cargo build --release
+# --locked: build the exact dependency set recorded in
+# Cargo.lock, which is what CI and cargo audit validated. A
+# bare build lets COPR silently re-resolve to versions that
+# never went through either.
+cargo build --release --locked
 # Compile bundled translations. lrelease-qt6 turns each .ts source
 # into a .qm binary the QTranslator loads at runtime.
 for ts in gui/translations/*.ts; do
@@ -136,7 +140,7 @@ install -Dm755 steelvoicemix-cli.py %{buildroot}%{_bindir}/steelvoicemix-cli
 cat > %{buildroot}%{_bindir}/steelvoicemix-gui << 'EOF'
 #!/bin/bash
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
-exec python3 %{_datadir}/steelvoicemix/steelvoicemix-gui.py "$@"
+exec /usr/bin/python3 %{_datadir}/steelvoicemix/steelvoicemix-gui.py "$@"
 EOF
 chmod 755 %{buildroot}%{_bindir}/steelvoicemix-gui
 
@@ -160,7 +164,7 @@ install -Dm644 data/icons/hicolor/scalable/apps/steelvoicemix.svg %{buildroot}%{
 %systemd_user_post steelvoicemix.service
 %systemd_user_post steelvoicemix-gui.service
 udevadm control --reload-rules 2>/dev/null || :
-udevadm trigger 2>/dev/null || :
+udevadm trigger --subsystem-match=hidraw --attr-match=idVendor=1038 2>/dev/null || :
 
 %preun
 %systemd_user_preun steelvoicemix.service

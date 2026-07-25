@@ -21,6 +21,10 @@ on:
     - cron: '0 6 * * 1'
   workflow_dispatch:
 
+# Read-only: the audit reads Cargo.lock and reports, nothing more.
+permissions:
+  contents: read
+
 concurrency:
   group: audit-${{ github.ref }}
   cancel-in-progress: true
@@ -30,11 +34,11 @@ jobs:
     name: cargo audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
       # taiki-e/install-action fetches a prebuilt cargo-audit binary
       # instead of compiling it from source — ~5 seconds vs several minutes.
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2
         with:
           tool: cargo-audit
       - name: cargo audit

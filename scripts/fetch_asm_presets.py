@@ -84,13 +84,29 @@ def parse_filename(name: str) -> tuple[str, str] | None:
     return display, channel
 
 
+# Control characters and bidirectional-override marks. Upstream display
+# names land verbatim in JSON and in auto-PR diffs; a name carrying an
+# RTL override can make the diff render as something other than what it
+# is. Strip them rather than trusting review to catch it.
+_BAD_NAME_CHARS = re.compile(r"[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def sanitise_display_name(name: str) -> str:
+    """Drop control/bidi characters from an upstream preset name."""
+    return _BAD_NAME_CHARS.sub("", name).strip()
+
+
 def write_preset(target: Path, name: str, channel: str, bands: list[dict]) -> None:
     payload = {"name": name, "channel": channel, "bands": bands}
     # ensure_ascii=False keeps game names with ™ / ® / accented chars
     # readable in the file instead of being \uXXXX escaped — matters
     # for diff review on auto-PRs.
+    #
+    # allow_nan=False makes NaN/Infinity a hard error instead of emitting
+    # those tokens, which are invalid JSON and become a NaN biquad
+    # coefficient downstream.
     target.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
         encoding="utf-8",
     )
 
@@ -150,6 +166,7 @@ def main() -> int:
 
             channel_dir = BUNDLE_DIR / channel
             channel_dir.mkdir(parents=True, exist_ok=True)
+            display = sanitise_display_name(display) or "Untitled"
             safe = _safe_filename(display) or "Untitled"
             target = channel_dir / f"{safe}.json"
             write_preset(target, display, channel, bands)
