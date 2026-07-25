@@ -298,9 +298,25 @@ def _strip_asm_prefix(settings: dict[str, Any]) -> None:
 
 
 def save(settings: dict[str, Any]) -> None:
+    """Persist settings atomically.
+
+    Write to a temp file in the same directory then rename over the
+    target: rename is atomic on POSIX, so a crash (or a full disk)
+    mid-write leaves the previous settings.json intact instead of a
+    truncated file the next start can't parse. Auto Game-EQ writes
+    through here on every preset transition, so a badly-timed crash
+    used to be a real way to lose the user's whole config.
+    """
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     serializable = {**settings, "schema": SCHEMA_VERSION}
-    SETTINGS_FILE.write_text(json.dumps(serializable, indent=2) + "\n")
+    payload = json.dumps(serializable, indent=2) + "\n"
+    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+    try:
+        tmp.write_text(payload)
+        os.replace(tmp, SETTINGS_FILE)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def normalize_position(value: str) -> str:

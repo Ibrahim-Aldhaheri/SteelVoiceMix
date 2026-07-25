@@ -141,7 +141,17 @@ class AsmPresetImporter(QThread):
                 skipped += 1
                 continue
 
-            bands = convert_sonar_preset(payload)
+            # Conversion coerces upstream numbers with float(); a
+            # non-numeric value there raises, and an uncaught raise
+            # would abort the whole import mid-way with no summary.
+            # One bad preset upstream should cost one preset, not the
+            # entire run.
+            try:
+                bands = convert_sonar_preset(payload)
+            except (TypeError, ValueError) as e:
+                log.warning("Skipping %s: malformed band data: %s", filename, e)
+                skipped += 1
+                continue
             if bands is None or len(bands) != NUM_BANDS:
                 skipped += 1
                 continue

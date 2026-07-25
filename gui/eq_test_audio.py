@@ -61,7 +61,19 @@ CHANNEL_TO_SINK: dict[str, str] = {
 
 
 def tmp_dir() -> Path:
-    base = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    """Scratch dir for generated test-audio clips.
+
+    Never falls back to a fixed name under /tmp: that directory is
+    world-writable, so another local user could pre-create it and plant
+    symlinks at our predictable clip filenames, turning our wave writes
+    into arbitrary-file overwrites. $XDG_RUNTIME_DIR is per-user and
+    0700; without it we use a private cache dir under $HOME instead.
+    """
+    base = os.environ.get("XDG_RUNTIME_DIR")
+    if not base:
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser(
+            "~/.cache"
+        )
     d = Path(base) / "steelvoicemix" / "test-audio"
     d.mkdir(parents=True, exist_ok=True)
     return d

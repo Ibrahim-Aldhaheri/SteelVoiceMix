@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from pathlib import Path
 
@@ -222,9 +223,9 @@ def list_user_presets(channel: str) -> list[dict]:
         except (OSError, json.JSONDecodeError) as e:
             log.warning("Skipping unreadable preset %s: %s", path, e)
             continue
-        bands = data.get("bands")
-        if not isinstance(bands, list) or len(bands) != NUM_BANDS:
-            log.warning("Skipping preset %s: wrong band count", path)
+        bands = validate_bands(data.get("bands"))
+        if bands is None:
+            log.warning("Skipping preset %s: bad or wrong-count bands", path)
             continue
         out.append({"name": data.get("name", path.stem), "bands": bands})
     return out
@@ -253,8 +254,11 @@ def list_bundled_asm_presets(channel: str) -> list[dict]:
         except (OSError, json.JSONDecodeError) as e:
             log.warning("Skipping unreadable bundled preset %s: %s", path, e)
             continue
-        bands = data.get("bands")
-        if not isinstance(bands, list) or len(bands) != NUM_BANDS:
+        # Bundled presets come from a third-party upstream via CI —
+        # validate values, don't just count them.
+        bands = validate_bands(data.get("bands"))
+        if bands is None:
+            log.warning("Skipping bundled preset with bad bands: %s", path)
             continue
         # Bundled ASM presets are listed under their plain display name.
         # ASM is credited in the README, no need to badge every entry.
@@ -327,9 +331,9 @@ def load_user_override(name: str, channel: str) -> dict | None:
     except (OSError, json.JSONDecodeError) as e:
         log.warning("Ignoring unreadable override %s: %s", path, e)
         return None
-    bands = data.get("bands")
-    if not isinstance(bands, list) or len(bands) != NUM_BANDS:
-        log.warning("Ignoring override %s: wrong band count", path)
+    bands = validate_bands(data.get("bands"))
+    if bands is None:
+        log.warning("Ignoring override %s: bad or wrong-count bands", path)
         return None
     macros = data.get("macros") or {}
     # Coerce to floats with safe defaults so a partial macros dict
@@ -475,6 +479,13 @@ _ASM_TAG_TO_CHANNEL: dict[str, str] = {
 # Sonar's filter-type names → our serde-lowercase variants. Anything
 # not in this map is dropped (the band keeps its previous shape and is
 # disabled).
+# Filter types the daemon's filter-chain renderer understands
+# (see band_label in src/filter_chain.rs).
+_VALID_BAND_TYPES = frozenset({
+    "peaking", "lowpass", "highpass", "lowshelf",
+    "highshelf", "bandpass", "notch", "allpass",
+})
+
 _SONAR_TYPE_MAP: dict[str, str] = {
     "peakingEQ": "peaking",
     "peaking": "peaking",
@@ -488,6 +499,54 @@ _SONAR_TYPE_MAP: dict[str, str] = {
 }
 
 
+# Value bounds for a single EQ band. These mirror the clamps the Rust
+# daemon applies in src/audio.rs — the daemon remains the authority and
+# will clamp regardless, but presets reach us from a third-party source
+# (the bundled ASM library is refreshed from an upstream repo by CI) and
+# Auto Game-EQ applies them with no user interaction, so we don't hand
+# the daemon values we haven't sanity-checked ourselves.
+FREQ_RANGE = (10.0, 24000.0)
+Q_RANGE = (0.05, 40.0)
+GAIN_RANGE = (-30.0, 30.0)
+
+
+def _clamp_finite(value: object, lo: float, hi: float, default: float) -> float:
+    """Coerce `value` to a float inside [lo, hi]. Non-numeric, NaN and
+    ±Infinity all fall back to `default` — a non-finite biquad
+    coefficient propagates NaN through the filter chain and silences or
+    blows up the channel."""
+    try:
+        out = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(out):
+        return default
+    return max(lo, min(hi, out))
+
+
+def validate_bands(bands: object) -> list[dict] | None:
+    """Return a sanitised copy of `bands`, or None if it isn't a usable
+    band list. Every consumer that loads presets from disk or the
+    network should pass them through here before display or apply."""
+    if not isinstance(bands, list) or len(bands) != NUM_BANDS:
+        return None
+    out: list[dict] = []
+    for raw in bands:
+        if not isinstance(raw, dict):
+            return None
+        btype = raw.get("type")
+        if btype not in _VALID_BAND_TYPES:
+            btype = "peaking"
+        out.append({
+            "freq": _clamp_finite(raw.get("freq"), *FREQ_RANGE, 1000.0),
+            "q": _clamp_finite(raw.get("q"), *Q_RANGE, 1.0),
+            "gain": _clamp_finite(raw.get("gain"), *GAIN_RANGE, 0.0),
+            "type": btype,
+            "enabled": bool(raw.get("enabled", True)),
+        })
+    return out
+
+
 def _convert_sonar_filter(raw: dict) -> dict | None:
     """Map a single `parametricEQ.filterN` entry to our `EqBand` dict
     shape. Returns None if the type isn't one we support."""
@@ -496,9 +555,9 @@ def _convert_sonar_filter(raw: dict) -> dict | None:
     if mapped is None:
         return None
     return {
-        "freq": float(raw.get("frequency", 1000.0)),
-        "q": float(raw.get("qFactor", 1.0)),
-        "gain": float(raw.get("gain", 0.0)),
+        "freq": _clamp_finite(raw.get("frequency"), *FREQ_RANGE, 1000.0),
+        "q": _clamp_finite(raw.get("qFactor"), *Q_RANGE, 1.0),
+        "gain": _clamp_finite(raw.get("gain"), *GAIN_RANGE, 0.0),
         "type": mapped,
         "enabled": bool(raw.get("enabled", True)),
     }

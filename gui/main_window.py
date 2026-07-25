@@ -436,6 +436,12 @@ class MixerGUI(QMainWindow):
             return
         if not target or not shutil.which("pactl"):
             return
+        # Sink/source names come from PipeWire, where any local process
+        # can register a node under a name it chooses. A leading '-'
+        # would be parsed by pactl as an option rather than a target.
+        if target.startswith("-"):
+            log.warning("Refusing option-like %s name: %r", kind, target)
+            return
         try:
             r = subprocess.run(
                 ["pactl", f"set-default-{kind}", target],
