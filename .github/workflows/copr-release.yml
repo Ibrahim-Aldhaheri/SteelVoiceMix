@@ -1,5 +1,14 @@
 name: Copr Release
 
+# Manual / fallback path for kicking a stable COPR build from a tag.
+#
+# The automated path is stable-release.yml, which tags and builds in one
+# job when a version bump lands on main. Tags it pushes use GITHUB_TOKEN
+# and therefore do NOT start this workflow (GitHub suppresses recursive
+# runs), so the two don't double-build. This one fires when a human
+# pushes a v* tag by hand, or via workflow_dispatch to re-trigger a
+# build that failed on COPR's side.
+
 on:
   push:
     tags:

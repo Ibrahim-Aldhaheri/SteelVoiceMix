@@ -1,5 +1,5 @@
 Name:           steelvoicemix
-Version:        0.4.0
+Version:        0.4.2
 Release:        1%{?dist}
 Summary:        ChatMix for SteelSeries Arctis Nova Pro Wireless on Linux
 
@@ -161,6 +161,39 @@ udevadm control --reload-rules 2>/dev/null || :
 %{_datadir}/icons/hicolor/scalable/apps/steelvoicemix.svg
 
 %changelog
+* Sat Jul 25 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.4.2-1
+- New: Sonar-style EQ graph view — click to place band dots, drag to
+  shape the curve, with an inspector for precise per-band values.
+  Switchable with the classic slider grid.
+- New: preset modify + reset, plus Bass / Voice / Treble macro knobs
+  that shape a preset without hand-editing every band.
+- New: Deck tab for base-station hardware — ANC modes, wireless
+  Speed/Range mode, power-management shutdown timer, and the mic
+  hardware block (gain, volume, LED brightness). Gated behind a
+  master toggle that defaults to off (observer mode).
+- New: OLED brightness control.
+- New: Arctis Nova Pro *Wired* support, byte-exact from the ASM
+  protocol reference.
+- New: Auto Game-EQ — detects the running game and applies the
+  matching preset from the bundled ~400-preset library, restoring
+  your own EQ when the game exits.
+- New: USB hotplug watcher for instant disconnect/reconnect, plus
+  several layers of suspend/resume recovery (clock-jump detection,
+  stale-fd watchdog, and re-linking severed PipeWire edges).
+- New: Arabic translation with right-to-left layout.
+- Fix: Auto Game-EQ silently failed to apply for 23 of the bundled
+  presets whose display name contains an apostrophe or other
+  punctuation (Baldur's Gate 3, the Assassin's Creed titles,
+  Marvel's Spider-Man 2, Dragon's Dogma 2, and more) — the matcher
+  and the preset loader disagreed on the name.
+- Fix: daemon no longer hot-loops when it starts before PipeWire is
+  ready during user-session startup.
+- Security: hardened the daemon's control socket (owner-only
+  permissions, peer-uid check, bounded reads, connection cap),
+  rejected unsafe characters in generated PipeWire config paths,
+  validated third-party preset values before they reach the audio
+  chain, and removed predictable /tmp fallbacks. See the 0.4.2
+  release notes for the full list.
 * Sat May 03 2026 Ibrahim Aldhaheri <ibrahim@abokhalil.dev> - 0.4.0-1
 - New: Volume Boost — per-channel 100-200% digital amplification on
   Game / Chat / Media / HDMI sinks. Toggle + slider on the Sinks tab,

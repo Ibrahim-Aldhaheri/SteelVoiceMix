@@ -39,6 +39,28 @@
     <modalias>usb:v1038p12E0*</modalias>
   </provides>
   <releases>
+    <release version="0.4.2" date="2026-07-25" type="stable">
+      <description>
+        <p>
+          Major release: Sonar-style EQ graph view with click-to-place
+          band dots and macro knobs; a Deck tab for base-station
+          hardware (ANC, wireless mode, shutdown timer, mic hardware);
+          OLED brightness; and Arctis Nova Pro Wired support.
+        </p>
+        <p>
+          Auto Game-EQ detects the running game and applies a matching
+          preset from the bundled library, restoring your own EQ on
+          exit. Suspend/resume and USB hotplug recovery are
+          substantially more robust.
+        </p>
+        <p>
+          Also fixes Auto Game-EQ silently failing for presets whose
+          name contains punctuation, and hardens the daemon control
+          socket, generated PipeWire configs, and third-party preset
+          handling.
+        </p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-05-03" type="stable">
       <description>
         <p>

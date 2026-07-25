@@ -1,0 +1,136 @@
+name: Stable Release
+
+# Cuts a stable release when a version bump lands on main.
+#
+# On every push to main we read `Version:` from steelvoicemix.spec. If a
+# tag for that version already exists we stop — so ordinary commits and
+# merges do nothing, and only an actual version bump produces a release.
+# That's the whole gate: bumping the spec IS the release trigger.
+#
+# When it does fire it tags v<version>, publishes a GitHub Release whose
+# notes are the spec's top %changelog entry, then kicks the COPR build
+# for the stable project.
+#
+# Why COPR is triggered here rather than by copr-release.yml: tags pushed
+# with GITHUB_TOKEN deliberately do NOT start other workflows (GitHub
+# suppresses recursive runs), so copr-release.yml would never see this
+# tag. It remains the path for a tag a human pushes by hand.
+#
+# The dev channel's equivalent is dev-release.yml, which reads the
+# -dev spec and publishes prereleases instead.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  # Never let two releases race the same tag.
+  group: stable-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag + release + COPR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main with full history
+        # Full history so `git rev-parse <tag>` can see existing tags.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from steelvoicemix.spec
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^Version:' steelvoicemix.spec | awk '{print $2}')
+          if [ -z "$VERSION" ]; then
+            echo "Could not parse Version: from steelvoicemix.spec" >&2
+            exit 1
+          fi
+          # Stable versions are plain MAJOR.MINOR.PATCH. A `~betaN`
+          # suffix means someone pointed the stable spec at a beta —
+          # that belongs on the dev channel, so refuse rather than
+          # publishing a prerelease to stable users. The whitelist also
+          # keeps anything shell-unsafe out of the steps below.
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Refusing non-stable or unrecognised Version: '$VERSION'" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this version was already released
+        id: tag_check
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — nothing to release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release notes from the spec changelog
+        if: steps.tag_check.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          # Top %changelog block: everything after the most recent
+          # `* <date> <author>` header, up to the previous one.
+          awk '/^%changelog/{f=1;next} f&&/^\* /{if(seen)exit; seen=1; next} f&&seen{print}' \
+            steelvoicemix.spec > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "Could not extract changelog notes" >&2
+            exit 1
+          fi
+          echo "--- notes preview ---"
+          cat release-notes.md
+
+      - name: Create tag and GitHub release
+        if: steps.tag_check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "SteelVoiceMix $VERSION"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+              --title "SteelVoiceMix $VERSION" \
+              --notes-file release-notes.md
+
+      - name: Install copr-cli
+        if: steps.tag_check.outputs.skip == 'false'
+        # Pinned: this runs in the same job that holds the COPR token.
+        run: pip install --user 'copr-cli==2.5'
+
+      - name: Write COPR credentials
+        if: steps.tag_check.outputs.skip == 'false'
+        # After the install, so an install-time compromise finds no
+        # token on disk.
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.config
+          printf '%s' "$COPR_CONFIG" > ~/.config/copr
+          chmod 600 ~/.config/copr
+
+      - name: Trigger COPR build
+        if: steps.tag_check.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "Triggering COPR stable build for $VERSION"
+          copr-cli build-package abokhalil/steelvoicemix --name steelvoicemix
