@@ -65,7 +65,6 @@ jobs:
           set -e
           # Filenames go through argv, never spliced into the Python
           # source — a quote in a future filename would otherwise be
-          # executable code here.
-          find gui/translations -name '*.ts' -print0 | xargs -0 python3 -c \
-            'import sys, xml.etree.ElementTree as ET
-for f in sys.argv[1:]: ET.parse(f)'
+          # executable code here. -n1 keeps this a single-line command.
+          find gui/translations -name '*.ts' -print0 \
+            | xargs -0 -n1 python3 -c 'import sys, xml.etree.ElementTree as ET; ET.parse(sys.argv[1])'
