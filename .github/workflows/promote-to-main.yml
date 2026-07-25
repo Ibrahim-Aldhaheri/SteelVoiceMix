@@ -1,0 +1,116 @@
+name: Promote to main
+
+# Fast-forwards main to dev. Actions tab -> "Promote to main" -> Run.
+#
+# This is the other half of cutting a stable release: bump the stable
+# version (Bump version workflow), merge that PR into dev, then run
+# this. If the promoted commits carry a new stable version,
+# stable-release.yml fires on the resulting push to main and tags,
+# releases, and builds the RPM.
+#
+# Fast-forward only, deliberately. dev is always meant to be a superset
+# of main, so if it isn't (someone committed to main directly) that's a
+# situation a human should look at, not one this workflow should paper
+# over with a merge commit.
+#
+# main requires the CI checks, but required checks are evaluated per
+# commit SHA and these SHAs already went green on dev, so the push is
+# accepted without re-running anything.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "promote" to confirm this may publish a stable release'
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-to-main
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Fast-forward main to dev
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM" != "promote" ]; then
+            echo 'Confirmation text did not match "promote" — stopping.' >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Compare branches
+        id: cmp
+        run: |
+          set -euo pipefail
+          git fetch origin main dev --quiet
+          AHEAD=$(git rev-list --count origin/main..origin/dev)
+          BEHIND=$(git rev-list --count origin/dev..origin/main)
+          echo "dev is $AHEAD commit(s) ahead of main, $BEHIND behind."
+          if [ "$BEHIND" -ne 0 ]; then
+            echo "main has commits dev doesn't — refusing to fast-forward." >&2
+            echo "Reconcile the branches by hand." >&2
+            exit 1
+          fi
+          if [ "$AHEAD" -eq 0 ]; then
+            echo "main is already up to date with dev — nothing to promote."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "stable=$(awk '/^Version:[[:space:]]/ {print $2; exit}' steelvoicemix.spec)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report whether this will release
+        if: steps.cmp.outputs.skip == 'false'
+        env:
+          STABLE: ${{ steps.cmp.outputs.stable }}
+        run: |
+          set -euo pipefail
+          if git rev-parse "v$STABLE" >/dev/null 2>&1; then
+            echo "Stable version $STABLE is already tagged — this promotion "
+            echo "moves code only, no release will be cut."
+          else
+            echo "Stable version $STABLE has no tag yet — this promotion WILL "
+            echo "publish v$STABLE and trigger the COPR stable build."
+          fi
+
+      - name: Fast-forward main
+        if: steps.cmp.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          git push origin origin/dev:refs/heads/main
+
+      - name: Summary
+        env:
+          STABLE: ${{ steps.cmp.outputs.stable }}
+          SKIPPED: ${{ steps.cmp.outputs.skip }}
+        run: |
+          {
+            if [ "$SKIPPED" = "true" ]; then
+              echo "### Nothing to promote"
+              echo ""
+              echo "main is already level with dev."
+            else
+              echo "### Promoted dev to main"
+              echo ""
+              echo "Stable version in the spec: \`$STABLE\`"
+              echo ""
+              echo "If that version was previously untagged, the Stable Release"
+              echo "workflow is now tagging it and building the RPM."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

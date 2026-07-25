@@ -9,10 +9,16 @@ name: Dev Beta Release
 # release — typo-fix commits don't create duplicate tags or kick off
 # redundant COPR builds.
 
+# workflow_dispatch is the manual fallback: a push made by GITHUB_TOKEN
+# (e.g. the Bump version workflow's PR auto-merging) does not start other
+# workflows, so if a bump lands without this firing, run it by hand. It
+# reads the spec and skips when the tag already exists, so running it
+# spuriously is harmless.
 on:
   push:
     branches:
       - dev
+  workflow_dispatch:
 
 permissions:
   contents: write

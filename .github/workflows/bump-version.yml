@@ -1,0 +1,190 @@
+name: Bump version
+
+# One-click version bump, so cutting a build doesn't need a local
+# checkout. Actions tab -> "Bump version" -> Run workflow.
+#
+#   dev     bumps steelvoicemix-dev.spec (plus Cargo.toml / Cargo.lock /
+#           the GUI fallback) and, once merged, produces a beta RPM.
+#   stable  bumps steelvoicemix.spec + the AppStream metainfo. Merging
+#           that to main is what fires stable-release.yml, so a stable
+#           bump is the first half of cutting a release.
+#
+# Why this opens a PR instead of pushing to dev directly: dev requires
+# the CI checks, and required checks are evaluated per commit SHA, so a
+# freshly-created commit pushed by the bot would be rejected. A PR gets
+# CI run against it and then auto-merges itself, which also means a bump
+# that somehow breaks the build never lands.
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Which channel to bump'
+        type: choice
+        options:
+          - dev
+          - stable
+        default: dev
+      version:
+        description: 'Explicit version. Blank = auto-increment the beta number (dev only). Required for stable, e.g. 0.4.4'
+        type: string
+        required: false
+      changelog:
+        description: 'stable only: changelog body, one "- bullet" per line. Blank = generate from commits since the last stable tag.'
+        type: string
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  # Two bumps at once would race the same branch name and versions.
+  group: bump-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump and open PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: dev
+          # Full history so the stable script can diff against the
+          # previous release tag when generating changelog bullets.
+          fetch-depth: 0
+
+      - name: Validate inputs
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = "stable" ] && [ -z "$VERSION" ]; then
+            echo "A stable bump needs an explicit version (e.g. 0.4.4)." >&2
+            echo "Stable versions are never guessed." >&2
+            exit 1
+          fi
+          if [ -n "$VERSION" ]; then
+            case "$CHANNEL" in
+              dev)
+                pattern='^[0-9]+\.[0-9]+\.[0-9]+(~beta[0-9]+)?$' ;;
+              stable)
+                pattern='^[0-9]+\.[0-9]+\.[0-9]+$' ;;
+            esac
+            if ! printf '%s' "$VERSION" | grep -qE "$pattern"; then
+              echo "Version '$VERSION' is not valid for the $CHANNEL channel." >&2
+              exit 1
+            fi
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Run the bump
+        id: bump
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ inputs.version }}
+          CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = "dev" ]; then
+            # The script auto-increments betaN when given no argument.
+            if [ -n "$VERSION" ]; then
+              scripts/bump-dev-version.sh "$VERSION"
+            else
+              scripts/bump-dev-version.sh
+            fi
+            NEW=$(awk '/^Version:[[:space:]]/ {print $2; exit}' steelvoicemix-dev.spec)
+          else
+            if [ -n "$CHANGELOG" ]; then
+              printf '%s\n' "$CHANGELOG" > /tmp/bump-notes.md
+              python3 scripts/bump-stable-version.py "$VERSION" \
+                  --notes-file /tmp/bump-notes.md
+            else
+              python3 scripts/bump-stable-version.py "$VERSION"
+            fi
+            NEW=$(awk '/^Version:[[:space:]]/ {print $2; exit}' steelvoicemix.spec)
+          fi
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          # Branch name can't carry RPM's '~'.
+          echo "branch=chore/bump-${CHANNEL}-${NEW//\~/-}" >> "$GITHUB_OUTPUT"
+
+      - name: Sanity-check the result
+        # A bump that doesn't build is worse than no bump. Cheap checks
+        # only — full CI runs on the PR.
+        run: |
+          set -euo pipefail
+          python3 -c "import xml.etree.ElementTree as ET; ET.parse('dev.ibrahimaldhaheri.steelvoicemix.metainfo.xml')"
+          git diff --stat
+          if git diff --quiet; then
+            echo "Bump produced no changes — already at this version?" >&2
+            exit 1
+          fi
+
+      - name: Commit, push branch, open PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+          NEW: ${{ steps.bump.outputs.new }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "chore: bump $CHANNEL version to $NEW"
+          git push --force-with-lease origin "$BRANCH"
+          if [ "$CHANNEL" = "stable" ]; then
+            BODY="Stable version bump to \`$NEW\`, opened by the Bump version workflow.
+
+          Review the generated \`%changelog\` entry in \`steelvoicemix.spec\` before merging — it becomes the GitHub Release notes.
+
+          **Merging this to \`dev\` does not release anything.** The stable release fires when \`main\` receives this version bump (see the Promote to main workflow)."
+          else
+            BODY="Dev version bump to \`$NEW\`, opened by the Bump version workflow.
+
+          Auto-merges once CI is green, which publishes a beta prerelease and kicks the COPR dev build."
+          fi
+          URL=$(gh pr create --base dev --head "$BRANCH" \
+                --title "chore: bump $CHANNEL version to $NEW" \
+                --body "$BODY")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Opened $URL"
+
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          URL: ${{ steps.pr.outputs.url }}
+        run: |
+          set -euo pipefail
+          # Merges itself once the required checks pass. If auto-merge
+          # is ever unavailable the PR just waits for a human click, so
+          # don't fail the run over it.
+          gh pr merge --auto --squash "$URL" \
+            || echo "Could not enable auto-merge; merge the PR manually."
+
+      - name: Summary
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          NEW: ${{ steps.bump.outputs.new }}
+          URL: ${{ steps.pr.outputs.url }}
+        run: |
+          {
+            echo "### Bumped $CHANNEL to \`$NEW\`"
+            echo ""
+            echo "PR: $URL"
+            echo ""
+            if [ "$CHANNEL" = "stable" ]; then
+              echo "Next: merge the PR, then run **Promote to main** to cut the release."
+            else
+              echo "The PR auto-merges when CI passes, then the beta release and COPR build run."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
