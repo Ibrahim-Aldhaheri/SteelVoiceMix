@@ -113,8 +113,16 @@ fn play_surround_test_tone(channel: &str) {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn();
-    if let Err(e) = spawn {
-        warn!("test-tone: pw-play failed to start: {e}");
+    match spawn {
+        // Reap in a detached thread — dropping the Child without waiting
+        // leaves a zombie until the daemon exits, and users can press
+        // Test many times.
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(e) => warn!("test-tone: pw-play failed to start: {e}"),
     }
 }
 
@@ -717,6 +725,20 @@ fn handle_client(
                     "GUI requested: set-surround-channel-gain {channel} = {gain_db} dB (ok={ok})"
                 );
             }
+            ClientCommand::SetSurroundGains { channels } => {
+                let entries: Vec<(String, f32, bool)> = channels
+                    .into_iter()
+                    .map(|(k, v)| (k, v.gain_db, v.muted))
+                    .collect();
+                {
+                    let mut sm = sinks.lock_or_recover();
+                    sm.set_surround_gains_batch(&entries);
+                }
+                info!(
+                    "GUI requested: set-surround-gains ({} channels)",
+                    entries.len()
+                );
+            }
             ClientCommand::SetSurroundChannelMute { channel, muted } => {
                 let ok = {
                     let mut sm = sinks.lock_or_recover();
@@ -734,13 +756,22 @@ fn handle_client(
                 info!("GUI requested: set-surround-solo {channel:?}");
             }
             ClientCommand::SurroundTestTone { channel } => {
-                // Best-effort: play a short tone into the one channel so
-                // the user can confirm which speaker they're editing.
-                // Channel routing correctness is hardware-pending (see
-                // STATUS.md) — this uses speaker-test's per-channel
-                // position if available and is a no-op otherwise.
-                play_surround_test_tone(&channel);
-                info!("GUI requested: surround-test-tone {channel}");
+                // Only play when the surround chain is actually up —
+                // otherwise `--target=effect_input.SteelSurround` names a
+                // node that doesn't exist and pw-play would fall back to
+                // the default sink, beeping out the wrong device.
+                let running = {
+                    let sm = sinks.lock_or_recover();
+                    sm.surround_chain_running()
+                };
+                if running {
+                    play_surround_test_tone(&channel);
+                    info!("GUI requested: surround-test-tone {channel}");
+                } else {
+                    info!(
+                        "Ignoring surround-test-tone {channel}: chain not running"
+                    );
+                }
             }
             ClientCommand::SetMicNoiseGate { enabled, strength } => {
                 handle_mic_feature_update(

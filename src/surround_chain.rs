@@ -327,8 +327,14 @@ fn render_conf(hrir: &Path, gains: &SurroundGains) -> String {
         nodes.push(format!(
             r#"                    {{ type = builtin name = {key}_copy label = copy }}"#,
         ));
+        // `linear` computes out = in * Mult + Add. Mult/Add are CONTROL
+        // ports, set via `control = {...}` — NOT a `config` block (the
+        // linear builtin has no config, so `config = {mult=...}` was
+        // silently ignored and every channel ran at unity gain, making
+        // the whole stage editor a no-op). Same `control` form the EQ
+        // chain uses for its biquad Freq/Q/Gain.
         nodes.push(format!(
-            r#"                    {{ type = builtin name = {key}_gain label = linear config = {{ mult = {mult:.5} add = 0.0 }} }}"#,
+            r#"                    {{ type = builtin name = {key}_gain label = linear control = {{ "Mult" = {mult:.5} "Add" = 0.0 }} }}"#,
             mult = gains.linear(i),
         ));
     }
@@ -574,5 +580,25 @@ mod tests {
                 "missing gain node for {key}"
             );
         }
+    }
+
+    #[test]
+    fn gain_nodes_use_control_ports_not_config() {
+        // Regression guard: `linear` takes Mult/Add as CONTROL ports.
+        // Using `config = { mult = ... }` made every gain silently run
+        // at unity, turning the whole editor into a no-op.
+        let mut g = SurroundGains::default();
+        g.set_gain("fl", -6.0);
+        let conf = render_conf(std::path::Path::new("/tmp/x.wav"), &g);
+        assert!(
+            conf.contains(r#"control = { "Mult" ="#),
+            "gain nodes must set the Mult control port"
+        );
+        assert!(
+            !conf.contains("config = { mult"),
+            "must not use a config block for linear gain"
+        );
+        // fl at -6 dB ≈ 0.501 linear must appear.
+        assert!(conf.contains("0.501"), "fl gain multiplier not rendered");
     }
 }

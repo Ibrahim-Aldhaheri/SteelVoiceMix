@@ -730,6 +730,22 @@ impl SinkManager {
         self.respawn_surround_if_running();
     }
 
+    /// Apply gain + mute for many channels, then respawn ONCE. Presets /
+    /// reset / undo use this so they don't respawn the chain per channel.
+    pub fn set_surround_gains_batch(&mut self, entries: &[(String, f32, bool)]) {
+        for (key, db, muted) in entries {
+            self.surround_gains.set_gain(key, *db);
+            self.surround_gains.set_mute(key, *muted);
+        }
+        self.respawn_surround_if_running();
+    }
+
+    /// Whether the surround chain is currently running — used to gate
+    /// the test tone so it can't leak to the default sink.
+    pub fn surround_chain_running(&self) -> bool {
+        self.surround_chain.is_some()
+    }
+
     /// Where the headphone-path channels (Game / Chat / Media) should
     /// route their downstream audio. When the surround chain is up,
     /// loopbacks / EQ chains target the surround capture sink so every

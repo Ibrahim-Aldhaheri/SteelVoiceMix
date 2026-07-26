@@ -421,6 +421,9 @@ class MixerGUI(QMainWindow):
             self.tr("Background service (steelvoicemix) is running")
         )
         self.home_tab.on_service_connected(True)
+        # Replay the saved surround level profile so the running chain
+        # matches the stage editor instead of starting flat.
+        self.surround_tab.on_service_connected()
         self._apply_redirect_on_connect()
 
     def _on_disconnected(self) -> None:

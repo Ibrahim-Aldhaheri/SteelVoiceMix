@@ -68,7 +68,7 @@ def clamp_db(db: float) -> float:
 
 
 def db_to_fraction(db: float) -> float:
-    """Map a level in dB to a radial fraction in [0.35, 1.0].
+    """Map a level in dB to a radial fraction in [0.5, 1.0].
 
     Louder channels sit closer to the listener (smaller radius); quieter
     ones sit farther out. 0.35 keeps the loudest speakers off the head
@@ -100,13 +100,11 @@ def db_to_linear(db: float) -> float:
 # channel key to a dB trim.
 
 PRESETS: dict[str, dict[str, float]] = {
-    # Everything at reference level.
+    # Everything at reference level (this is also the 7.1 default).
     "flat": {k: 0.0 for k in default_channels()},
     # 5.1: silence the two side channels (a 5.1 source has none), leave
     # the rest flat. The sink is still 8-channel; this just trims.
     "5.1": {"sl": MUTE_THRESHOLD_DB, "sr": MUTE_THRESHOLD_DB},
-    # 7.1 reference: all channels active and flat.
-    "7.1": {k: 0.0 for k in default_channels()},
     # Bring the soundstage forward: lift fronts, trim rears/sides.
     "front-focus": {
         "fl": 2.0, "fr": 2.0, "fc": 2.0,
@@ -121,8 +119,7 @@ PRESETS: dict[str, dict[str, float]] = {
 
 PRESET_LABELS = {
     "flat": "Flat (reference)",
-    "5.1": "5.1 layout",
-    "7.1": "7.1 layout",
+    "5.1": "5.1 (no side channels)",
     "front-focus": "Front focus",
     "dialogue": "Dialogue boost",
 }

@@ -61,12 +61,52 @@ on drag-**release** (not continuously), so there is one respawn per
 adjustment, matching the EQ tab. A brief (~0.5–1 s) audio glitch per
 level change is expected, same as changing an EQ band.
 
+### Specialist review outcomes (DSP + interaction)
+
+Two specialists reviewed the first cut. Resolved from their findings:
+- **DSP-critical:** the `linear` gain nodes used `config = { mult }`,
+  which that builtin ignores — every channel would have run at unity
+  gain (the whole editor a silent no-op). Fixed to the control-port
+  form `control = { "Mult" = … "Add" = 0.0 }`, with a regression test
+  asserting the rendered conf.
+- **Honesty/state sync:** the saved profile is now replayed to the
+  daemon on connect and on device switch (it previously started flat
+  while the UI showed trims); preset/reset/undo push a single batched
+  `set-surround-gains` (one respawn, and it always sends mute state so
+  un-mute reaches the daemon); reset/undo clear daemon solo.
+- **Robustness:** the test tone is refused unless the chain is running
+  (so it can't leak a beep to the default sink), and its `pw-play`
+  child is reaped (no zombies).
+- **Interaction:** keyboard selection now actually works (Left/Right
+  around the ring, real Tab left to focus); M/S/T shortcuts implemented;
+  undo snapshots before a drag (was a no-op for drags); keyboard commit
+  debounced; selection ring uses the accent colour not the warning
+  colour; muted vs soloed-away are visually distinct and a "Solo: …"
+  status line shows when solo is active; an off-state notice appears
+  when surround is off; nearest-marker hit-testing.
+
 ### Verified vs. hardware-pending for the editor
 - **Verified offscreen:** the editor widget, radial-drag → dB mapping,
   bounds/clamping, presets, reset/undo, persistence + migration,
-  keyboard operation, and the command payloads the GUI emits.
-- **Hardware-pending (Fedora + headset):** that the daemon's new
-  per-channel gain nodes actually attenuate the right channel, that
-  respawn latency is acceptable in practice, and that test-tone routing
-  hits the intended speaker. Implemented to the proven respawn pattern
-  and compiled, but audio correctness is **not** verifiable on this box.
+  keyboard operation (selection + level + M/S/T), the batched/solo
+  command payloads, and that the rendered PipeWire conf uses control
+  ports with the right multipliers.
+- **Hardware-pending (Fedora + headset):** that the `Mult` control
+  actually attenuates the intended channel, that respawn latency is
+  acceptable in practice, and that `pw-play --channel-map` lands the
+  test tone on the intended speaker. Implemented to the proven respawn
+  pattern and compiled/tested for structure, but audible correctness is
+  **not** verifiable on this box — do the mute-FL-and-test check on
+  target.
+
+### Honest future paths (not done, not claimed)
+- **Glitch-free live level:** once the `Mult` control form is confirmed
+  on hardware, levels could be set at runtime via
+  `pw-cli set-param <node> Props { params = [ "<ch>_gain:Mult" <v> ] }`
+  instead of respawning — enabling continuous drag with no glitch. Left
+  as a follow-up because the exact syntax needs on-hardware verification.
+- **Real draggable direction:** would require a different backend —
+  PipeWire's `sofa` spatializer (libmysofa, `.sofa` HRTFs) exposes
+  runtime-adjustable azimuth/elevation. That is the honest path if
+  free-positioning is ever wanted; the current static-HRIR convolver
+  cannot do it, which is why this editor does not pretend to.

@@ -408,6 +408,14 @@ impl EqState {
     }
 }
 
+/// One channel's level state in a batched `set-surround-gains` command.
+#[derive(Debug, Deserialize)]
+pub struct SurroundChannelGain {
+    pub gain_db: f32,
+    #[serde(default)]
+    pub muted: bool,
+}
+
 /// Commands sent by the GUI client to the daemon.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd")]
@@ -475,6 +483,13 @@ pub enum ClientCommand {
     /// discipline as an EQ band change).
     #[serde(rename = "set-surround-channel-gain")]
     SetSurroundChannelGain { channel: String, gain_db: f32 },
+    /// Apply gain + mute for every channel at once, with a SINGLE chain
+    /// respawn. Used by presets / reset / undo, which otherwise fired
+    /// one command (and one respawn) per channel.
+    #[serde(rename = "set-surround-gains")]
+    SetSurroundGains {
+        channels: std::collections::HashMap<String, SurroundChannelGain>,
+    },
     /// Mute / unmute one surround channel (level → 0 while muted).
     #[serde(rename = "set-surround-channel-mute")]
     SetSurroundChannelMute { channel: String, muted: bool },
