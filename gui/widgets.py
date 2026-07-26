@@ -318,6 +318,55 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
 """
 
 
+def quick_action(icon_names: tuple[str, ...], title: str, subtitle: str):
+    """A large, friendly shortcut button for the Home dashboard.
+
+    Two lines — a bold title and a dim one-line description — behind a
+    theme icon, so a non-technical user can see at a glance what each
+    shortcut does rather than decoding a bare label. Returns the
+    QPushButton; the caller connects `clicked`.
+    """
+    from PySide6.QtWidgets import QPushButton
+    button = QPushButton()
+    button.setCursor(Qt.PointingHandCursor)
+    button.setIcon(themed_icon(*icon_names))
+    button.setIconSize(QSize(22, 22))
+    button.setText(f"  {title}\n  {subtitle}")
+    button.setStyleSheet(
+        "QPushButton {"
+        "  text-align: left; padding: 10px 12px; border-radius: 8px;"
+        "  border: 1px solid palette(mid); background: palette(base);"
+        "}"
+        "QPushButton:hover {"
+        f"  border-color: {ACCENT}; background: palette(alternate-base);"
+        "}"
+    )
+    button.setMinimumHeight(52)
+    return button
+
+
+def stat_readout(value: str, label: str):
+    """A big number over a small caption, for dashboard metrics.
+
+    Returns `(container, value_label)` so the caller can update the
+    value live. Used for battery %, ChatMix balance, etc.
+    """
+    from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+    box = QWidget()
+    lay = QVBoxLayout(box)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(0)
+    value_label = QLabel(value)
+    value_label.setStyleSheet("font-size: 26px; font-weight: bold;")
+    value_label.setTextFormat(Qt.PlainText)
+    caption = QLabel(label)
+    caption.setObjectName("help-text")
+    caption.setTextFormat(Qt.PlainText)
+    lay.addWidget(value_label)
+    lay.addWidget(caption)
+    return box, value_label
+
+
 # Canonical settings key → exact display string used in the position combo.
 POSITION_DISPLAY: dict[str, str] = {
     "top-right": "Top-right",

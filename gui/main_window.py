@@ -207,21 +207,25 @@ class MixerGUI(QMainWindow):
         # and degraded to tofu boxes where the font was missing.
         # Several candidates per entry because icon naming differs
         # between themes; themed_icon() falls back to a drawn dot.
-        for label, icon_names, widget in (
-            (self.tr("Home"), ("go-home", "user-home"), self.home_tab),
-            (self.tr("Sinks"),
+        # Page keys let the Home dashboard's quick-actions jump here by
+        # name (see navigate signal below) without hard-coding indices.
+        self._page_index: dict[str, int] = {}
+        for row, (key, label, icon_names, widget) in enumerate((
+            ("home", self.tr("Home"), ("go-home", "user-home"), self.home_tab),
+            ("sinks", self.tr("Sinks"),
              ("audio-volume-high", "audio-speakers"), self.sinks_tab),
-            (self.tr("Equalizer"),
+            ("equalizer", self.tr("Equalizer"),
              ("media-equalizer", "view-media-equalizer"), self.eq_tab),
-            (self.tr("Surround"),
+            ("surround", self.tr("Surround"),
              ("audio-speakers", "speaker"), self.surround_tab),
-            (self.tr("Microphone"),
+            ("microphone", self.tr("Microphone"),
              ("audio-input-microphone", "microphone"), self.mic_tab),
-            (self.tr("Deck"),
+            ("deck", self.tr("Deck"),
              ("audio-card", "computer"), self.deck_tab),
-            (self.tr("Settings"),
+            ("settings", self.tr("Settings"),
              ("configure", "preferences-system"), self.settings_tab),
-        ):
+        )):
+            self._page_index[key] = row
             item = QListWidgetItem(label)
             item.setIcon(themed_icon(*icon_names))
             self.nav.addItem(item)
@@ -238,6 +242,8 @@ class MixerGUI(QMainWindow):
             self.stack.addWidget(scroller)
         self.nav.setCurrentRow(0)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+        # Home's quick-action shortcuts jump to a page by key.
+        self.home_tab.navigate.connect(self._go_to_page)
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
@@ -392,12 +398,29 @@ class MixerGUI(QMainWindow):
 
     # ----------------------------------------------------- header + chatmix
 
+    def _go_to_page(self, key: str) -> None:
+        row = self._page_index.get(key)
+        if row is not None:
+            self.nav.setCurrentRow(row)
+
     def _on_connected(self) -> None:
+        # Header pill is deliberately about the background *service*
+        # link; Home's hero is about the *headset*. Same word for two
+        # things read as a contradiction, so the pill is scoped in its
+        # tooltip and Home never reuses the "connected" phrasing.
         self._set_status_pill(self.tr("●  Connected"), "ok")
+        self.status_label.setToolTip(
+            self.tr("Background service (steelvoicemix) is running")
+        )
+        self.home_tab.on_service_connected(True)
         self._apply_redirect_on_connect()
 
     def _on_disconnected(self) -> None:
         self._set_status_pill(self.tr("●  Reconnecting…"), "bad")
+        self.status_label.setToolTip(
+            self.tr("Trying to reach the background service (steelvoicemix)")
+        )
+        self.home_tab.on_service_connected(False)
         self.home_tab.on_disconnected()
         self._apply_redirect_on_disconnect()
 
