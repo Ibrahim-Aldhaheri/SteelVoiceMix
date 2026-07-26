@@ -55,7 +55,13 @@ from ..settings import (
     rename_favourite,
     save as save_settings,
 )
-from ..widgets import NoWheelComboBox, NoWheelSlider, card, labelled_toggle
+from ..widgets import (
+    NoWheelComboBox,
+    NoWheelSlider,
+    card,
+    labelled_toggle,
+    notice,
+)
 
 
 # Common parametric-EQ preset JSONs use 10 filter slots
@@ -286,16 +292,15 @@ class EqualizerTab(QWidget):
         )
         self.eq_toggle.toggled.connect(self._toggle_enabled)
 
-        # Per-channel selector: tune [Game] and [Chat] independently.
-        # Sliders display the selected channel's bands; switching the
-        # combo loads that channel's stored values. Emoji icons match
-        # the Home-tab convention (🎮 / 💬).
-        ch_row = QHBoxLayout()
-        ch_row.addWidget(QLabel(self.tr("Channel")))
+        # Channel selector sits on the preset row below (see
+        # preset_picker_row) rather than in a card of its own — the
+        # Equalizer / Preset / Favourites cards used to stack three
+        # sparse headers above the sliders and push the actual bands
+        # below the fold. Everything above the sliders is now one
+        # compact toolbar card.
         self.channel_combo = NoWheelComboBox()
         self.channel_combo.setMinimumWidth(140)
         self.channel_combo.currentTextChanged.connect(self._on_channel_changed)
-        ch_row.addWidget(self.channel_combo, 1)
         # Populate channel combo for the initial sink state (Game + Chat
         # always; Media/HDMI added if their sinks are enabled). Sink
         # toggles fire on_media_sink_changed / on_hdmi_sink_changed and
@@ -317,10 +322,6 @@ class EqualizerTab(QWidget):
         self.auto_lock_banner.setWordWrap(True)
         self.auto_lock_banner.hide()
 
-        layout.addWidget(card(
-            self.tr("Equalizer"), enable_row, ch_row, self.auto_lock_banner,
-        ))
-
         # Preset row: searchable dropdown filtered by the current channel,
         # plus Load / Save / Delete actions. The combo is editable so the
         # user can type to filter (the QCompleter does substring match
@@ -334,6 +335,10 @@ class EqualizerTab(QWidget):
         # truncated. SearchableSelect bakes in: search field at the
         # top of the popup, instant substring filter, keyboard nav,
         # wheel events ignored.
+        preset_picker_row.addWidget(QLabel(self.tr("Channel")))
+        preset_picker_row.addWidget(self.channel_combo)
+        preset_picker_row.addSpacing(12)
+        preset_picker_row.addWidget(QLabel(self.tr("Preset")))
         self.preset_combo = SearchableSelect()
         self.preset_combo.setMinimumWidth(220)
         self.preset_combo.currentIndexChanged.connect(self._on_preset_index_changed)
@@ -389,7 +394,6 @@ class EqualizerTab(QWidget):
         preset_btn_row.addWidget(self.preset_delete_btn)
         preset_btn_row.addStretch(1)
 
-        layout.addWidget(card(self.tr("Preset"), preset_picker_row, preset_btn_row))
         # Populate the combo for the initial channel before any signals fire.
         self._refresh_preset_combo()
 
@@ -407,9 +411,29 @@ class EqualizerTab(QWidget):
         self.favourites_empty_hint.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
         )
-        self.favourites_card_layout.addLayout(self.favourites_buttons_row)
-        self.favourites_card_layout.addWidget(self.favourites_empty_hint)
-        layout.addWidget(card(self.tr("Favourites"), self.favourites_card_layout))
+        # Favourites live as a compact inline row prefixed with a small
+        # "Favourites" caption, not a card of their own.
+        fav_line = QHBoxLayout()
+        fav_line.setSpacing(6)
+        fav_caption = QLabel(self.tr("Favourites"))
+        fav_caption.setObjectName("help-text")
+        fav_line.addWidget(fav_caption)
+        fav_line.addLayout(self.favourites_buttons_row)
+        fav_line.addWidget(self.favourites_empty_hint)
+        fav_line.addStretch(1)
+        self.favourites_card_layout.addLayout(fav_line)
+
+        # One consolidated toolbar card: enable + banner, then the
+        # channel/preset/star row, then the preset action buttons, then
+        # the favourites line. Replaces three stacked cards.
+        layout.addWidget(card(
+            None,
+            enable_row,
+            self.auto_lock_banner,
+            preset_picker_row,
+            preset_btn_row,
+            self.favourites_card_layout,
+        ))
         self._refresh_favourites_card()
 
         # 10 vertical sliders, one per band. The musical name + frequency
@@ -616,18 +640,16 @@ class EqualizerTab(QWidget):
         self.test_stop_btn.setEnabled(False)
         test_row.addWidget(self.test_play_btn)
         test_row.addWidget(self.test_stop_btn)
-        test_warn = QLabel(
+        # Hearing-safety warning as the standard advisory strip rather
+        # than shouty all-caps orange text — the band + border already
+        # signal caution, so the copy can be calm and readable.
+        test_warn = notice(
             self.tr(
-                "⚠ Drop system volume to ~10–20% BEFORE pressing Play. "
-                "These clips are intentionally whisper-quiet to protect "
-                "your hearing, but if your headset gain or system volume "
-                "is high they can still be uncomfortable. Hit Stop "
-                "immediately if anything feels too loud."
+                "Turn your system volume down to about 10–20% before "
+                "pressing Play. These clips are intentionally quiet, but "
+                "high headset gain can still make them loud. Press Stop "
+                "if anything feels uncomfortable."
             )
-        )
-        test_warn.setWordWrap(True)
-        test_warn.setStyleSheet(
-            "font-size: 11px; font-weight: bold; color: #FF9800;"
         )
         test_help = QLabel(
             self.tr(
@@ -859,7 +881,7 @@ class EqualizerTab(QWidget):
                 )
             self.auto_lock_banner.setText(
                 self.tr(
-                    "🎮 Auto Game-EQ active — preset: {preset}. Sliders "
+                    "Auto Game-EQ active — preset: {preset}. Sliders "
                     "are still editable; your tweaks stay until the next "
                     "game change or until you close the game (at which "
                     "point your pre-game EQ is restored)."
@@ -1351,15 +1373,18 @@ class EqualizerTab(QWidget):
         active, and the daemon spawns it on demand. UserData carries
         the bare channel key ('game', 'chat', 'media', 'hdmi', 'mic')
         so internal lookups don't have to parse the emoji prefix."""
+        # Plain-text labels — emoji prefixes rendered as tofu boxes where
+        # no emoji font matched. The userData key drives all lookups, so
+        # the display text is cosmetic.
         labels = [
-            ("game", self.tr("🎮 Game")),
-            ("chat", self.tr("💬 Chat")),
+            ("game", self.tr("Game")),
+            ("chat", self.tr("Chat")),
         ]
         if self._media_sink_enabled:
-            labels.append(("media", self.tr("🎵 Media")))
+            labels.append(("media", self.tr("Media")))
         if self._hdmi_sink_enabled:
-            labels.append(("hdmi", self.tr("📺 HDMI")))
-        labels.append(("mic", self.tr("🎙 Microphone")))
+            labels.append(("hdmi", self.tr("HDMI")))
+        labels.append(("mic", self.tr("Microphone")))
 
         was_blocked = self.channel_combo.blockSignals(True)
         try:
@@ -1945,13 +1970,20 @@ class EqualizerTab(QWidget):
         name = self._selected_preset_name()
         if not name or not is_user_preset(name, self._current_channel):
             return
-        ok = QMessageBox.question(
-            self,
-            "Delete preset",
-            f"Delete preset '{name}' from the {self._current_channel} channel?",
-            QMessageBox.Yes | QMessageBox.No,
+        # Destructive + irreversible: default the focus to No so a
+        # stray Enter doesn't delete, and name what's being removed.
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(self.tr("Delete preset?"))
+        box.setText(
+            self.tr("Delete “{name}” from the {channel} channel?").format(
+                name=name, channel=self._current_channel,
+            )
         )
-        if ok != QMessageBox.Yes:
+        box.setInformativeText(self.tr("This can't be undone."))
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        box.setDefaultButton(QMessageBox.No)
+        if box.exec() != QMessageBox.Yes:
             return
         delete_user_preset(name, self._current_channel)
         # Drop the deleted preset from favourites too — otherwise a
