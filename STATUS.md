@@ -85,6 +85,25 @@ Two specialists reviewed the first cut. Resolved from their findings:
   status line shows when solo is active; an off-state notice appears
   when surround is off; nearest-marker hit-testing.
 
+### Hardware finding: mute didn't attenuate → switched to convolver gain
+
+On the first hardware test, muting a channel didn't silence it. Dumping
+the generated config showed it was structurally correct (muted channel
+→ `linear` node with `"Mult" = 0.00000`, valid per the PipeWire docs
+and matching the working EQ chain's `control = {}` form). But the
+`linear` node's Mult control did not attenuate in practice.
+
+Rather than keep debugging the control-port path, the level trim now
+uses the **convolver's own `gain` config parameter** — a documented,
+config-time value applied when the impulse response loads, with no
+control-port mechanism to misfire. Each channel's two ear convolvers
+share the channel's linear gain (0.0 when muted/soloed away), so the
+HRIR's L/R balance is preserved. The separate `linear` gain nodes and
+their links are gone; topology is back to copy → convolver. Regression
+tests assert the muted channel renders `gain = 0.00000` on both
+convolvers. **Still to confirm on hardware** that this form attenuates
+(it should — `gain` scales the IR directly).
+
 ### Verified vs. hardware-pending for the editor
 - **Verified offscreen:** the editor widget, radial-drag → dB mapping,
   bounds/clamping, presets, reset/undo, persistence + migration,

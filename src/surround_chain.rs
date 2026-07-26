@@ -317,43 +317,41 @@ fn render_conf(hrir: &Path, gains: &SurroundGains) -> String {
     ];
 
     let mut nodes: Vec<String> = Vec::new();
-    // One `copy` per input channel — a single fan-out point — followed
-    // by one `linear` gain node per channel (the stage editor's level
-    // trim). `linear` computes out = in * mult; mult is the channel's
-    // effective linear amplitude (0.0 when muted or soloed away). The
-    // copy → gain → convolvers order means the trim applies once,
-    // before the (fixed-direction) HRIR convolution.
-    for (i, key) in SURROUND_CHANNELS.iter().enumerate() {
+    // One `copy` per input channel — a single fan-out point into the
+    // two ear convolvers. The per-channel LEVEL trim from the stage
+    // editor is applied by the convolver's own `gain` config parameter
+    // (see below), NOT by a separate node.
+    for key in SURROUND_CHANNELS {
         nodes.push(format!(
             r#"                    {{ type = builtin name = {key}_copy label = copy }}"#,
         ));
-        // `linear` computes out = in * Mult + Add. Mult/Add are CONTROL
-        // ports, set via `control = {...}` — NOT a `config` block (the
-        // linear builtin has no config, so `config = {mult=...}` was
-        // silently ignored and every channel ran at unity gain, making
-        // the whole stage editor a no-op). Same `control` form the EQ
-        // chain uses for its biquad Freq/Q/Gain.
-        nodes.push(format!(
-            r#"                    {{ type = builtin name = {key}_gain label = linear control = {{ "Mult" = {mult:.5} "Add" = 0.0 }} }}"#,
-            mult = gains.linear(i),
-        ));
     }
     for (name, channel) in convolvers {
+        // The convolver's `gain` config parameter scales the impulse
+        // response — a documented, config-time value applied when the IR
+        // loads, so it does NOT depend on a control-port init (an
+        // earlier `linear` gain node relied on the `Mult` control port,
+        // which did not attenuate on hardware). gain = 0.0 when the
+        // channel is muted or soloed away. Both ear convolvers for a
+        // channel share the channel's gain, so the L/R balance from the
+        // HRIR is preserved.
+        //
         // blocksize=512 pins the FFT partition size so the convolver
-        // doesn't auto-replan its plan when the graph's quantum
-        // shifts (KDE volume slider / wine / Discord can all yank
-        // the global quantum down to 32, and a 14-instance convolver
-        // re-planning all at once is a major glitch source — see
-        // PipeWire bug #4013 and EasyEffects #1567 for the upstream
-        // discussion). 512 samples is ~10 ms convolution latency,
-        // imperceptible for games. tailsize is left default so the
-        // convolver uses the natural IR length from the HeSuVi WAV.
+        // doesn't auto-replan when the graph's quantum shifts (KDE
+        // volume slider / wine / Discord can yank the global quantum to
+        // 32, and a 14-instance re-plan is a major glitch source — see
+        // PipeWire bug #4013 and EasyEffects #1567). tailsize is left
+        // default so the convolver uses the natural IR length.
+        let key = name.rsplit_once('_').map(|(p, _)| p).unwrap_or(name);
+        let mult = SurroundGains::index_of(key)
+            .map(|i| gains.linear(i))
+            .unwrap_or(1.0);
         nodes.push(format!(
             r#"                    {{
                         type  = builtin
                         name  = {name}
                         label = convolver
-                        config = {{ filename = "{hrir}" channel = {channel} blocksize = 512 }}
+                        config = {{ filename = "{hrir}" channel = {channel} blocksize = 512 gain = {mult:.5} }}
                     }}"#,
             hrir = hrir_str,
         ));
@@ -383,15 +381,13 @@ fn render_conf(hrir: &Path, gains: &SurroundGains) -> String {
 
     let mut links: Vec<String> = Vec::new();
     for (input_key, conv_prefix) in fan_out {
-        // copy → per-channel gain → both ear convolvers.
+        // copy → both ear convolvers (level is baked into the
+        // convolver's gain config, so there's no intermediate node).
         links.push(format!(
-            r#"                    {{ output = "{input_key}_copy:Out"  input = "{input_key}_gain:In" }}"#,
+            r#"                    {{ output = "{input_key}_copy:Out"  input = "{conv_prefix}_l:In" }}"#,
         ));
         links.push(format!(
-            r#"                    {{ output = "{input_key}_gain:Out"  input = "{conv_prefix}_l:In" }}"#,
-        ));
-        links.push(format!(
-            r#"                    {{ output = "{input_key}_gain:Out"  input = "{conv_prefix}_r:In" }}"#,
+            r#"                    {{ output = "{input_key}_copy:Out"  input = "{conv_prefix}_r:In" }}"#,
         ));
     }
     // Convolver output → matching ear's mixer. Port numbers are
@@ -571,34 +567,44 @@ mod tests {
     }
 
     #[test]
-    fn conf_contains_a_gain_node_per_channel() {
-        let g = SurroundGains::default();
+    fn muted_channel_gets_zero_convolver_gain() {
+        // Level is applied via the convolver's `gain` config parameter
+        // (config-time, no control-port dependency). A muted channel
+        // must render gain = 0 on BOTH of its ear convolvers.
+        let mut g = SurroundGains::default();
+        g.set_mute("fl", true);
         let conf = render_conf(std::path::Path::new("/tmp/x.wav"), &g);
-        for key in SURROUND_CHANNELS {
+        for node in ["fl_l", "fl_r"] {
+            // Find the convolver block for this node and confirm gain=0.
+            let idx = conf.find(&format!("name  = {node}\n")).unwrap_or_else(|| {
+                panic!("convolver {node} not found")
+            });
+            let block = &conf[idx..idx + 220];
             assert!(
-                conf.contains(&format!("{key}_gain")),
-                "missing gain node for {key}"
+                block.contains("gain = 0.00000"),
+                "{node} should have gain 0 when muted; got: {block}"
             );
         }
+        // An un-muted channel stays at unity.
+        let fr_idx = conf.find("name  = fr_l\n").unwrap();
+        assert!(conf[fr_idx..fr_idx + 220].contains("gain = 1.00000"));
     }
 
     #[test]
-    fn gain_nodes_use_control_ports_not_config() {
-        // Regression guard: `linear` takes Mult/Add as CONTROL ports.
-        // Using `config = { mult = ... }` made every gain silently run
-        // at unity, turning the whole editor into a no-op.
+    fn gain_uses_convolver_config_not_a_linear_node() {
+        // Regression guard against the reverted approach: no separate
+        // `_gain` linear nodes, and the level lives in the convolver
+        // config's `gain =` field.
         let mut g = SurroundGains::default();
-        g.set_gain("fl", -6.0);
+        g.set_gain("sr", -6.0);
         let conf = render_conf(std::path::Path::new("/tmp/x.wav"), &g);
-        assert!(
-            conf.contains(r#"control = { "Mult" ="#),
-            "gain nodes must set the Mult control port"
-        );
-        assert!(
-            !conf.contains("config = { mult"),
-            "must not use a config block for linear gain"
-        );
-        // fl at -6 dB ≈ 0.501 linear must appear.
-        assert!(conf.contains("0.501"), "fl gain multiplier not rendered");
+        assert!(!conf.contains("label = linear"), "no linear gain nodes");
+        assert!(!conf.contains("_gain:In"), "no gain-node links");
+        assert!(conf.contains("gain = "), "convolver gain not rendered");
+        // sr at -6 dB ≈ 0.501 on its convolvers.
+        let idx = conf.find("name  = sr_l\n").unwrap();
+        assert!(conf[idx..idx + 220].contains("gain = 0.50119"));
     }
 }
+
+
