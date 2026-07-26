@@ -48,7 +48,12 @@ from ..settings import (
     save_profile,
 )
 from ..theme import THEME_MODES, apply_theme, normalize_mode
-from ..widgets import POSITION_DISPLAY, card, labelled_toggle
+from ..widgets import (
+    POSITION_DISPLAY,
+    card,
+    labelled_toggle,
+    reflow_into_columns,
+)
 
 log = logging.getLogger(__name__)
 
@@ -511,7 +516,11 @@ class SettingsTab(QWidget):
 
         layout.addWidget(card(self.tr("Reset"), reset_row, reset_help))
 
-        layout.addStretch(1)
+        # Settings is a set of independent groups with no reading order,
+        # so it reflows into two columns. Single-column meant scrolling
+        # past six cards to reach Reset on a window wide enough to show
+        # them all side by side.
+        reflow_into_columns(layout, columns=2)
 
     # --------------------------------------------------------------- handlers
 

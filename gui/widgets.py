@@ -12,6 +12,7 @@ from typing import Callable, Iterable
 
 from PySide6.QtCore import (
     Property,
+    QCoreApplication,
     QEasingCurve,
     QObject,
     QPointF,
@@ -21,12 +22,13 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
 )
-from PySide6.QtGui import QColor, QIcon, QPainter
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLayout,
@@ -45,6 +47,10 @@ APP_ICON_FALLBACK = "audio-headset"
 # than baked into the QSS so we can colour-coordinate widgets that draw
 # themselves (ToggleSwitch) with widgets styled via QSS.
 ACCENT = "#4CAF50"
+# Text/glyph colour to use on top of an ACCENT fill. Hard-coded rather
+# than palette(highlighted-text) because the accent is ours, not the
+# system's — the contrast has to hold in both light and dark themes.
+ON_ACCENT = "#0E1A0F"
 ACCENT_DIM = "#357935"
 WARN = "#FF9800"
 ERROR = "#F44336"
@@ -65,22 +71,23 @@ QListWidget#sidebar {{
     border: none;
     border-right: 1px solid palette(mid);
     outline: none;
-    padding: 8px 0;
+    padding: 10px 8px;
     font-size: 13px;
 }}
 QListWidget#sidebar::item {{
-    padding: 12px 16px;
+    padding: 9px 10px;
+    margin: 1px 0;
+    border-radius: 6px;
     color: palette(text);
-    border-left: 3px solid transparent;
-    margin-right: 1px;
 }}
 QListWidget#sidebar::item:hover {{
     background: palette(midlight);
 }}
+/* Selected row reads as a filled pill rather than a left-edge tick —
+   the tick was easy to miss against the card background. */
 QListWidget#sidebar::item:selected {{
-    background: palette(midlight);
-    border-left: 3px solid {ACCENT};
-    color: palette(text);
+    background: {ACCENT};
+    color: {ON_ACCENT};
     font-weight: bold;
 }}
 
@@ -88,15 +95,28 @@ QListWidget#sidebar::item:selected {{
 QFrame#card {{
     background: palette(base);
     border: 1px solid palette(mid);
-    border-radius: 8px;
+    border-radius: 10px;
 }}
+/* Section titles were 11px uppercase at placeholder-text contrast,
+   which made every heading recede and left the pages looking like one
+   undifferentiated wall. Slightly larger, full text colour, and much
+   less letter-spacing so they actually anchor their section. */
 QLabel#section-title {{
     font-weight: bold;
-    font-size: 11px;
-    color: palette(placeholder-text);
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
+    font-size: 12px;
+    color: palette(text);
+    letter-spacing: 0.6px;
     padding-bottom: 2px;
+}}
+/* Secondary explanatory copy. Kept small and dim, but callers should
+   prefer widgets.help_text() so long paragraphs collapse behind a
+   toggle instead of permanently occupying vertical space. */
+QLabel#help-text {{
+    color: palette(placeholder-text);
+    font-size: 11px;
+}}
+QLabel#field-label {{
+    color: palette(text);
 }}
 
 /* --- Status pill (header) ----------------------------------------- */
@@ -143,6 +163,40 @@ QPushButton:flat {{
 QPushButton:flat:hover {{
     background: palette(midlight);
 }}
+/* Primary call-to-action. One per view at most. */
+QPushButton[cta="true"] {{
+    background: {ACCENT};
+    border-color: {ACCENT};
+    color: {ON_ACCENT};
+    font-weight: bold;
+}}
+QPushButton[cta="true"]:hover {{
+    background: {ACCENT_DIM};
+    border-color: {ACCENT_DIM};
+}}
+/* Small round "?" that expands a help paragraph. */
+QPushButton#help-toggle {{
+    border: 1px solid palette(mid);
+    border-radius: 9px;
+    background: transparent;
+    color: palette(placeholder-text);
+    font-weight: bold;
+    font-size: 11px;
+    min-height: 18px;
+    max-height: 18px;
+    min-width: 18px;
+    max-width: 18px;
+    padding: 0;
+}}
+QPushButton#help-toggle:hover {{
+    border-color: {ACCENT};
+    color: {ACCENT};
+}}
+QPushButton#help-toggle:checked {{
+    background: {ACCENT};
+    border-color: {ACCENT};
+    color: {ON_ACCENT};
+}}
 
 /* --- Combos -------------------------------------------------------- */
 QComboBox, QLineEdit {{
@@ -166,6 +220,53 @@ QFrame[divider="true"] {{
     min-height: 1px;
     margin: 4px 0;
 }}
+/* Inline warning strip (missing plugin, alpha feature, etc). Reads as
+   an advisory band instead of loose orange text on the card. */
+QFrame#notice {{
+    background: palette(alternate-base);
+    border: 1px solid palette(mid);
+    border-left: 3px solid {WARN};
+    border-radius: 6px;
+}}
+QLabel#notice-text {{
+    color: palette(text);
+    font-size: 11px;
+}}
+
+/* Horizontal sliders had no rule at all, so they fell back to the
+   platform default and looked unrelated to the vertical EQ sliders. */
+QSlider::groove:horizontal {{
+    background: palette(midlight);
+    border: 1px solid palette(mid);
+    height: 6px;
+    border-radius: 3px;
+}}
+QSlider::sub-page:horizontal {{
+    background: {ACCENT};
+    border: 1px solid {ACCENT};
+    border-radius: 3px;
+}}
+QSlider::handle:horizontal {{
+    background: palette(base);
+    border: 2px solid {ACCENT};
+    height: 16px;
+    width: 16px;
+    margin: -6px 0;
+    border-radius: 9px;
+}}
+QSlider::handle:horizontal:hover {{
+    border-color: {ACCENT_DIM};
+    background: {ACCENT};
+}}
+QSlider::handle:horizontal:disabled {{
+    border-color: palette(mid);
+    background: palette(button);
+}}
+QSlider::sub-page:horizontal:disabled {{
+    background: palette(mid);
+    border-color: palette(mid);
+}}
+
 QSlider::groove:vertical {{
     background: palette(midlight);
     border: 1px solid palette(mid);
@@ -190,6 +291,29 @@ QSlider::sub-page:vertical {{
 QSlider::add-page:vertical {{
     background: {ACCENT};
     border-radius: 3px;
+}}
+
+/* --- Scrollbars ---------------------------------------------------- */
+/* The default chunky scrollbar drew a hard vertical rule down the edge
+   of every page. Slim and self-effacing suits a settings surface. */
+QScrollBar:vertical {{
+    background: transparent;
+    width: 10px;
+    margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background: palette(mid);
+    min-height: 32px;
+    border-radius: 5px;
+}}
+QScrollBar::handle:vertical:hover {{
+    background: palette(dark);
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0;
+}}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: transparent;
 }}
 """
 
@@ -217,10 +341,196 @@ def divider() -> QFrame:
     return line
 
 
+def help_text(text: str, *, wrap: bool = True) -> QLabel:
+    """Small, dimmed explanatory copy.
+
+    Use for a single short line. For anything longer, prefer
+    `collapsible_help()` — permanently-expanded paragraphs were the
+    single biggest contributor to how much these pages scrolled.
+    """
+    label = QLabel(text)
+    label.setObjectName("help-text")
+    label.setWordWrap(wrap)
+    label.setTextFormat(Qt.PlainText)
+    return label
+
+
+def collapsible_help(text: str, *, label: str = "") -> tuple[QWidget, QLabel]:
+    """A '?' toggle plus the paragraph it shows/hides.
+
+    Returns `(toggle_row, body)`. Add the toggle next to a section's
+    title and the body directly beneath it; the body starts hidden, so
+    the explanation is one click away instead of costing three or four
+    lines of height on every visit.
+
+    Long-form guidance is worth keeping — a headset mixer has plenty of
+    non-obvious controls — but it shouldn't be the reason the real
+    controls sit below the fold.
+    """
+    row = QWidget()
+    lay = QHBoxLayout(row)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(6)
+    if label:
+        lay.addWidget(section_title(label))
+    button = QPushButton("?")
+    button.setObjectName("help-toggle")
+    button.setCheckable(True)
+    button.setCursor(Qt.PointingHandCursor)
+    button.setToolTip(QCoreApplication.translate("widgets", "Show explanation"))
+    lay.addWidget(button)
+    lay.addStretch(1)
+
+    body = QLabel(text)
+    body.setObjectName("help-text")
+    body.setWordWrap(True)
+    body.setTextFormat(Qt.PlainText)
+    body.setVisible(False)
+    button.toggled.connect(body.setVisible)
+    return row, body
+
+
+def notice(text: str, *, action: QWidget | None = None) -> QFrame:
+    """Inline advisory strip — missing plugin, alpha feature, caveat.
+
+    These used to be loose orange text plus a button floating in the
+    card, which read as an error even when purely informational. A
+    bordered band separates advisory content from the controls without
+    shouting.
+    """
+    frame = QFrame()
+    frame.setObjectName("notice")
+    lay = QHBoxLayout(frame)
+    lay.setContentsMargins(10, 7, 10, 7)
+    lay.setSpacing(10)
+    body = QLabel(text)
+    body.setObjectName("notice-text")
+    body.setWordWrap(True)
+    body.setTextFormat(Qt.PlainText)
+    lay.addWidget(body, 1)
+    if action is not None:
+        lay.addWidget(action, 0, Qt.AlignVCenter)
+    return frame
+
+
+def reflow_into_columns(
+    box: QVBoxLayout, *, columns: int = 2, keep_first: int = 0
+) -> None:
+    """Re-lay a finished stack of cards into balanced columns, in place.
+
+    Pages build themselves as one tall QVBoxLayout of cards, which on a
+    1180px-wide window meant every control stretched across the full
+    width with dead space beside it, and pages that could have fit on
+    one screen scrolled instead. Rather than restructure each tab's
+    construction, this takes the assembled stack apart and rebuilds it
+    as columns.
+
+    Cards are distributed by running height rather than alternating, so
+    a tall card on the left doesn't leave a ragged gap on the right.
+    `keep_first` pins that many cards full-width at the top, for pages
+    that open with a banner or summary that shouldn't be halved.
+    """
+    items: list[QWidget] = []
+    for i in reversed(range(box.count())):
+        item = box.itemAt(i)
+        widget = item.widget() if item else None
+        if widget is not None:
+            items.insert(0, widget)
+            box.takeAt(i)
+        else:
+            # Stretches and spacers are re-created below; drop them.
+            box.takeAt(i)
+
+    if len([w for w in items if w.objectName() == "card"]) <= 1:
+        for w in items:
+            box.addWidget(w)
+        box.addStretch(1)
+        return
+
+    for w in items[:keep_first]:
+        box.addWidget(w)
+
+    # Only cards get columnised. A page may also end with a bare
+    # footnote label; dropping that into a grid cell leaves it floating
+    # beside a card looking like it belongs to it, so trailing
+    # non-cards are re-added full-width below the grid instead.
+    rest = [w for w in items[keep_first:] if w.objectName() == "card"]
+    trailing = [w for w in items[keep_first:] if w.objectName() != "card"]
+    grid = QGridLayout()
+    grid.setContentsMargins(0, 0, 0, 0)
+    grid.setHorizontalSpacing(12)
+    grid.setVerticalSpacing(12)
+    # Greedy shortest-column packing using each card's preferred height.
+    heights = [0] * columns
+    rows = [0] * columns
+    for widget in rest:
+        col = heights.index(min(heights))
+        # AlignTop matters: grid rows share a height, so without it a
+        # tall card on one side stretches its neighbour and the
+        # neighbour's contents drift apart vertically.
+        grid.addWidget(widget, rows[col], col, Qt.AlignTop)
+        rows[col] += 1
+        heights[col] += max(widget.sizeHint().height(), 1)
+    for col in range(columns):
+        grid.setColumnStretch(col, 1)
+    box.addLayout(grid)
+    for w in trailing:
+        box.addWidget(w)
+    box.addStretch(1)
+
+
+def column_grid(cards: list[QWidget], *, columns: int = 2) -> QGridLayout:
+    """Lay independent cards out in columns instead of one tall stack.
+
+    The window is ~1180px wide but every page was a single column, so
+    each card stretched its controls across the full width with dead
+    space on the right, and pages that could have fit on one screen
+    scrolled instead. Only use this where the cards are genuinely
+    independent — anything with a reading order stays stacked.
+    """
+    grid = QGridLayout()
+    grid.setContentsMargins(0, 0, 0, 0)
+    grid.setHorizontalSpacing(12)
+    grid.setVerticalSpacing(12)
+    for index, widget in enumerate(cards):
+        grid.addWidget(widget, index // columns, index % columns)
+    for col in range(columns):
+        grid.setColumnStretch(col, 1)
+    return grid
+
+
 def app_icon() -> QIcon:
     """Return our installed icon, falling back to the generic theme icon
     when running from a source checkout that hasn't been installed yet."""
     return QIcon.fromTheme(APP_ICON, QIcon.fromTheme(APP_ICON_FALLBACK))
+
+
+def themed_icon(*names: str) -> QIcon:
+    """First icon-theme name that resolves, else a drawn placeholder.
+
+    The sidebar used emoji glyphs as its icons. Emoji depend on an
+    emoji font being installed and on that font's style matching the
+    desktop, so they range from "fine" to literal tofu boxes, and they
+    never match the surrounding icon set. Real theme icons pick up
+    Breeze on KDE (our target) and Adwaita elsewhere, so the nav looks
+    native instead of like a web page.
+
+    The fallback is a small accent dot rather than nothing, so a
+    missing icon degrades to something deliberate.
+    """
+    for name in names:
+        icon = QIcon.fromTheme(name)
+        if not icon.isNull() and icon.availableSizes():
+            return icon
+    pm = QPixmap(20, 20)
+    pm.fill(Qt.transparent)
+    painter = QPainter(pm)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(ACCENT))
+    painter.drawEllipse(6, 6, 8, 8)
+    painter.end()
+    return QIcon(pm)
 
 
 def make_bar(chunk_color: str) -> QProgressBar:
@@ -427,22 +737,31 @@ class NoWheelSlider(QSlider):
 # Stylesheet for exclusive-mode picker buttons. QPushButton's default
 # :checked state is visually identical to unchecked, so we paint the
 # active mode with the app accent.
-MODE_BUTTON_STYLE = """
-QPushButton {
+# Segmented mode picker (ANC mode, wireless mode, mic gain).
+# Uses ACCENT rather than palette(highlight): the selected segment sits
+# inches away from toggles and sliders that are all our green, and
+# picking up the desktop highlight colour instead made the deck page
+# look like it belonged to a different application.
+MODE_BUTTON_STYLE = f"""
+QPushButton {{
     padding: 6px 10px;
     border: 1px solid palette(mid);
-    border-radius: 4px;
+    border-radius: 6px;
     background: palette(button);
-}
-QPushButton:hover {
-    border-color: palette(highlight);
-}
-QPushButton:checked {
-    background: palette(highlight);
-    color: palette(highlighted-text);
-    border-color: palette(highlight);
+}}
+QPushButton:hover {{
+    border-color: {ACCENT};
+}}
+QPushButton:checked {{
+    background: {ACCENT};
+    color: {ON_ACCENT};
+    border-color: {ACCENT};
     font-weight: bold;
-}
+}}
+QPushButton:disabled {{
+    color: palette(placeholder-text);
+    border-color: palette(midlight);
+}}
 """
 
 

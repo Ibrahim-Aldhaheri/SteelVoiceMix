@@ -54,7 +54,7 @@ from .tabs.settings import SettingsTab
 from .tabs.sinks import SinksTab
 from .tabs.surround import SurroundTab
 from .update_checker import UpdateChecker
-from .widgets import GLOBAL_QSS, app_icon
+from .widgets import GLOBAL_QSS, app_icon, themed_icon
 
 log = logging.getLogger(__name__)
 
@@ -201,16 +201,29 @@ class MixerGUI(QMainWindow):
         self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.stack = QStackedWidget()
 
-        for label, widget in (
-            (self.tr("🏠   Home"), self.home_tab),
-            (self.tr("🔊   Sinks"), self.sinks_tab),
-            (self.tr("🎛   Equalizer"), self.eq_tab),
-            (self.tr("🎬   Surround"), self.surround_tab),
-            (self.tr("🎙   Microphone"), self.mic_tab),
-            (self.tr("🖥   Deck"), self.deck_tab),
-            (self.tr("⚙   Settings"), self.settings_tab),
+        # Icons come from the desktop icon theme (Breeze on KDE, our
+        # target) rather than emoji glyphs. Emoji depended on an emoji
+        # font being present, never matched the surrounding icon set,
+        # and degraded to tofu boxes where the font was missing.
+        # Several candidates per entry because icon naming differs
+        # between themes; themed_icon() falls back to a drawn dot.
+        for label, icon_names, widget in (
+            (self.tr("Home"), ("go-home", "user-home"), self.home_tab),
+            (self.tr("Sinks"),
+             ("audio-volume-high", "audio-speakers"), self.sinks_tab),
+            (self.tr("Equalizer"),
+             ("media-equalizer", "view-media-equalizer"), self.eq_tab),
+            (self.tr("Surround"),
+             ("audio-speakers", "speaker"), self.surround_tab),
+            (self.tr("Microphone"),
+             ("audio-input-microphone", "microphone"), self.mic_tab),
+            (self.tr("Deck"),
+             ("audio-card", "computer"), self.deck_tab),
+            (self.tr("Settings"),
+             ("configure", "preferences-system"), self.settings_tab),
         ):
             item = QListWidgetItem(label)
+            item.setIcon(themed_icon(*icon_names))
             self.nav.addItem(item)
             # Each tab page goes into a scroll area — Qt's QStackedWidget
             # gives every page the same fixed slot, and tabs vary widely

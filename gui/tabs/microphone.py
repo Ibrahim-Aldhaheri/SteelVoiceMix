@@ -44,7 +44,14 @@ from PySide6.QtWidgets import (
 )
 
 from ..settings import save as save_settings
-from ..widgets import NoWheelSlider, card, labelled_toggle
+from ..widgets import (
+    NoWheelSlider,
+    card,
+    collapsible_help,
+    labelled_toggle,
+    notice,
+    reflow_into_columns,
+)
 
 # Hidden until the sidetone HID write is verified across wireless
 # firmware revisions — currently the device may silently ignore it.
@@ -429,7 +436,8 @@ class MicrophoneTab(QWidget):
         )
         layout.addWidget(notes)
 
-        layout.addStretch(1)
+        # Independent effect cards, no reading order between them.
+        reflow_into_columns(layout, columns=2, keep_first=1)
 
     # ---------------------------------------------------- daemon-event hook
 
@@ -522,11 +530,11 @@ class MicrophoneTab(QWidget):
         slider_row.addWidget(slider, 1)
         slider_row.addWidget(value_lbl)
 
-        desc = QLabel(description)
-        desc.setWordWrap(True)
-        desc.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
-        )
+        # Each effect carried a permanently-expanded paragraph. Four of
+        # them stacked meant the page scrolled before you reached the
+        # last control, so the explanation now sits behind a "?" beside
+        # the title and the card keeps only its toggle and slider.
+        title_row, desc = collapsible_help(description, label=title)
 
         # LADSPA-plugin availability gate. Each feature needs a
         # specific plugin file installed; if it's missing, the
@@ -557,33 +565,25 @@ class MicrophoneTab(QWidget):
             # a modal with the full command sequence + a Copy
             # button — saves users from typing or screenshot-OCRing
             # commands they can't select directly.
-            warn_row = QHBoxLayout()
-            missing_lbl = QLabel(
-                self.tr(
-                    "⚠ Missing LADSPA plugin <code>{plugin}</code>. {hint}"
-                ).format(plugin=display_name, hint=install_hint)
-            )
-            missing_lbl.setWordWrap(True)
-            missing_lbl.setTextFormat(Qt.RichText)
-            missing_lbl.setOpenExternalLinks(True)
-            missing_lbl.setStyleSheet(
-                "font-size: 10px; color: #FF9800; padding-top: 4px;"
-            )
-            warn_row.addWidget(missing_lbl, 1)
+            info_btn = None
             if build_cmd:
-                info_btn = QPushButton(self.tr("ⓘ  Show install steps"))
-                info_btn.setStyleSheet(
-                    "font-size: 10px; padding: 4px 10px; "
-                    "border: 1px solid #FF9800; color: #FF9800;"
-                )
+                info_btn = QPushButton(self.tr("Install steps"))
                 info_btn.clicked.connect(
                     lambda _checked, cmd=build_cmd, t=title:
                         self._show_install_modal(t, cmd)
                 )
-                warn_row.addWidget(info_btn, 0, Qt.AlignTop)
-            contents.append(warn_row)
+            contents.append(
+                notice(
+                    self.tr("Missing LADSPA plugin {plugin}. {hint}").format(
+                        plugin=display_name, hint=install_hint,
+                    ),
+                    action=info_btn,
+                )
+            )
 
-        parent_layout.addWidget(card(title, *contents))
+        # title=None: the title already lives in title_row alongside the
+        # help toggle.
+        parent_layout.addWidget(card(None, title_row, *contents))
 
         # Debounce timer for this feature's slider drags.
         timer = QTimer(self)
