@@ -335,7 +335,7 @@ class MicrophoneTab(QWidget):
         # keeps the round-trip from feeling laggy without taxing
         # the scheduler.
         voice_btn_row = QHBoxLayout()
-        self.voice_test_btn = QPushButton(self.tr("🎧  Hear yourself (test mic)"))
+        self.voice_test_btn = QPushButton(self.tr("Hear yourself (test mic)"))
         self.voice_test_btn.setCheckable(True)
         self.voice_test_btn.setMaximumWidth(280)
         self.voice_test_btn.toggled.connect(self._on_voice_test_toggled)
@@ -727,9 +727,9 @@ class MicrophoneTab(QWidget):
         finally:
             self.voice_test_btn.blockSignals(was_blocked)
         self.voice_test_btn.setText(
-            self.tr("🛑  Stop voice test")
+            self.tr("Stop voice test")
             if running
-            else self.tr("🎧  Hear yourself (test mic)")
+            else self.tr("Hear yourself (test mic)")
         )
 
     # ---------------------------------------------------- install modal
@@ -777,7 +777,7 @@ class MicrophoneTab(QWidget):
         layout.addWidget(text_edit, 1)
 
         btn_row = QHBoxLayout()
-        copy_btn = QPushButton(self.tr("📋  Copy to clipboard"))
+        copy_btn = QPushButton(self.tr("Copy to clipboard"))
         copy_btn.clicked.connect(
             lambda: self._copy_to_clipboard_with_feedback(
                 command_text, copy_btn

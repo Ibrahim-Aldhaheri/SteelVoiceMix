@@ -197,18 +197,20 @@ class SinksTab(QWidget):
 
         # Virtual sinks card -------------------------------------------
         media_row = QHBoxLayout()
-        media_lbl = QLabel(self.tr("🎵  Media"))
+        media_lbl = QLabel(self.tr("Media"))
         media_lbl.setFixedWidth(80)
         self.media_btn = QPushButton(self.tr("Add Media"))
         self.media_btn.clicked.connect(self._toggle_media)
         media_row.addWidget(media_lbl)
-        media_row.addWidget(self.media_btn, 1)
+        self.media_btn.setMinimumWidth(150)
+        media_row.addWidget(self.media_btn)
+        media_row.addStretch(1)
 
         # HDMI is marked ALPHA — author hasn't actually run it through
         # a real TV/AVR yet. Functionality wires up; the badge tells
         # users to expect rough edges until it's hardware-verified.
         hdmi_row = QHBoxLayout()
-        hdmi_lbl = QLabel(self.tr("📺  HDMI"))
+        hdmi_lbl = QLabel(self.tr("HDMI"))
         hdmi_lbl.setFixedWidth(80)
         hdmi_alpha = alpha_badge(
             tooltip=self.tr(
@@ -220,7 +222,9 @@ class SinksTab(QWidget):
         self.hdmi_btn.clicked.connect(self._toggle_hdmi)
         hdmi_row.addWidget(hdmi_lbl)
         hdmi_row.addWidget(hdmi_alpha, 0)
-        hdmi_row.addWidget(self.hdmi_btn, 1)
+        self.hdmi_btn.setMinimumWidth(150)
+        hdmi_row.addWidget(self.hdmi_btn)
+        hdmi_row.addStretch(1)
 
         sinks_help = QLabel(
             self.tr(
@@ -229,6 +233,7 @@ class SinksTab(QWidget):
                 "of the headset."
             )
         )
+        sinks_help.setWordWrap(True)
         sinks_help.setStyleSheet(
             "font-size: 10px; color: palette(placeholder-text);"
         )
@@ -259,10 +264,10 @@ class SinksTab(QWidget):
         # (they're the headset's own sinks). Media/HDMI follow the
         # corresponding sink's loaded state — see _refresh_boost_avail.
         self._boost_rows: dict[str, _ChannelBoostRow] = {
-            "game": _ChannelBoostRow("game", self.tr("🎮  Game"), daemon_client),
-            "chat": _ChannelBoostRow("chat", self.tr("💬  Chat"), daemon_client),
-            "media": _ChannelBoostRow("media", self.tr("🎵  Media"), daemon_client),
-            "hdmi": _ChannelBoostRow("hdmi", self.tr("📺  HDMI"), daemon_client),
+            "game": _ChannelBoostRow("game", self.tr("Game"), daemon_client),
+            "chat": _ChannelBoostRow("chat", self.tr("Chat"), daemon_client),
+            "media": _ChannelBoostRow("media", self.tr("Media"), daemon_client),
+            "hdmi": _ChannelBoostRow("hdmi", self.tr("HDMI"), daemon_client),
         }
         boost_help = QLabel(
             self.tr(
@@ -338,7 +343,7 @@ class SinksTab(QWidget):
                 bool(settings.get(f"redirect_{kind}_enabled", False))
             )
             combo = QComboBox()
-            combo.setMinimumWidth(280)
+            combo.setMinimumWidth(200)
             combo.setEnabled(toggle.isChecked())
             self._populate_redirect_combo(combo, kind, settings)
             toggle.toggled.connect(
@@ -373,7 +378,7 @@ class SinksTab(QWidget):
         )
 
         refresh_row = QHBoxLayout()
-        refresh_btn = QPushButton(self.tr("🔄  Refresh device lists"))
+        refresh_btn = QPushButton(self.tr("Refresh device lists"))
         refresh_btn.setToolTip(
             self.tr("Re-enumerate available sinks and sources via pactl.")
         )
@@ -465,9 +470,9 @@ class SinksTab(QWidget):
             self.tr("Remove Media") if enabled else self.tr("Add Media")
         )
         self.media_btn.setToolTip(
-            "Destroy the SteelMedia virtual sink"
+            self.tr("Remove the Media output")
             if enabled
-            else "Create a SteelMedia virtual sink that bypasses the ChatMix dial"
+            else self.tr("Add a Media output that bypasses the ChatMix dial")
         )
         self._refresh_boost_avail()
 
@@ -477,9 +482,9 @@ class SinksTab(QWidget):
             self.tr("Remove HDMI") if enabled else self.tr("Add HDMI")
         )
         self.hdmi_btn.setToolTip(
-            "Destroy the SteelHDMI virtual sink"
+            self.tr("Remove the HDMI output")
             if enabled
-            else "Create a SteelHDMI virtual sink that loops to your HDMI output"
+            else self.tr("Add an HDMI output that loops to your HDMI device")
         )
         self._refresh_boost_avail()
 

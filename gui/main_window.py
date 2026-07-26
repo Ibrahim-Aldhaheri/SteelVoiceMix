@@ -143,7 +143,7 @@ class MixerGUI(QMainWindow):
         title.setStyleSheet("font-size: 14px; font-weight: bold;")
         header.addWidget(title)
         header.addStretch(1)
-        self.status_label = QLabel(self.tr("🔍  Connecting…"))
+        self.status_label = QLabel(self.tr("Connecting…"))
         self.status_label.setObjectName("status-pill")
         self.status_label.setProperty("state", "")
         self.status_label.setAlignment(Qt.AlignCenter)
@@ -238,7 +238,12 @@ class MixerGUI(QMainWindow):
             scroller.setWidget(widget)
             scroller.setWidgetResizable(True)
             scroller.setFrameShape(QScrollArea.NoFrame)
-            scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            # As-needed, not AlwaysOff: at the minimum window width some
+            # pages (Sinks, Deck) are wider than the viewport, and
+            # AlwaysOff silently clipped controls off the right edge. A
+            # scrollbar that appears only when required is far better
+            # than invisible, unreachable controls.
+            scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
             self.stack.addWidget(scroller)
         self.nav.setCurrentRow(0)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
@@ -539,7 +544,7 @@ class MixerGUI(QMainWindow):
 
     def _on_battery_for_tray(self, level: int, status: str) -> None:
         if self.has_tray:
-            self.tray.setToolTip(f"{DISPLAY_NAME} — 🔋 {level}% ({status})")
+            self.tray.setToolTip(f"{DISPLAY_NAME} — {level}% ({status})")
 
     def _on_chatmix(self, game_vol: int, chat_vol: int) -> None:
         self.home_tab.on_chatmix(game_vol, chat_vol)

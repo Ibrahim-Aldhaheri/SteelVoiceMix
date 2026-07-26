@@ -188,7 +188,7 @@ class DeckTab(QWidget):
 
     def _build_oled_card(self) -> QWidget:
         row = QHBoxLayout()
-        icon = QLabel("💡")
+        icon = QLabel("")
         icon.setFixedWidth(36)
         icon.setStyleSheet("font-size: 18px;")
         self.oled_brightness_slider = _ten_step_slider(8, self._daemon is not None)
@@ -232,7 +232,7 @@ class DeckTab(QWidget):
         # Transparent intensity only audibly affects the headset in
         # transparent mode; gate the slider's enabled-state on that.
         slider_row = QHBoxLayout()
-        slider_icon = QLabel("🎚")
+        slider_icon = QLabel("")
         slider_icon.setFixedWidth(36)
         slider_icon.setStyleSheet("font-size: 16px;")
         self.anc_transparent_slider = _ten_step_slider(5, enabled=False)

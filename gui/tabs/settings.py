@@ -262,7 +262,7 @@ class SettingsTab(QWidget):
             "font-family: monospace; padding: 4px 8px; "
             "background: palette(base); border-radius: 4px;"
         )
-        copy_cmd_btn = QPushButton(self.tr("📋  Copy command"))
+        copy_cmd_btn = QPushButton(self.tr("Copy command"))
         copy_cmd_btn.setMaximumWidth(160)
         copy_cmd_btn.clicked.connect(self._copy_sink_cycle_cmd)
         cmd_row.addWidget(cmd_lbl, 1)
@@ -333,7 +333,7 @@ class SettingsTab(QWidget):
         self.minimize_toggle.toggled.connect(self._toggle_minimize_hint)
 
         daemon_notif_row, self.daemon_notif_toggle = labelled_toggle(
-            self.tr("Show 🎧 connect / disconnect notifications"),
+            self.tr("Show connect / disconnect notifications"),
             tooltip=self.tr(
                 "Desktop notifications emitted by the daemon when the "
                 "base station connects or drops. Distinct from the "
@@ -425,12 +425,12 @@ class SettingsTab(QWidget):
         alpha_title_row.addStretch(1)
 
         alpha_btns = QHBoxLayout()
-        self.alpha_enable_btn = QPushButton(self.tr("📋 Switch to alpha"))
+        self.alpha_enable_btn = QPushButton(self.tr("Switch to alpha"))
         self.alpha_enable_btn.setToolTip(
             self.tr("Copy the dnf commands that swap to the alpha COPR repo.")
         )
         self.alpha_enable_btn.clicked.connect(self._copy_alpha_enable)
-        self.alpha_disable_btn = QPushButton(self.tr("📋 Back to stable"))
+        self.alpha_disable_btn = QPushButton(self.tr("Back to stable"))
         self.alpha_disable_btn.setToolTip(
             self.tr("Copy the dnf commands that switch back to the stable repo.")
         )
@@ -461,7 +461,7 @@ class SettingsTab(QWidget):
 
         # Help / Report issue card -----------------------------------
         help_row = QHBoxLayout()
-        self.report_btn = QPushButton(self.tr("📋  Copy diagnostic + open new issue"))
+        self.report_btn = QPushButton(self.tr("Copy diagnostic + open new issue"))
         self.report_btn.setToolTip(
             self.tr(
                 "Captures the daemon's recent journal output, the GUI "

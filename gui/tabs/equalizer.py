@@ -57,6 +57,7 @@ from ..settings import (
 )
 from ..widgets import (
     NoWheelComboBox,
+    themed_icon,
     NoWheelSlider,
     card,
     labelled_toggle,
@@ -632,10 +633,11 @@ class EqualizerTab(QWidget):
             self.test_audio_combo.addItem(self.tr(label))
         self.test_audio_combo.setMinimumWidth(200)
         test_row.addWidget(self.test_audio_combo, 1)
-        self.test_play_btn = QPushButton(self.tr("▶ Play"))
+        self.test_play_btn = QPushButton(self.tr("Play"))
+        self.test_play_btn.setIcon(themed_icon("media-playback-start"))
         self.test_play_btn.clicked.connect(self._on_test_play)
-        self.test_stop_btn = QPushButton("⏹")
-        self.test_stop_btn.setFixedWidth(36)
+        self.test_stop_btn = QPushButton(self.tr("Stop"))
+        self.test_stop_btn.setIcon(themed_icon("media-playback-stop"))
         self.test_stop_btn.clicked.connect(self._on_test_stop)
         self.test_stop_btn.setEnabled(False)
         test_row.addWidget(self.test_play_btn)
