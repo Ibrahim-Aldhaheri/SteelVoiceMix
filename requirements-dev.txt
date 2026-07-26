@@ -1,0 +1,5 @@
+# Development / CI-only Python dependencies. The shipped RPM uses the
+# distribution's PySide6 (Recommends: python3-pyside6); this file is for
+# running the offscreen GUI test suite in CI and locally.
+PySide6-Essentials>=6.6
+pytest>=7.4
