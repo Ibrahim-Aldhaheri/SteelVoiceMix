@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use crate::filter_chain::{FilterChainHandle, FilterChainSpec};
 use crate::mic_chain::{MicChainHandle, MicChainSpec};
 use crate::protocol::{EqBand, EqChannel, EqState, MicState, NUM_BANDS};
-use crate::surround_chain::{SurroundChainHandle, SurroundChainSpec};
+use crate::surround_chain::{SurroundChainHandle, SurroundChainSpec, SurroundGains};
 
 pub const GAME_SINK: &str = "SteelGame";
 pub const CHAT_SINK: &str = "SteelChat";
@@ -99,6 +99,13 @@ pub struct SinkManager {
     /// User-supplied HRIR WAV path. None means surround is unconfigured
     /// — `enable_surround` will refuse until this is set.
     surround_hrir: Option<PathBuf>,
+    /// Per-channel level trims (dB) for the surround stage editor,
+    /// keyed by channel: FL FR FC LFE RL RR SL SR. Baked into the chain
+    /// config as gain nodes; a change respawns the chain, exactly like
+    /// an EQ band change respawns its channel chain. Direction is fixed
+    /// by the HRIR and is NOT represented here — only level. See
+    /// surround_chain::render_conf and STATUS.md.
+    surround_gains: SurroundGains,
     /// Live surround chain handle when the chain is running. Dropping
     /// it kills the spawned pipewire child and removes the conf file.
     surround_chain: Option<SurroundChainHandle>,
@@ -153,6 +160,7 @@ impl SinkManager {
             eq_state,
             surround_enabled,
             surround_hrir,
+            surround_gains: SurroundGains::default(),
             surround_chain: None,
             mic_state,
             mic_chain: None,
@@ -657,6 +665,7 @@ impl SinkManager {
         let spec = SurroundChainSpec {
             hrir_path: &path,
             playback_target: &headset,
+            gains: &self.surround_gains,
         };
         match SurroundChainHandle::spawn(&spec) {
             Some(handle) => {
@@ -672,6 +681,53 @@ impl SinkManager {
                 );
             }
         }
+    }
+
+    /// Re-apply the current gains by respawning the surround chain if it
+    /// is running. Same respawn-on-change discipline as the EQ chain —
+    /// the `linear` gain nodes are config-time, so a change is picked up
+    /// by regenerating the conf and restarting the child. No-op when the
+    /// chain isn't up (the gains still persist for the next spawn).
+    fn respawn_surround_if_running(&mut self) {
+        if self.surround_chain.is_none() {
+            return;
+        }
+        if let Some(handle) = self.surround_chain.take() {
+            handle.shutdown();
+        }
+        self.spawn_surround_chain();
+        if self.surround_chain.is_some() {
+            self.rewire_all_headphone_channels();
+        }
+    }
+
+    /// Set one surround channel's level (dB). Clamped to the editable
+    /// range inside `SurroundGains`. Returns false for an unknown key.
+    /// Direction is HRIR-fixed and intentionally not adjustable here.
+    pub fn set_surround_channel_gain(&mut self, channel: &str, gain_db: f32) -> bool {
+        if !self.surround_gains.set_gain(channel, gain_db) {
+            warn!("Unknown surround channel: {channel}");
+            return false;
+        }
+        self.respawn_surround_if_running();
+        true
+    }
+
+    pub fn set_surround_channel_mute(&mut self, channel: &str, muted: bool) -> bool {
+        if !self.surround_gains.set_mute(channel, muted) {
+            warn!("Unknown surround channel: {channel}");
+            return false;
+        }
+        self.respawn_surround_if_running();
+        true
+    }
+
+    /// Solo one channel (empty string clears). A monitoring aid — the
+    /// soloed channel plays, the rest are silenced until solo clears.
+    pub fn set_surround_solo(&mut self, channel: &str) {
+        let key = if channel.is_empty() { None } else { Some(channel) };
+        self.surround_gains.set_solo(key);
+        self.respawn_surround_if_running();
     }
 
     /// Where the headphone-path channels (Game / Chat / Media) should

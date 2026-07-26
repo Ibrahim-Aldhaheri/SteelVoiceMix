@@ -158,7 +158,7 @@ class MixerGUI(QMainWindow):
         self.voice_test = VoiceTestService(self)
         self.home_tab = HomeTab(self.daemon_client)
         self.sinks_tab = SinksTab(self.daemon_client)
-        self.surround_tab = SurroundTab(self.daemon_client)
+        self.surround_tab = SurroundTab(self.daemon_client, self.settings)
         self.deck_tab = DeckTab(self.daemon_client)
         self.mic_tab = MicrophoneTab(
             self.daemon_client, self.settings, self.voice_test,
@@ -396,6 +396,9 @@ class MixerGUI(QMainWindow):
         )
         self.signals.pm_shutdown_changed.connect(
             self.deck_tab.on_pm_shutdown_changed
+        )
+        self.signals.device_variant_changed.connect(
+            self.surround_tab.on_device_variant_changed
         )
         self.signals.device_variant_changed.connect(
             self.deck_tab.on_device_variant_changed

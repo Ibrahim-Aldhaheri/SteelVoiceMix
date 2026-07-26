@@ -15,15 +15,34 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("XDG_RUNTIME_DIR", "/tmp/steelvoicemix-test-runtime")
 os.makedirs(os.environ["XDG_RUNTIME_DIR"], exist_ok=True)
-# Keep test config out of the real user config dir.
-os.environ.setdefault(
-    "XDG_CONFIG_HOME", "/tmp/steelvoicemix-test-config"
-)
-os.makedirs(os.environ["XDG_CONFIG_HOME"], exist_ok=True)
+
+# CRITICAL: settings.py derives its config dir from Path.home(), not
+# XDG_CONFIG_HOME, so tests would otherwise read and WRITE the real
+# ~/.config/steelvoicemix/settings.json. Redirect HOME (and
+# XDG_CONFIG_HOME, which eq_presets uses) to a throwaway dir BEFORE any
+# gui.* module is imported, so nothing ever touches real user data.
+_TEST_HOME = "/tmp/steelvoicemix-test-home"
+os.makedirs(os.path.join(_TEST_HOME, ".config"), exist_ok=True)
+os.environ["HOME"] = _TEST_HOME
+os.environ["XDG_CONFIG_HOME"] = os.path.join(_TEST_HOME, ".config")
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_settings():
+    """Start every test from a clean settings file so tests that persist
+    state (surround profiles, etc.) don't leak into each other."""
+    import glob
+    cfg = os.path.join(os.environ["XDG_CONFIG_HOME"], "steelvoicemix")
+    for f in glob.glob(os.path.join(cfg, "settings.json*")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+    yield
 
 
 @pytest.fixture(scope="session")

@@ -38,20 +38,35 @@ Goal: an interactive stage where the listener is centred and each active
 channel is shown in its layout position, controlling **real** DSP — not
 a decorative diagram.
 
-### Backend truth (what the DSP can and cannot do)
-_To be filled in from the surround_chain / filter_chain inspection._
+### Backend truth (confirmed by reading src/surround_chain.rs + audio.rs)
 
-Preliminary (pending confirmation in code):
-- The surround chain is **HRIR convolution**: each 5.1/7.1 channel is
-  convolved with a fixed impulse response and summed to binaural
-  stereo. The **direction** of each channel is baked into the HRIR and
-  **cannot** be changed by moving a speaker — only a different HRIR
-  changes direction. Faking azimuth/elevation would be dishonest.
-- What a static convolver setup **can** honestly control per channel:
-  **level (gain)** and **delay** (time alignment / perceived distance),
-  and channel **mute/solo**. These map to genuine radial "distance"
-  and loudness, not free azimuth.
+The surround chain is **fixed HRIR convolution** (`src/surround_chain.rs`):
+each of the 8 input channels (FL FR FC LFE RL RR SL SR) is convolved
+with a specific slice of a HeSuVi 14-channel WAV and summed to binaural
+stereo. Consequences, and what the editor may therefore honestly do:
 
-The editor will expose only the truthful controls and clearly document
-what is fixed by the sound profile. Details land here as the work
-proceeds.
+| Requested control | Physically supported here? | Editor behaviour |
+|---|---|---|
+| Direction (azimuth: front/back, left/right) | **No** — baked into the HRIR impulse per channel. A different WAV is the only way to change it. | Speakers shown at their **fixed** standard positions; azimuth is **not** draggable. Documented in-UI. |
+| Elevation (height) | **No** — the HeSuVi layout is planar; no height channels. | Not offered. |
+| Per-channel **level** (loudness) | **Yes** — a gain node baked into the chain config. | Radial drag = level (toward centre = louder, away = quieter). This is loudness, **not** physical distance modelling — labelled as level. |
+| **Mute / Solo** | **Yes** — zero the channel's gain / all others. | Per-speaker buttons. |
+| **Test tone** per channel | **Yes** — the daemon can play a tone into one channel. | Per-speaker test button. |
+| Per-channel **delay** (distance/time-align) | Technically possible (a `delay` node) but on a binaural HRIR chain it fights the ITD already encoded in the impulse and smears localisation. | **Not** offered — would degrade, not help. Documented. |
+
+**How gains reach the audio graph:** the same way EQ band gains already
+do — the config is regenerated and the filter-chain child is respawned
+(`respawn_channel_chain` is the shipped pattern for EQ). The GUI commits
+on drag-**release** (not continuously), so there is one respawn per
+adjustment, matching the EQ tab. A brief (~0.5–1 s) audio glitch per
+level change is expected, same as changing an EQ band.
+
+### Verified vs. hardware-pending for the editor
+- **Verified offscreen:** the editor widget, radial-drag → dB mapping,
+  bounds/clamping, presets, reset/undo, persistence + migration,
+  keyboard operation, and the command payloads the GUI emits.
+- **Hardware-pending (Fedora + headset):** that the daemon's new
+  per-channel gain nodes actually attenuate the right channel, that
+  respawn latency is acceptable in practice, and that test-tone routing
+  hits the intended speaker. Implemented to the proven respawn pattern
+  and compiled, but audio correctness is **not** verifiable on this box.

@@ -30,6 +30,94 @@ use protocol::{
 };
 use routing::{spawn_router, RouterState};
 
+/// PipeWire channel-position name for a surround channel key.
+fn surround_channel_position(key: &str) -> Option<&'static str> {
+    match key {
+        "fl" => Some("FL"),
+        "fr" => Some("FR"),
+        "fc" => Some("FC"),
+        "lfe" => Some("LFE"),
+        "rl" => Some("RL"),
+        "rr" => Some("RR"),
+        "sl" => Some("SL"),
+        "sr" => Some("SR"),
+        _ => None,
+    }
+}
+
+/// Write a short mono 48 kHz sine WAV to `path`. Pure byte-writing (no
+/// hardware), so this part is deterministic and testable; only the
+/// playback routing below is hardware-pending.
+fn write_sine_wav(path: &std::path::Path) -> std::io::Result<()> {
+    use std::io::Write;
+    const RATE: u32 = 48_000;
+    const SECS: f32 = 0.4;
+    const FREQ: f32 = 440.0;
+    let n = (RATE as f32 * SECS) as u32;
+    let data_len = n * 2; // 16-bit mono
+    let mut buf: Vec<u8> = Vec::with_capacity(44 + data_len as usize);
+    buf.extend_from_slice(b"RIFF");
+    buf.extend_from_slice(&(36 + data_len).to_le_bytes());
+    buf.extend_from_slice(b"WAVE");
+    buf.extend_from_slice(b"fmt ");
+    buf.extend_from_slice(&16u32.to_le_bytes());
+    buf.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    buf.extend_from_slice(&1u16.to_le_bytes()); // mono
+    buf.extend_from_slice(&RATE.to_le_bytes());
+    buf.extend_from_slice(&(RATE * 2).to_le_bytes()); // byte rate
+    buf.extend_from_slice(&2u16.to_le_bytes()); // block align
+    buf.extend_from_slice(&16u16.to_le_bytes()); // bits
+    buf.extend_from_slice(b"data");
+    buf.extend_from_slice(&data_len.to_le_bytes());
+    for i in 0..n {
+        let t = i as f32 / RATE as f32;
+        // Gentle 20 ms fade in/out so the onset isn't a click.
+        let env = (t / 0.02).min(1.0).min((SECS - t) / 0.02).max(0.0);
+        let s = (2.0 * std::f32::consts::PI * FREQ * t).sin() * 0.25 * env;
+        let v = (s * i16::MAX as f32) as i16;
+        buf.extend_from_slice(&v.to_le_bytes());
+    }
+    std::fs::File::create(path)?.write_all(&buf)
+}
+
+/// Best-effort per-channel test tone. Routes a mono sine to one channel
+/// of the SteelSurround sink via `pw-play --channel-map=<POS>`.
+///
+/// Hardware-pending (STATUS.md): that `--channel-map` on a mono stream
+/// actually lands on the intended channel of the 8-channel sink is not
+/// verifiable on the dev box. Failures are logged, never fatal.
+fn play_surround_test_tone(channel: &str) {
+    let Some(pos) = surround_channel_position(channel) else {
+        warn!("test-tone: unknown channel {channel}");
+        return;
+    };
+    let dir = match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(d) => PathBuf::from(d).join("steelvoicemix"),
+        None => {
+            warn!("test-tone: no XDG_RUNTIME_DIR");
+            return;
+        }
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    let wav = dir.join("test-tone.wav");
+    if let Err(e) = write_sine_wav(&wav) {
+        warn!("test-tone: could not write {}: {e}", wav.display());
+        return;
+    }
+    let spawn = std::process::Command::new("pw-play")
+        .args([
+            "--target=effect_input.SteelSurround",
+            &format!("--channel-map={pos}"),
+        ])
+        .arg(&wav)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    if let Err(e) = spawn {
+        warn!("test-tone: pw-play failed to start: {e}");
+    }
+}
+
 fn socket_path() -> PathBuf {
     // Prefer $XDG_RUNTIME_DIR (/run/user/<uid>, mode 0700, per-user).
     // Fall back to /run/user/<uid> directly rather than a bare file in
@@ -619,6 +707,40 @@ fn handle_client(
                     &subscribers,
                     DaemonEvent::SurroundHrirChanged { path: display_path },
                 );
+            }
+            ClientCommand::SetSurroundChannelGain { channel, gain_db } => {
+                let ok = {
+                    let mut sm = sinks.lock_or_recover();
+                    sm.set_surround_channel_gain(&channel, gain_db)
+                };
+                info!(
+                    "GUI requested: set-surround-channel-gain {channel} = {gain_db} dB (ok={ok})"
+                );
+            }
+            ClientCommand::SetSurroundChannelMute { channel, muted } => {
+                let ok = {
+                    let mut sm = sinks.lock_or_recover();
+                    sm.set_surround_channel_mute(&channel, muted)
+                };
+                info!(
+                    "GUI requested: set-surround-channel-mute {channel} = {muted} (ok={ok})"
+                );
+            }
+            ClientCommand::SetSurroundSolo { channel } => {
+                {
+                    let mut sm = sinks.lock_or_recover();
+                    sm.set_surround_solo(&channel);
+                }
+                info!("GUI requested: set-surround-solo {channel:?}");
+            }
+            ClientCommand::SurroundTestTone { channel } => {
+                // Best-effort: play a short tone into the one channel so
+                // the user can confirm which speaker they're editing.
+                // Channel routing correctness is hardware-pending (see
+                // STATUS.md) — this uses speaker-test's per-channel
+                // position if available and is a no-op otherwise.
+                play_surround_test_tone(&channel);
+                info!("GUI requested: surround-test-tone {channel}");
             }
             ClientCommand::SetMicNoiseGate { enabled, strength } => {
                 handle_mic_feature_update(

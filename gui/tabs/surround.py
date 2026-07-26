@@ -1,19 +1,23 @@
-"""Surround tab — virtual 7.1 over headphones.
+"""Surround tab — plain-language on/off, sound profile, and an
+interactive stage editor for per-channel levels.
 
-Rewritten for a non-technical audience. The mechanism (HRIR convolution
-of a 7.1 stream into binaural stereo via a PipeWire filter chain) is
-unchanged and the daemon commands are identical; only the framing is
-different. The page now reads as a three-step flow — what it does, pick
-a sound profile, turn it on — with the jargon (HRIR, HeSuVi,
-Impulcifer) tucked behind a "?" for people who want it.
+Honesty (see STATUS.md): the stage shows every channel at its FIXED
+direction (set by the HRIR sound profile). Dragging a speaker changes
+its LEVEL only, never its direction; azimuth/elevation aren't ours to
+change with a static convolver. Per-channel level maps to a real gain
+node in the surround chain, committed on release (one respawn per
+adjustment, like the EQ tab).
 """
 
 from __future__ import annotations
 
 import os
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QDoubleSpinBox,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -24,27 +28,49 @@ from PySide6.QtWidgets import (
 )
 
 from ..hrir_default import bundled_default_path, has_default
+from ..surround_model import (
+    GAIN_MAX_DB,
+    GAIN_MIN_DB,
+    PRESET_LABELS,
+    apply_preset,
+    clamp_db,
+    default_channels,
+    deserialize,
+    serialize,
+)
+from ..surround_stage import SurroundStage
 from ..widgets import (
     ACCENT,
+    NoWheelComboBox,
     card,
     collapsible_help,
     help_text,
     labelled_toggle,
+    notice,
+    section_title,
+    themed_icon,
 )
+
+# Settings key holding per-device level profiles:
+# { "<device-variant>": { "<channel>": {gain_db, muted} } }
+_PROFILES_KEY = "surround_channel_profiles"
 
 
 class SurroundTab(QWidget):
-    def __init__(self, daemon_client, parent=None):
+    def __init__(self, daemon_client, settings: dict | None = None, parent=None):
         super().__init__(parent)
         self._daemon = daemon_client
+        self._settings = settings if settings is not None else {}
         self._enabled: bool = False
         self._hrir_path: str = ""
+        self._device_variant: str = "wireless"
+        self._undo_stack: list[dict] = []
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         layout.setContentsMargins(16, 16, 16, 16)
 
-        # --- What it does + the on/off switch, together at the top ---
+        # --- What it does + on/off ---
         intro = help_text(
             self.tr(
                 "Makes 5.1 and 7.1 games and movies sound like they come "
@@ -56,79 +82,150 @@ class SurroundTab(QWidget):
             self.tr(
                 "Technically: apps see a SteelSurround 7.1 output; PipeWire "
                 "convolves each channel with an HRIR (head-related impulse "
-                "response) file and mixes the result down to binaural "
-                "stereo. HeSuVi-format 14-channel WAVs work; for tuned "
-                "positioning use a HeSuVi release (Atmos / DTS Headphone) "
-                "or a personalised HRTF from Impulcifer."
+                "response) file and mixes the result to binaural stereo. "
+                "The direction of each channel is fixed by that file — the "
+                "stage below adjusts each channel's level, not its "
+                "direction. HeSuVi-format WAVs work; personalise with "
+                "Impulcifer for tighter positioning."
             ),
             label=self.tr("Virtual Surround"),
         )
-
         toggle_row, self.enable_toggle = labelled_toggle(
             self.tr("Turn on virtual surround"),
         )
         self.enable_toggle.setEnabled(False)
         self.enable_toggle.toggled.connect(self._on_toggled)
-
-        self.status_label = help_text(
-            self.tr("Choose a sound profile below first.")
-        )
-
+        self.status_label = help_text(self.tr("Choose a sound profile below first."))
         layout.addWidget(card(
             None, tech_row, tech_body, intro, toggle_row, self.status_label,
         ))
 
-        # --- Sound profile picker ---
+        # --- Sound profile ---
         profile_help = help_text(
             self.tr(
-                "Surround needs a sound profile that describes how audio "
-                "should reach your ears. Use the built-in one to get "
-                "started, or load your own."
+                "Surround needs a sound profile that sets how audio reaches "
+                "your ears — and fixes each channel's direction. Use the "
+                "built-in one to get started, or load your own."
             )
         )
         path_row = QHBoxLayout()
         self.path_edit = QLineEdit()
         self.path_edit.setReadOnly(True)
         self.path_edit.setPlaceholderText(self.tr("No profile selected"))
-        self.path_edit.setMinimumWidth(220)
+        self.path_edit.setMinimumWidth(200)
         path_row.addWidget(self.path_edit, 1)
-
         self.default_btn = QPushButton(self.tr("Use built-in profile"))
         self.default_btn.setProperty("cta", True)
-        self.default_btn.setToolTip(
-            self.tr(
-                "Use the bundled reference profile (EAC_Default.wav). Good "
-                "for casual use; you can switch to your own file anytime."
-            )
-        )
         self.default_btn.clicked.connect(self._on_use_default)
         path_row.addWidget(self.default_btn)
-
         self.browse_btn = QPushButton(self.tr("Choose file…"))
-        self.browse_btn.setToolTip(
-            self.tr("Load your own HRIR WAV (HeSuVi format).")
-        )
         self.browse_btn.clicked.connect(self._on_browse)
         path_row.addWidget(self.browse_btn)
-
         self.clear_btn = QPushButton(self.tr("Remove"))
         self.clear_btn.clicked.connect(self._on_clear)
         self.clear_btn.setEnabled(False)
         path_row.addWidget(self.clear_btn)
+        layout.addWidget(card(self.tr("Sound profile"), profile_help, path_row))
 
-        layout.addWidget(card(
-            self.tr("Sound profile"), profile_help, path_row,
-        ))
+        # --- Stage editor ---
+        self._stage_card = self._build_stage_card()
+        layout.addWidget(self._stage_card)
+        self._stage_card.setVisible(False)
 
         layout.addStretch(1)
 
-    # ---------------------------------------------------- daemon-event hooks
+        self._load_profile_for_device()
+
+    # ----------------------------------------------------------- stage UI
+
+    def _build_stage_card(self) -> QWidget:
+        self.stage = SurroundStage()
+        self.stage.gain_changing.connect(self._on_gain_changing)
+        self.stage.gain_committed.connect(self._on_gain_committed)
+        self.stage.selection_changed.connect(self._on_selection_changed)
+
+        # Right-side control panel for the selected speaker.
+        panel = QVBoxLayout()
+        panel.setSpacing(8)
+        panel.addWidget(section_title(self.tr("Selected speaker")))
+        self.sel_name = QLabel(self.tr("Center"))
+        self.sel_name.setStyleSheet("font-size: 14px; font-weight: bold;")
+        panel.addWidget(self.sel_name)
+
+        level_row = QHBoxLayout()
+        level_row.addWidget(QLabel(self.tr("Level")))
+        self.level_spin = QDoubleSpinBox()
+        self.level_spin.setRange(GAIN_MIN_DB, GAIN_MAX_DB)
+        self.level_spin.setSingleStep(0.5)
+        self.level_spin.setSuffix(self.tr(" dB"))
+        self.level_spin.setDecimals(1)
+        self.level_spin.valueChanged.connect(self._on_spin_changed)
+        level_row.addWidget(self.level_spin, 1)
+        panel.addLayout(level_row)
+
+        btn_row = QHBoxLayout()
+        self.mute_btn = QPushButton(self.tr("Mute"))
+        self.mute_btn.setCheckable(True)
+        self.mute_btn.toggled.connect(self._on_mute_toggled)
+        self.solo_btn = QPushButton(self.tr("Solo"))
+        self.solo_btn.setCheckable(True)
+        self.solo_btn.toggled.connect(self._on_solo_toggled)
+        self.test_btn = QPushButton(self.tr("Test"))
+        self.test_btn.setIcon(themed_icon("media-playback-start"))
+        self.test_btn.clicked.connect(self._on_test)
+        btn_row.addWidget(self.mute_btn)
+        btn_row.addWidget(self.solo_btn)
+        btn_row.addWidget(self.test_btn)
+        panel.addLayout(btn_row)
+
+        panel.addWidget(help_text(
+            self.tr(
+                "Drag a speaker toward you to make it louder, away to make "
+                "it quieter. Direction is set by the sound profile and "
+                "can't be moved here."
+            )
+        ))
+        panel.addStretch(1)
+
+        # Presets + reset/undo.
+        tools = QHBoxLayout()
+        tools.addWidget(QLabel(self.tr("Preset")))
+        self.preset_combo = NoWheelComboBox()
+        for key, label in PRESET_LABELS.items():
+            self.preset_combo.addItem(label, key)
+        tools.addWidget(self.preset_combo, 1)
+        self.apply_preset_btn = QPushButton(self.tr("Apply"))
+        self.apply_preset_btn.clicked.connect(self._on_apply_preset)
+        tools.addWidget(self.apply_preset_btn)
+        self.undo_btn = QPushButton(self.tr("Undo"))
+        self.undo_btn.setEnabled(False)
+        self.undo_btn.clicked.connect(self._on_undo)
+        tools.addWidget(self.undo_btn)
+        self.reset_btn = QPushButton(self.tr("Reset levels"))
+        self.reset_btn.clicked.connect(self._on_reset_levels)
+        tools.addWidget(self.reset_btn)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        grid.addWidget(self.stage, 0, 0)
+        panel_w = QWidget(); panel_w.setLayout(panel)
+        panel_w.setMinimumWidth(190)
+        grid.addWidget(panel_w, 0, 1)
+        grid.setColumnStretch(0, 3)
+        grid.setColumnStretch(1, 2)
+        grid_w = QWidget(); grid_w.setLayout(grid)
+
+        c = card(self.tr("Speaker levels"), grid_w, tools)
+        self._sync_panel()
+        return c
+
+    # ----------------------------------------------------- daemon hooks
 
     def on_enabled_changed(self, enabled: bool) -> None:
         self._enabled = enabled
-        was_blocked = self.enable_toggle.blockSignals(True)
+        was = self.enable_toggle.blockSignals(True)
         self.enable_toggle.setChecked(enabled)
-        self.enable_toggle.blockSignals(was_blocked)
+        self.enable_toggle.blockSignals(was)
         self._refresh_status_label()
 
     def on_hrir_changed(self, path: str) -> None:
@@ -136,19 +233,25 @@ class SurroundTab(QWidget):
         self.path_edit.setText(path)
         self.clear_btn.setEnabled(bool(path))
         self.enable_toggle.setEnabled(bool(path))
-        # Once a profile is chosen, the built-in button is no longer the
-        # primary call-to-action; de-emphasise it so "Turn on" leads.
+        self._stage_card.setVisible(bool(path))
         self.default_btn.setProperty("cta", not bool(path))
         self.default_btn.style().unpolish(self.default_btn)
         self.default_btn.style().polish(self.default_btn)
         if not path and self._enabled:
             self._enabled = False
-            was_blocked = self.enable_toggle.blockSignals(True)
+            was = self.enable_toggle.blockSignals(True)
             self.enable_toggle.setChecked(False)
-            self.enable_toggle.blockSignals(was_blocked)
+            self.enable_toggle.blockSignals(was)
         self._refresh_status_label()
 
-    # --------------------------------------------------------- input handlers
+    def on_device_variant_changed(self, variant: str) -> None:
+        """Per-device level profiles: reload when the device changes so a
+        wired and a wireless headset keep independent level trims."""
+        if variant and variant != self._device_variant:
+            self._device_variant = variant
+            self._load_profile_for_device()
+
+    # --------------------------------------------------- profile handlers
 
     def _on_use_default(self) -> None:
         if not has_default():
@@ -157,8 +260,7 @@ class SurroundTab(QWidget):
                 self.tr("Built-in profile missing"),
                 self.tr(
                     "The bundled sound profile is missing — your install "
-                    "may be incomplete. Try reinstalling, or load your own "
-                    "profile with Choose file."
+                    "may be incomplete. Load your own with Choose file."
                 ),
             )
             return
@@ -173,44 +275,178 @@ class SurroundTab(QWidget):
             if parent and os.path.isdir(parent):
                 start_dir = parent
         path, _ = QFileDialog.getOpenFileName(
-            self,
-            self.tr("Choose a sound profile (WAV)"),
-            start_dir,
+            self, self.tr("Choose a sound profile (WAV)"), start_dir,
             "WAV files (*.wav);;All files (*)",
         )
-        if not path:
-            return
-        self._daemon.send_command("set-surround-hrir", path=path)
+        if path:
+            self._daemon.send_command("set-surround-hrir", path=path)
 
     def _on_clear(self) -> None:
         self._daemon.send_command("set-surround-hrir", path=None)
 
     def _on_toggled(self, checked: bool) -> None:
+        self._daemon.send_command("set-surround-enabled", enabled=bool(checked))
+
+    # --------------------------------------------------- stage handlers
+
+    def _on_selection_changed(self, key: str) -> None:
+        self._sync_panel()
+
+    def _on_gain_changing(self, key: str, db: float) -> None:
+        # Live during drag: update the spinbox only, no daemon traffic.
+        if key == self.stage.selected():
+            self._sync_panel()
+
+    def _on_gain_committed(self, key: str, db: float) -> None:
+        # One daemon command + one save per adjustment (drag release).
+        self._push_undo()
         self._daemon.send_command(
-            "set-surround-enabled", enabled=bool(checked)
+            "set-surround-channel-gain", channel=key, gain_db=round(db, 2)
         )
+        self._save_profile()
+        self._sync_panel()
+
+    def _on_spin_changed(self, value: float) -> None:
+        key = self.stage.selected()
+        if not key:
+            return
+        ch = self.stage.channels().get(key)
+        if ch and abs(ch.gain_db - value) > 1e-6:
+            self._push_undo()
+            self.stage.set_gain(key, value)
+            self._daemon.send_command(
+                "set-surround-channel-gain", channel=key,
+                gain_db=round(clamp_db(value), 2),
+            )
+            self._save_profile()
+
+    def _on_mute_toggled(self, checked: bool) -> None:
+        key = self.stage.selected()
+        if not key:
+            return
+        self._push_undo()
+        self.stage.set_muted(key, checked)
+        self._daemon.send_command(
+            "set-surround-channel-mute", channel=key, muted=bool(checked)
+        )
+        self._save_profile()
+
+    def _on_solo_toggled(self, checked: bool) -> None:
+        key = self.stage.selected()
+        self.stage.set_solo(key if checked else None)
+        # Solo is a monitoring aid — tell the daemon which channel to
+        # isolate (empty = none).
+        self._daemon.send_command(
+            "set-surround-solo", channel=key if checked else ""
+        )
+
+    def _on_test(self) -> None:
+        key = self.stage.selected()
+        if key:
+            self._daemon.send_command("surround-test-tone", channel=key)
+
+    def _on_apply_preset(self) -> None:
+        key = self.preset_combo.currentData()
+        self._push_undo()
+        apply_preset(self.stage.channels(), key)
+        self.stage.update()
+        self._push_all_gains()
+        self._save_profile()
+        self._sync_panel()
+
+    def _on_reset_levels(self) -> None:
+        self._push_undo()
+        self.stage.set_channels(default_channels())
+        self.stage.set_solo(None)
+        self._push_all_gains()
+        self._save_profile()
+        self._sync_panel()
+
+    def _on_undo(self) -> None:
+        if not self._undo_stack:
+            return
+        snapshot = self._undo_stack.pop()
+        self.stage.set_channels(deserialize(snapshot))
+        self._push_all_gains()
+        self._save_profile()
+        self._sync_panel()
+        self.undo_btn.setEnabled(bool(self._undo_stack))
+
+    # --------------------------------------------------------- internals
+
+    def _sync_panel(self) -> None:
+        key = self.stage.selected()
+        ch = self.stage.channels().get(key) if key else None
+        has = ch is not None
+        self.level_spin.setEnabled(has and ch.positional)
+        self.mute_btn.setEnabled(has and ch.positional)
+        self.solo_btn.setEnabled(has)
+        self.test_btn.setEnabled(has)
+        if not ch:
+            self.sel_name.setText(self.tr("None"))
+            return
+        self.sel_name.setText(ch.label)
+        was = self.level_spin.blockSignals(True)
+        self.level_spin.setValue(ch.gain_db)
+        self.level_spin.blockSignals(was)
+        was = self.mute_btn.blockSignals(True)
+        self.mute_btn.setChecked(ch.muted)
+        self.mute_btn.blockSignals(was)
+        was = self.solo_btn.blockSignals(True)
+        self.solo_btn.setChecked(self.stage.solo() == key)
+        self.solo_btn.blockSignals(was)
+
+    def _push_all_gains(self) -> None:
+        for key, ch in self.stage.channels().items():
+            self._daemon.send_command(
+                "set-surround-channel-gain", channel=key,
+                gain_db=round(ch.gain_db, 2),
+            )
+            if ch.muted:
+                self._daemon.send_command(
+                    "set-surround-channel-mute", channel=key, muted=True
+                )
+
+    def _push_undo(self) -> None:
+        self._undo_stack.append(serialize(self.stage.channels()))
+        # Keep the stack bounded — this is casual undo, not history.
+        del self._undo_stack[:-20]
+        self.undo_btn.setEnabled(True)
 
     def _refresh_status_label(self) -> None:
         if not self._hrir_path:
-            self.status_label.setText(
-                self.tr("Choose a sound profile below first.")
-            )
+            self.status_label.setText(self.tr("Choose a sound profile below first."))
+            self.status_label.setStyleSheet("")
         elif self._enabled:
             self.status_label.setText(
-                self.tr(
-                    "On. Set an app's output to “SteelSurround” to hear it "
-                    "in surround."
-                )
+                self.tr("On. Set an app's output to “SteelSurround” to hear it.")
             )
             self.status_label.setStyleSheet(
                 f"color: {ACCENT}; font-size: 11px; font-weight: bold;"
             )
-            return
         else:
             self.status_label.setText(
                 self.tr("Profile ready — flip the switch to turn it on.")
             )
-        self.status_label.setStyleSheet("")
-        self.status_label.setObjectName("help-text")
-        self.status_label.style().unpolish(self.status_label)
-        self.status_label.style().polish(self.status_label)
+            self.status_label.setStyleSheet("")
+
+    # ----------------------------------------------------- persistence
+
+    def _load_profile_for_device(self) -> None:
+        profiles = self._settings.get(_PROFILES_KEY) or {}
+        data = profiles.get(self._device_variant) if isinstance(profiles, dict) else None
+        self.stage.set_channels(deserialize(data))
+        self.stage.set_solo(None)
+        self._sync_panel()
+
+    def _save_profile(self) -> None:
+        from ..settings import save as save_settings
+        profiles = self._settings.get(_PROFILES_KEY)
+        if not isinstance(profiles, dict):
+            profiles = {}
+        profiles[self._device_variant] = serialize(self.stage.channels())
+        self._settings[_PROFILES_KEY] = profiles
+        try:
+            save_settings(self._settings)
+        except Exception:
+            pass

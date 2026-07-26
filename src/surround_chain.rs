@@ -66,6 +66,86 @@ use log::{info, warn};
 /// the EQ chain's `effect_*` naming convention.
 const CHAIN_NAME: &str = "SteelSurround";
 
+/// Channel keys in the fixed 7.1 order used everywhere in this module
+/// and by the GUI stage editor.
+pub const SURROUND_CHANNELS: [&str; 8] =
+    ["fl", "fr", "fc", "lfe", "rl", "rr", "sl", "sr"];
+
+/// Per-channel level state for the surround stage editor.
+///
+/// This is the ONLY thing the stage editor changes about the audio:
+/// each channel's LEVEL (a gain node baked into the chain). Direction
+/// is fixed by the HRIR and is deliberately absent here — see
+/// STATUS.md. A change respawns the chain, the same way an EQ band
+/// change respawns its channel chain.
+#[derive(Clone, Debug)]
+pub struct SurroundGains {
+    /// dB per channel, in SURROUND_CHANNELS order. Clamped to
+    /// [-24, +6] on the way in.
+    db: [f32; 8],
+    muted: [bool; 8],
+    /// When Some, only that channel is audible (monitoring aid). Index
+    /// into SURROUND_CHANNELS.
+    solo: Option<usize>,
+}
+
+impl Default for SurroundGains {
+    fn default() -> Self {
+        SurroundGains {
+            db: [0.0; 8],
+            muted: [false; 8],
+            solo: None,
+        }
+    }
+}
+
+impl SurroundGains {
+    pub fn index_of(key: &str) -> Option<usize> {
+        SURROUND_CHANNELS.iter().position(|&k| k == key)
+    }
+
+    /// Set a channel's level in dB, clamped to the editable range.
+    /// Returns false if the key is unknown.
+    pub fn set_gain(&mut self, key: &str, db: f32) -> bool {
+        match Self::index_of(key) {
+            Some(i) => {
+                self.db[i] = db.clamp(-24.0, 6.0);
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn set_mute(&mut self, key: &str, muted: bool) -> bool {
+        match Self::index_of(key) {
+            Some(i) => {
+                self.muted[i] = muted;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Set the solo channel (None clears). Unknown key clears solo.
+    pub fn set_solo(&mut self, key: Option<&str>) {
+        self.solo = key.and_then(Self::index_of);
+    }
+
+    /// Effective linear amplitude multiplier for a channel, accounting
+    /// for mute and solo. 0.0 when silenced.
+    pub fn linear(&self, i: usize) -> f32 {
+        if self.muted[i] {
+            return 0.0;
+        }
+        if let Some(s) = self.solo {
+            if s != i {
+                return 0.0;
+            }
+        }
+        10.0_f32.powf(self.db[i] / 20.0)
+    }
+}
+
 /// Where the spawned pipewire child's config file lives.
 fn conf_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from)?;
@@ -87,6 +167,8 @@ pub struct SurroundChainSpec<'a> {
     /// the EQ chain (WirePlumber occasionally adds an extra link to
     /// the default sink, creating a feedback loop with EasyEffects).
     pub playback_target: &'a str,
+    /// Per-channel level trims from the stage editor.
+    pub gains: &'a SurroundGains,
 }
 
 /// Live surround chain instance. Drop or `shutdown()` to tear it down.
@@ -99,7 +181,7 @@ impl SurroundChainHandle {
     pub fn spawn(spec: &SurroundChainSpec) -> Option<Self> {
         let dir = conf_dir()?;
         let conf_path = dir.join(format!("{CHAIN_NAME}.conf"));
-        let conf = render_conf(spec.hrir_path);
+        let conf = render_conf(spec.hrir_path, spec.gains);
         if let Err(e) = write_conf(&conf_path, &conf) {
             warn!(
                 "Failed to write surround conf {}: {e}",
@@ -206,7 +288,7 @@ fn write_conf(path: &Path, contents: &str) -> std::io::Result<()> {
 /// LFE is treated as a centre channel: its convolvers reuse the FC
 /// HRIR slices (channels 6 and 13). They're declared as separate
 /// nodes so the input fan-out stays one-to-one.
-fn render_conf(hrir: &Path) -> String {
+fn render_conf(hrir: &Path, gains: &SurroundGains) -> String {
     let hrir_str = hrir.display().to_string();
 
     // Convolver nodes — (node-name, HRIR-channel-index). Layout is
@@ -235,11 +317,19 @@ fn render_conf(hrir: &Path) -> String {
     ];
 
     let mut nodes: Vec<String> = Vec::new();
-    // One `copy` per input channel — gives us a single point to fan
-    // out into the two ear-specific convolvers.
-    for key in ["fl", "fr", "fc", "lfe", "rl", "rr", "sl", "sr"] {
+    // One `copy` per input channel — a single fan-out point — followed
+    // by one `linear` gain node per channel (the stage editor's level
+    // trim). `linear` computes out = in * mult; mult is the channel's
+    // effective linear amplitude (0.0 when muted or soloed away). The
+    // copy → gain → convolvers order means the trim applies once,
+    // before the (fixed-direction) HRIR convolution.
+    for (i, key) in SURROUND_CHANNELS.iter().enumerate() {
         nodes.push(format!(
             r#"                    {{ type = builtin name = {key}_copy label = copy }}"#,
+        ));
+        nodes.push(format!(
+            r#"                    {{ type = builtin name = {key}_gain label = linear config = {{ mult = {mult:.5} add = 0.0 }} }}"#,
+            mult = gains.linear(i),
         ));
     }
     for (name, channel) in convolvers {
@@ -287,11 +377,15 @@ fn render_conf(hrir: &Path) -> String {
 
     let mut links: Vec<String> = Vec::new();
     for (input_key, conv_prefix) in fan_out {
+        // copy → per-channel gain → both ear convolvers.
         links.push(format!(
-            r#"                    {{ output = "{input_key}_copy:Out"  input = "{conv_prefix}_l:In" }}"#,
+            r#"                    {{ output = "{input_key}_copy:Out"  input = "{input_key}_gain:In" }}"#,
         ));
         links.push(format!(
-            r#"                    {{ output = "{input_key}_copy:Out"  input = "{conv_prefix}_r:In" }}"#,
+            r#"                    {{ output = "{input_key}_gain:Out"  input = "{conv_prefix}_l:In" }}"#,
+        ));
+        links.push(format!(
+            r#"                    {{ output = "{input_key}_gain:Out"  input = "{conv_prefix}_r:In" }}"#,
         ));
     }
     // Convolver output → matching ear's mixer. Port numbers are
@@ -409,4 +503,76 @@ context.modules = [
 "#,
         name = CHAIN_NAME,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_gains_are_unity() {
+        let g = SurroundGains::default();
+        for i in 0..8 {
+            assert!((g.linear(i) - 1.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn gain_is_clamped_to_range() {
+        let mut g = SurroundGains::default();
+        assert!(g.set_gain("fl", 999.0));
+        // +6 dB max ≈ 1.995 linear.
+        assert!(g.linear(0) < 2.01);
+        assert!(g.set_gain("fl", -999.0));
+        // -24 dB min ≈ 0.063 linear.
+        assert!(g.linear(0) < 0.07 && g.linear(0) > 0.0);
+    }
+
+    #[test]
+    fn mute_silences_only_that_channel() {
+        let mut g = SurroundGains::default();
+        assert!(g.set_mute("fc", true));
+        let fc = SurroundGains::index_of("fc").unwrap();
+        assert_eq!(g.linear(fc), 0.0);
+        let fl = SurroundGains::index_of("fl").unwrap();
+        assert!((g.linear(fl) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn solo_silences_all_but_one() {
+        let mut g = SurroundGains::default();
+        g.set_solo(Some("sr"));
+        let sr = SurroundGains::index_of("sr").unwrap();
+        for i in 0..8 {
+            if i == sr {
+                assert!(g.linear(i) > 0.0);
+            } else {
+                assert_eq!(g.linear(i), 0.0);
+            }
+        }
+        g.set_solo(None);
+        for i in 0..8 {
+            assert!(g.linear(i) > 0.0);
+        }
+    }
+
+    #[test]
+    fn unknown_channel_is_rejected() {
+        let mut g = SurroundGains::default();
+        assert!(!g.set_gain("nope", 0.0));
+        assert!(!g.set_mute("nope", true));
+        assert!(SurroundGains::index_of("nope").is_none());
+    }
+
+    #[test]
+    fn conf_contains_a_gain_node_per_channel() {
+        let g = SurroundGains::default();
+        let conf = render_conf(std::path::Path::new("/tmp/x.wav"), &g);
+        for key in SURROUND_CHANNELS {
+            assert!(
+                conf.contains(&format!("{key}_gain")),
+                "missing gain node for {key}"
+            );
+        }
+    }
 }

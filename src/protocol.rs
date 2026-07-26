@@ -468,6 +468,23 @@ pub enum ClientCommand {
     /// otherwise.
     #[serde(rename = "set-surround-enabled")]
     SetSurroundEnabled { enabled: bool },
+    /// Set one surround channel's LEVEL (dB) from the stage editor.
+    /// `channel` is one of fl/fr/fc/lfe/rl/rr/sl/sr. Clamped to
+    /// [-24, +6]. Direction is fixed by the HRIR and is NOT settable —
+    /// only level. Respawns the surround chain if it is running (same
+    /// discipline as an EQ band change).
+    #[serde(rename = "set-surround-channel-gain")]
+    SetSurroundChannelGain { channel: String, gain_db: f32 },
+    /// Mute / unmute one surround channel (level → 0 while muted).
+    #[serde(rename = "set-surround-channel-mute")]
+    SetSurroundChannelMute { channel: String, muted: bool },
+    /// Solo one surround channel (empty string clears). Monitoring aid.
+    #[serde(rename = "set-surround-solo")]
+    SetSurroundSolo { channel: String },
+    /// Play a short test tone into one surround channel so the user can
+    /// confirm which speaker they're editing. Best-effort.
+    #[serde(rename = "surround-test-tone")]
+    SurroundTestTone { channel: String },
     /// Set the HRIR file path used by the surround convolver. Path is
     /// stored persistently; the user supplies their own HRIR (e.g. from
     /// HeSuVi or Impulcifer) — we don't bundle one for licensing
@@ -1344,6 +1361,38 @@ mod tests {
             ClientCommand::SetSurroundEnabled { enabled } => assert!(enabled),
             other => panic!("expected SetSurroundEnabled, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn surround_channel_commands_parse() {
+        let gain: ClientCommand = from_str(
+            r#"{"cmd":"set-surround-channel-gain","channel":"fl","gain_db":-6.0}"#,
+        )
+        .unwrap();
+        match gain {
+            ClientCommand::SetSurroundChannelGain { channel, gain_db } => {
+                assert_eq!(channel, "fl");
+                assert!((gain_db - (-6.0)).abs() < 1e-6);
+            }
+            other => panic!("expected SetSurroundChannelGain, got {other:?}"),
+        }
+        let mute: ClientCommand = from_str(
+            r#"{"cmd":"set-surround-channel-mute","channel":"sr","muted":true}"#,
+        )
+        .unwrap();
+        match mute {
+            ClientCommand::SetSurroundChannelMute { channel, muted } => {
+                assert_eq!(channel, "sr");
+                assert!(muted);
+            }
+            other => panic!("expected SetSurroundChannelMute, got {other:?}"),
+        }
+        let solo: ClientCommand =
+            from_str(r#"{"cmd":"set-surround-solo","channel":""}"#).unwrap();
+        assert!(matches!(
+            solo,
+            ClientCommand::SetSurroundSolo { channel } if channel.is_empty()
+        ));
     }
 
     #[test]
