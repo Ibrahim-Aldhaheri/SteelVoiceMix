@@ -47,6 +47,9 @@ pub const MANAGED_SINK_PREFIX: &str = "Steel";
 /// try to escape, we refuse. This is the enforcement point for the
 /// path whether it arrived over the IPC socket, from daemon.json, or
 /// from a running-chain rewire.
+/// One `pw-link` edge: (output port, input port).
+type LinkEdge = (String, String);
+
 /// Decide what to add and what to remove so the live link graph matches
 /// `expected`. Split out from `check_links_alive` because the rest of
 /// that function is `pw-link` shelling and can't be unit-tested.
@@ -59,20 +62,19 @@ pub const MANAGED_SINK_PREFIX: &str = "Steel";
 /// nodes, is never touched. Within that scope a second destination is
 /// unambiguously wrong: our chains are single-destination by design.
 fn reconcile_links(
-    expected: &[(String, String)],
-    existing: &std::collections::HashSet<(String, String)>,
-) -> (Vec<(String, String)>, Vec<(String, String)>) {
-    let wanted: std::collections::HashSet<&(String, String)> =
-        expected.iter().collect();
+    expected: &[LinkEdge],
+    existing: &std::collections::HashSet<LinkEdge>,
+) -> (Vec<LinkEdge>, Vec<LinkEdge>) {
+    let wanted: std::collections::HashSet<&LinkEdge> = expected.iter().collect();
     let owned_outputs: std::collections::HashSet<&str> =
         expected.iter().map(|(from, _)| from.as_str()).collect();
 
-    let missing: Vec<(String, String)> = expected
+    let missing: Vec<LinkEdge> = expected
         .iter()
         .filter(|edge| !existing.contains(*edge))
         .cloned()
         .collect();
-    let mut extra: Vec<(String, String)> = existing
+    let mut extra: Vec<LinkEdge> = existing
         .iter()
         .filter(|edge| owned_outputs.contains(edge.0.as_str()) && !wanted.contains(*edge))
         .cloned()
@@ -760,11 +762,11 @@ impl SinkManager {
     ///
     /// The one thing that genuinely breaks on respawn is the links INTO
     /// the new surround node, since the old node id is gone:
-    ///   - EQ on:  the EQ chains survive; re-issuing `pw-link` is enough,
-    ///             and `check_links_alive` is exactly that reconciler.
-    ///   - EQ off: the bare `module-loopback`s targeted the old node and
-    ///             pulse loopbacks do not re-resolve their sink, so those
-    ///             do have to be reloaded.
+    /// - EQ on: the EQ chains survive; re-issuing `pw-link` is enough,
+    ///   and `check_links_alive` is exactly that reconciler.
+    /// - EQ off: the bare `module-loopback`s targeted the old node and
+    ///   pulse loopbacks do not re-resolve their sink, so those do have
+    ///   to be reloaded.
     fn respawn_surround_if_running(&mut self) {
         if self.surround_chain.is_none() {
             return;

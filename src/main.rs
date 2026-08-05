@@ -1664,10 +1664,10 @@ mod test_tone_tests {
             let frames = data.len() / 16;
             let mut peak = [0i32; 8];
             for f in 0..frames {
-                for c in 0..8 {
+                for (c, p) in peak.iter_mut().enumerate() {
                     let at = f * 16 + c * 2;
                     let v = i16::from_le_bytes([data[at], data[at + 1]]) as i32;
-                    peak[c] = peak[c].max(v.abs());
+                    *p = (*p).max(v.abs());
                 }
             }
             for (c, p) in peak.iter().enumerate() {
