@@ -214,41 +214,60 @@ impl SurroundChainHandle {
         // and the user had to toggle surround off→on to recover.
         // Retry with backoff (~500 ms × 8 attempts = up to 4 s) so
         // we cover that window without a wasteful fixed long sleep.
+        // Both channels are retried in ONE loop rather than a full retry
+        // loop per channel. The old shape paid the settling delay twice
+        // (FR re-slept 500 ms even though the node was demonstrably up,
+        // FL having just linked), which doubled the cost of every
+        // respawn — and a level tweak in the stage editor respawns.
+        // First delay is short, then it backs off, so the common case
+        // (~150 ms) is fast and a cold-boot WirePlumber that takes
+        // seconds to enumerate is still covered (~4 s total).
         let playback_node = format!("effect_output.{CHAIN_NAME}");
-        for ch in ["FL", "FR"] {
-            let from = format!("{playback_node}:output_{ch}");
-            let to = format!("{}:playback_{ch}", spec.playback_target);
-            let mut linked = false;
-            let mut last_err = String::new();
-            for attempt in 0..8 {
-                std::thread::sleep(std::time::Duration::from_millis(500));
+        let mut pending: Vec<(String, String)> = ["FL", "FR"]
+            .iter()
+            .map(|ch| {
+                (
+                    format!("{playback_node}:output_{ch}"),
+                    format!("{}:playback_{ch}", spec.playback_target),
+                )
+            })
+            .collect();
+        let mut last_err = String::new();
+        for attempt in 0..9 {
+            let delay = match attempt {
+                0 => 150,
+                1 => 250,
+                _ => 500,
+            };
+            std::thread::sleep(std::time::Duration::from_millis(delay));
+            pending.retain(|(from, to)| {
                 let res = Command::new("pw-link")
-                    .args([&from, &to])
+                    .args([from, to])
                     .stderr(Stdio::piped())
                     .stdout(Stdio::null())
                     .output();
                 match res {
                     Ok(out) if out.status.success() => {
-                        info!(
-                            "Linked {from} → {to} (attempt {})",
-                            attempt + 1
-                        );
-                        linked = true;
-                        break;
+                        info!("Linked {from} → {to} (attempt {})", attempt + 1);
+                        false
                     }
                     Ok(out) => {
-                        last_err = String::from_utf8_lossy(&out.stderr)
-                            .trim()
-                            .to_string();
+                        last_err =
+                            String::from_utf8_lossy(&out.stderr).trim().to_string();
+                        true
                     }
-                    Err(e) => last_err = e.to_string(),
+                    Err(e) => {
+                        last_err = e.to_string();
+                        true
+                    }
                 }
+            });
+            if pending.is_empty() {
+                break;
             }
-            if !linked {
-                warn!(
-                    "pw-link {from} → {to} failed after retries: {last_err}"
-                );
-            }
+        }
+        for (from, to) in &pending {
+            warn!("pw-link {from} → {to} failed after retries: {last_err}");
         }
 
         Some(SurroundChainHandle { child, conf_path })

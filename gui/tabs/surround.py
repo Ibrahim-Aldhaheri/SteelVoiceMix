@@ -157,7 +157,11 @@ class SurroundTab(QWidget):
         self.stage.solo_requested.connect(
             lambda _k: self.solo_btn.toggle()
         )
-        self.stage.test_requested.connect(lambda _k: self._on_test())
+        # Use the key the stage sends rather than re-reading the
+        # selection: they agree today, but a stage that ever fires this
+        # for a speaker other than the selected one should test THAT
+        # speaker, not silently test a different one.
+        self.stage.test_requested.connect(self._on_test)
 
         # Right-side control panel for the selected speaker.
         panel = QVBoxLayout()
@@ -406,9 +410,11 @@ class SurroundTab(QWidget):
         else:
             self.solo_status.setVisible(False)
 
-    def _on_test(self) -> None:
-        key = self.stage.selected()
+    def _on_test(self, key: str | None = None) -> None:
+        # No argument → the toolbar button, which tests the selection.
+        key = key or self.stage.selected()
         if not key:
+            log.debug("surround: test ignored — no speaker selected")
             return
         if not self._enabled:
             # Nothing to hear yet — don't fire a beep out the default

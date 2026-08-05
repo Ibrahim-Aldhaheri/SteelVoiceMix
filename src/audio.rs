@@ -684,10 +684,27 @@ impl SinkManager {
     }
 
     /// Re-apply the current gains by respawning the surround chain if it
-    /// is running. Same respawn-on-change discipline as the EQ chain —
-    /// the `linear` gain nodes are config-time, so a change is picked up
-    /// by regenerating the conf and restarting the child. No-op when the
-    /// chain isn't up (the gains still persist for the next spawn).
+    /// is running. The convolver `gain` is a config-time value, so a
+    /// change is picked up by regenerating the conf and restarting the
+    /// child. No-op when the chain isn't up (the gains still persist for
+    /// the next spawn).
+    ///
+    /// What this deliberately does NOT do is call
+    /// `rewire_all_headphone_channels`. The headphone-path *target* is
+    /// unchanged by a gain tweak — it's still
+    /// `effect_input.SteelSurround` — so tearing down and rebuilding the
+    /// three EQ chains is pure waste. Measured on target, the old path
+    /// took ~8 s per level change (four filter-chain children respawned,
+    /// each paying its own `pw-link` retry sleeps) with the sink mutex
+    /// held throughout; consecutive edits queued into a rebuild storm.
+    ///
+    /// The one thing that genuinely breaks on respawn is the links INTO
+    /// the new surround node, since the old node id is gone:
+    ///   - EQ on:  the EQ chains survive; re-issuing `pw-link` is enough,
+    ///             and `check_links_alive` is exactly that reconciler.
+    ///   - EQ off: the bare `module-loopback`s targeted the old node and
+    ///             pulse loopbacks do not re-resolve their sink, so those
+    ///             do have to be reloaded.
     fn respawn_surround_if_running(&mut self) {
         if self.surround_chain.is_none() {
             return;
@@ -696,7 +713,19 @@ impl SinkManager {
             handle.shutdown();
         }
         self.spawn_surround_chain();
-        if self.surround_chain.is_some() {
+        if self.surround_chain.is_none() {
+            return;
+        }
+        if self.eq_enabled {
+            // Twice, with a short gap: the capture node registers with
+            // the rest of the filter chain, but if the reconciler runs a
+            // hair early the first pass is a no-op and the second one
+            // catches it. Cheap — one `pw-link -lo` per pass — and it
+            // avoids waiting on the periodic watchdog tick.
+            self.check_links_alive();
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            self.check_links_alive();
+        } else {
             self.rewire_all_headphone_channels();
         }
     }

@@ -30,64 +30,133 @@ use protocol::{
 };
 use routing::{spawn_router, RouterState};
 
-/// PipeWire channel-position name for a surround channel key.
-fn surround_channel_position(key: &str) -> Option<&'static str> {
-    match key {
-        "fl" => Some("FL"),
-        "fr" => Some("FR"),
-        "fc" => Some("FC"),
-        "lfe" => Some("LFE"),
-        "rl" => Some("RL"),
-        "rr" => Some("RR"),
-        "sl" => Some("SL"),
-        "sr" => Some("SR"),
-        _ => None,
-    }
+/// Index of a surround channel key in the chain's fixed 7.1 order
+/// (FL FR FC LFE RL RR SL SR) — the same order as `audio.position` on
+/// `effect_input.SteelSurround` and as the test WAV's channel mask.
+fn surround_channel_index(key: &str) -> Option<usize> {
+    surround_chain::SURROUND_CHANNELS
+        .iter()
+        .position(|&k| k == key)
 }
 
-/// Write a short mono 48 kHz sine WAV to `path`. Pure byte-writing (no
-/// hardware), so this part is deterministic and testable; only the
-/// playback routing below is hardware-pending.
-fn write_sine_wav(path: &std::path::Path) -> std::io::Result<()> {
+/// Number of channels in the surround chain — and in the test WAV.
+const SURROUND_WAV_CHANNELS: u16 = 8;
+
+/// `dwChannelMask` for FL FR FC LFE RL(BL) RR(BR) SL SR, in that order.
+/// WAVE_FORMAT_EXTENSIBLE orders samples by ascending mask bit, so this
+/// mask makes the file's channel order identical to the chain's
+/// `audio.position` — no guessing about PipeWire's default layout for
+/// an 8-channel file.
+const SURROUND_WAV_MASK: u32 = 0x1 | 0x2 | 0x4 | 0x8 | 0x10 | 0x20 | 0x200 | 0x400;
+
+/// Write the per-channel test burst: an 8-channel 48 kHz WAV that is
+/// silent everywhere except `channel_index`.
+///
+/// Why 8 channels rather than the mono file this used to write: a mono
+/// stream fed to the 8-channel surround sink goes through PipeWire's
+/// channelmix, which *spreads* it — measured on target, mono +
+/// `--channel-map=FL` produced only a 1.4:1 left/right ratio at the
+/// binaural output, while a true FL-only 8-channel file produced 1.9:1.
+/// The tone was audible but didn't localise, which reads as "the test
+/// button does nothing".
+///
+/// The signal is a broadband burst (log-spaced partials, 300 Hz – 8 kHz)
+/// rather than a 440 Hz sine: HRTF localisation cues live in spectral
+/// shaping and high-frequency ITD/ILD, so a low pure tone is close to
+/// the worst possible probe for "which speaker is this?".
+///
+/// Pure byte-writing (no hardware), so this part is deterministic and
+/// unit-testable; only the playback routing below needs a real graph.
+fn write_test_burst_wav(
+    path: &std::path::Path,
+    channel_index: usize,
+) -> std::io::Result<()> {
     use std::io::Write;
     const RATE: u32 = 48_000;
-    const SECS: f32 = 0.4;
-    const FREQ: f32 = 440.0;
+    const SECS: f32 = 0.9;
+    const PARTIALS: usize = 24;
+    const F_LO: f32 = 300.0;
+    const F_HI: f32 = 8_000.0;
+
+    let ch = SURROUND_WAV_CHANNELS as u32;
     let n = (RATE as f32 * SECS) as u32;
-    let data_len = n * 2; // 16-bit mono
-    let mut buf: Vec<u8> = Vec::with_capacity(44 + data_len as usize);
+    let block_align = ch * 2; // 16-bit
+    let data_len = n * block_align;
+    // fmt chunk is the 40-byte EXTENSIBLE form (16 base + cbSize + 22).
+    let fmt_len: u32 = 40;
+    let riff_len = 4 + (8 + fmt_len) + (8 + data_len);
+
+    let mut buf: Vec<u8> = Vec::with_capacity((8 + riff_len) as usize);
     buf.extend_from_slice(b"RIFF");
-    buf.extend_from_slice(&(36 + data_len).to_le_bytes());
+    buf.extend_from_slice(&riff_len.to_le_bytes());
     buf.extend_from_slice(b"WAVE");
     buf.extend_from_slice(b"fmt ");
-    buf.extend_from_slice(&16u32.to_le_bytes());
-    buf.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    buf.extend_from_slice(&1u16.to_le_bytes()); // mono
+    buf.extend_from_slice(&fmt_len.to_le_bytes());
+    buf.extend_from_slice(&0xFFFEu16.to_le_bytes()); // WAVE_FORMAT_EXTENSIBLE
+    buf.extend_from_slice(&SURROUND_WAV_CHANNELS.to_le_bytes());
     buf.extend_from_slice(&RATE.to_le_bytes());
-    buf.extend_from_slice(&(RATE * 2).to_le_bytes()); // byte rate
-    buf.extend_from_slice(&2u16.to_le_bytes()); // block align
-    buf.extend_from_slice(&16u16.to_le_bytes()); // bits
+    buf.extend_from_slice(&(RATE * block_align).to_le_bytes()); // byte rate
+    buf.extend_from_slice(&(block_align as u16).to_le_bytes());
+    buf.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    buf.extend_from_slice(&22u16.to_le_bytes()); // cbSize
+    buf.extend_from_slice(&16u16.to_le_bytes()); // valid bits
+    buf.extend_from_slice(&SURROUND_WAV_MASK.to_le_bytes());
+    // KSDATAFORMAT_SUBTYPE_PCM
+    buf.extend_from_slice(&[
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00,
+        0x38, 0x9B, 0x71,
+    ]);
     buf.extend_from_slice(b"data");
     buf.extend_from_slice(&data_len.to_le_bytes());
+
+    // Pre-compute the partials. Phases are spread deterministically (no
+    // RNG — the same file every time is easier to reason about) so the
+    // stacked sines don't all peak together.
+    let mut freqs = [0.0f32; PARTIALS];
+    let mut phases = [0.0f32; PARTIALS];
+    for k in 0..PARTIALS {
+        let frac = k as f32 / (PARTIALS - 1) as f32;
+        freqs[k] = F_LO * (F_HI / F_LO).powf(frac);
+        phases[k] = (k * k) as f32 * 0.618 * std::f32::consts::PI;
+    }
+
+    // Render, then normalise to a known peak. Scaling by 1/sqrt(N) is an
+    // RMS-style guess and does clip on this phase set; measuring the
+    // actual peak makes the output exactly -6 dBFS with no clipped
+    // samples, which is both louder and cleaner than the old sine.
+    let mut mono: Vec<f32> = Vec::with_capacity(n as usize);
+    let mut peak = 0.0f32;
     for i in 0..n {
         let t = i as f32 / RATE as f32;
-        // Gentle 20 ms fade in/out so the onset isn't a click.
-        let env = (t / 0.02).min(1.0).min((SECS - t) / 0.02).max(0.0);
-        let s = (2.0 * std::f32::consts::PI * FREQ * t).sin() * 0.25 * env;
-        let v = (s * i16::MAX as f32) as i16;
-        buf.extend_from_slice(&v.to_le_bytes());
+        // 15 ms fades so the onset isn't a click.
+        let env = (t / 0.015).min(1.0).min((SECS - t) / 0.015).max(0.0);
+        let mut s = 0.0f32;
+        for k in 0..PARTIALS {
+            s += (2.0 * std::f32::consts::PI * freqs[k] * t + phases[k]).sin();
+        }
+        let s = s * env;
+        peak = peak.max(s.abs());
+        mono.push(s);
+    }
+    let norm = if peak > 0.0 { 0.5 / peak } else { 0.0 };
+
+    for s in &mono {
+        let v = ((s * norm).clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+        for c in 0..ch as usize {
+            let sample = if c == channel_index { v } else { 0 };
+            buf.extend_from_slice(&sample.to_le_bytes());
+        }
     }
     std::fs::File::create(path)?.write_all(&buf)
 }
 
-/// Best-effort per-channel test tone. Routes a mono sine to one channel
-/// of the SteelSurround sink via `pw-play --channel-map=<POS>`.
-///
-/// Hardware-pending (STATUS.md): that `--channel-map` on a mono stream
-/// actually lands on the intended channel of the 8-channel sink is not
-/// verifiable on the dev box. Failures are logged, never fatal.
+/// Per-channel test burst. Writes an 8-channel WAV carrying signal only
+/// on the requested channel and plays it into the surround sink, so the
+/// channel routing is decided by the file's own layout rather than by
+/// PipeWire's mono upmix (see `write_test_burst_wav`). No
+/// `--channel-map` — the stream is already 8-channel and positioned.
 fn play_surround_test_tone(channel: &str) {
-    let Some(pos) = surround_channel_position(channel) else {
+    let Some(index) = surround_channel_index(channel) else {
         warn!("test-tone: unknown channel {channel}");
         return;
     };
@@ -100,26 +169,32 @@ fn play_surround_test_tone(channel: &str) {
     };
     let _ = std::fs::create_dir_all(&dir);
     let wav = dir.join("test-tone.wav");
-    if let Err(e) = write_sine_wav(&wav) {
+    if let Err(e) = write_test_burst_wav(&wav, index) {
         warn!("test-tone: could not write {}: {e}", wav.display());
         return;
     }
     let spawn = std::process::Command::new("pw-play")
-        .args([
-            "--target=effect_input.SteelSurround",
-            &format!("--channel-map={pos}"),
-        ])
+        .arg("--target=effect_input.SteelSurround")
         .arg(&wav)
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .spawn();
     match spawn {
         // Reap in a detached thread — dropping the Child without waiting
         // leaves a zombie until the daemon exits, and users can press
-        // Test many times.
-        Ok(mut child) => {
-            std::thread::spawn(move || {
-                let _ = child.wait();
+        // Test many times. Report a non-zero exit / stderr: a silent
+        // failure here is indistinguishable from "the button does
+        // nothing", which is exactly how the last bug presented.
+        Ok(child) => {
+            let ch = channel.to_string();
+            std::thread::spawn(move || match child.wait_with_output() {
+                Ok(out) if out.status.success() => {}
+                Ok(out) => warn!(
+                    "test-tone {ch}: pw-play exited {} — {}",
+                    out.status,
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ),
+                Err(e) => warn!("test-tone {ch}: waiting on pw-play failed: {e}"),
             });
         }
         Err(e) => warn!("test-tone: pw-play failed to start: {e}"),
@@ -1519,4 +1594,119 @@ fn run_filter_chain_test() {
 
     handle.shutdown();
     info!("Test filter chain shut down. Exiting.");
+}
+
+#[cfg(test)]
+mod test_tone_tests {
+    use super::*;
+
+    fn read_u32(b: &[u8], at: usize) -> u32 {
+        u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
+    }
+    fn read_u16(b: &[u8], at: usize) -> u16 {
+        u16::from_le_bytes([b[at], b[at + 1]])
+    }
+
+    #[test]
+    fn channel_index_matches_chain_order() {
+        // The WAV's channel order must line up with the chain's
+        // audio.position, or "test FL" plays out of the wrong speaker.
+        assert_eq!(surround_channel_index("fl"), Some(0));
+        assert_eq!(surround_channel_index("fr"), Some(1));
+        assert_eq!(surround_channel_index("fc"), Some(2));
+        assert_eq!(surround_channel_index("lfe"), Some(3));
+        assert_eq!(surround_channel_index("rl"), Some(4));
+        assert_eq!(surround_channel_index("rr"), Some(5));
+        assert_eq!(surround_channel_index("sl"), Some(6));
+        assert_eq!(surround_channel_index("sr"), Some(7));
+        assert_eq!(surround_channel_index("nope"), None);
+    }
+
+    #[test]
+    fn burst_wav_header_is_8ch_extensible() {
+        let dir = std::env::temp_dir().join("svm-burst-header");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.wav");
+        write_test_burst_wav(&path, 0).unwrap();
+        let b = std::fs::read(&path).unwrap();
+
+        assert_eq!(&b[0..4], b"RIFF");
+        assert_eq!(&b[8..12], b"WAVE");
+        assert_eq!(&b[12..16], b"fmt ");
+        assert_eq!(read_u32(&b, 16), 40, "EXTENSIBLE fmt chunk");
+        assert_eq!(read_u16(&b, 20), 0xFFFE, "WAVE_FORMAT_EXTENSIBLE");
+        assert_eq!(read_u16(&b, 22), 8, "8 channels");
+        assert_eq!(read_u32(&b, 24), 48_000);
+        assert_eq!(read_u16(&b, 32), 16, "block align = 8ch * 2 bytes");
+        assert_eq!(read_u16(&b, 34), 16, "16-bit");
+        assert_eq!(
+            read_u32(&b, 40),
+            SURROUND_WAV_MASK,
+            "channel mask must spell FL FR FC LFE RL RR SL SR"
+        );
+        // RIFF size and data size must agree with the actual bytes.
+        assert_eq!(read_u32(&b, 4) as usize, b.len() - 8);
+        let data_len = read_u32(&b, 64) as usize;
+        assert_eq!(&b[60..64], b"data");
+        assert_eq!(data_len, b.len() - 68);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn burst_wav_carries_signal_on_exactly_one_channel() {
+        let dir = std::env::temp_dir().join("svm-burst-isolation");
+        std::fs::create_dir_all(&dir).unwrap();
+        for target in 0..8usize {
+            let path = dir.join(format!("t{target}.wav"));
+            write_test_burst_wav(&path, target).unwrap();
+            let b = std::fs::read(&path).unwrap();
+            let data = &b[68..];
+            let frames = data.len() / 16;
+            let mut peak = [0i32; 8];
+            for f in 0..frames {
+                for c in 0..8 {
+                    let at = f * 16 + c * 2;
+                    let v = i16::from_le_bytes([data[at], data[at + 1]]) as i32;
+                    peak[c] = peak[c].max(v.abs());
+                }
+            }
+            for (c, p) in peak.iter().enumerate() {
+                if c == target {
+                    // Loud enough to actually notice — the old 440 Hz
+                    // sine peaked at -12 dBFS and read as "nothing
+                    // happened" on hardware.
+                    assert!(
+                        *p > 8_000,
+                        "channel {c} should carry the burst; peak {p}"
+                    );
+                } else {
+                    assert_eq!(*p, 0, "channel {c} must be silent");
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn burst_wav_does_not_clip() {
+        // 24 stacked partials must stay inside full scale, otherwise the
+        // "broadband" burst is just distortion.
+        let dir = std::env::temp_dir().join("svm-burst-clip");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.wav");
+        write_test_burst_wav(&path, 3).unwrap();
+        let b = std::fs::read(&path).unwrap();
+        let data = &b[68..];
+        let frames = data.len() / 16;
+        let mut clipped = 0;
+        for f in 0..frames {
+            let at = f * 16 + 3 * 2;
+            let v = i16::from_le_bytes([data[at], data[at + 1]]);
+            if v == i16::MAX || v == i16::MIN {
+                clipped += 1;
+            }
+        }
+        assert_eq!(clipped, 0, "{clipped} clipped samples");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

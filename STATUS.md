@@ -101,8 +101,77 @@ share the channel's linear gain (0.0 when muted/soloed away), so the
 HRIR's L/R balance is preserved. The separate `linear` gain nodes and
 their links are gone; topology is back to copy → convolver. Regression
 tests assert the muted channel renders `gain = 0.00000` on both
-convolvers. **Still to confirm on hardware** that this form attenuates
-(it should — `gain` scales the IR directly).
+convolvers.
+
+**CONFIRMED on hardware** (Fedora + Nova Pro, beta3) — see the
+measurement rig below:
+
+| state | L peak | R peak |
+|---|---|---|
+| FL burst, baseline | 0.4959 | 0.2548 |
+| FL burst, FL muted | **0.0000** | **0.0000** |
+| FL burst, restored | 0.4959 | 0.2548 |
+
+### Measurement rig — surround DSP is now objectively testable
+
+Audible correctness no longer depends on someone's ears. Play a WAV
+carrying signal on exactly one of the eight channels into the chain and
+record the chain's own binaural output:
+
+```bash
+pw-record --target=effect_output.SteelSurround /tmp/out.wav &
+pw-play  --target=effect_input.SteelSurround  /tmp/burst_fl.wav
+# then compare per-channel peaks in /tmp/out.wav
+```
+
+Do **not** measure at `alsa_output.…:monitor` — that path reports both
+captured channels identically (a hard-left probe tone read equal on L
+and R), so it cannot see the binaural asymmetry that is the entire
+point. Tapping `effect_output.SteelSurround` reads true.
+
+Reference values on a healthy chain (EAC_Default HRIR):
+
+| single-channel burst | L/R peak ratio |
+|---|---|
+| FL | 2.61 (left) |
+| SR | 0.36 (right) |
+| FC | 1.04 (centred) |
+
+### Test tone: was inaudible/unlocalised → 8-channel burst
+
+Reported as "click Test and nothing happens". The daemon *was* playing
+the tone (journal + WAV timestamps confirm), but it was a 0.4 s, 440 Hz,
+-12 dBFS **mono** file steered with `pw-play --channel-map=<POS>`.
+Measured through the rig, that produced only a 1.38:1 L/R ratio for FL —
+a mono stream into the 8-channel sink goes through PipeWire's channelmix,
+which spreads it, so `--channel-map` only biases rather than places it.
+440 Hz is also close to the worst probe for HRTF localisation, whose
+cues live in spectral shaping and HF ITD/ILD.
+
+Now the daemon writes an **8-channel WAVE_FORMAT_EXTENSIBLE** file with
+an explicit `dwChannelMask` (FL FR FC LFE RL RR SL SR, matching the
+chain's `audio.position`) carrying a 0.9 s broadband burst (24
+log-spaced partials, 300 Hz – 8 kHz, peak-normalised to -6 dBFS) on the
+target channel only, and plays it with no `--channel-map`. Verified on
+hardware — the ratios in the table above are the new burst. Output peak
+went 0.20 → 0.59 (+9 dB). `pw-play`'s exit status and stderr are now
+logged instead of discarded, so a future silent failure is diagnosable.
+
+### Respawn storm: a level tweak rebuilt four filter chains
+
+The journal showed every gain/mute/solo command tearing down and
+respawning the surround chain **and all three EQ chains**, ~8 s per
+edit with the sink mutex held, so consecutive edits queued into a
+rebuild storm. `respawn_surround_if_running` was calling
+`rewire_all_headphone_channels()`, but a gain change doesn't move the
+headphone-path target — it's still `effect_input.SteelSurround`. The EQ
+chains survive the respawn; only their links into the (new) surround
+node need re-issuing, which is exactly what `check_links_alive` does.
+With EQ off the bare `module-loopback`s still must be reloaded, since a
+pulse loopback doesn't re-resolve its sink. Separately, the surround
+chain's spawn-time `pw-link` retry loop paid its settling delay once per
+channel serially; both channels now retry in one loop with a shorter
+first delay (150 ms, backing off).
 
 ### Verified vs. hardware-pending for the editor
 - **Verified offscreen:** the editor widget, radial-drag → dB mapping,
@@ -110,20 +179,43 @@ convolvers. **Still to confirm on hardware** that this form attenuates
   keyboard operation (selection + level + M/S/T), the batched/solo
   command payloads, and that the rendered PipeWire conf uses control
   ports with the right multipliers.
-- **Hardware-pending (Fedora + headset):** that the `Mult` control
-  actually attenuates the intended channel, that respawn latency is
-  acceptable in practice, and that `pw-play --channel-map` lands the
-  test tone on the intended speaker. Implemented to the proven respawn
-  pattern and compiled/tested for structure, but audible correctness is
-  **not** verifiable on this box — do the mute-FL-and-test check on
-  target.
+- **Verified on hardware (Fedora + headset):** mute fully attenuates the
+  intended channel and only that channel; the HRIR places FL left, SR
+  right and FC centred; the per-channel test burst lands on the
+  requested speaker.
+- **Still unverified:** long-run stability of the reduced-churn respawn
+  path under rapid dragging.
+
+## Open bug: intermittent echo (NOT diagnosed — do not claim fixed)
+
+Reported symptom: audio sometimes develops an echo. Restarting the
+daemon does **not** clear it; unplugging and replugging the base station
+does. Started "a few months ago".
+
+What that rules out: a daemon restart tears down every module and
+filter-chain child it owns and rebuilds them, so the duplicated path
+does not live in daemon-owned state. It survives in PipeWire's / the
+device's view of the graph until the ALSA node is destroyed.
+
+Checked while healthy (no echo present): the graph is clean — exactly
+three `module-loopback`s, one filter-chain child per chain, no duplicate
+or stray links into the headset, one Arctis card with a single active
+output profile. So there is nothing to fix from a healthy snapshot.
+
+Next step is a capture taken **while the echo is audible**:
+`/tmp/svm-echo-dump.sh` on the target dumps sinks, sink-inputs, modules,
+filter-chain children, the full link graph and the recent journal;
+`/tmp/svm-healthy-baseline.txt` is the known-good snapshot to diff
+against. Deliberately not guessing at a fix before that diff exists.
 
 ### Honest future paths (not done, not claimed)
-- **Glitch-free live level:** once the `Mult` control form is confirmed
-  on hardware, levels could be set at runtime via
-  `pw-cli set-param <node> Props { params = [ "<ch>_gain:Mult" <v> ] }`
-  instead of respawning — enabling continuous drag with no glitch. Left
-  as a follow-up because the exact syntax needs on-hardware verification.
+- **Glitch-free live level:** levels are still applied by regenerating
+  the conf and respawning the chain, because the convolver's `gain` is a
+  config-time parameter. A runtime path would need the level to move
+  back onto a control port (e.g. a `mixer` input `Gain`) driven by
+  `pw-cli set-param` — worth revisiting only with the measurement rig
+  above to prove the control port actually attenuates, which is the
+  check the `linear` node failed.
 - **Real draggable direction:** would require a different backend —
   PipeWire's `sofa` spatializer (libmysofa, `.sofa` HRTFs) exposes
   runtime-adjustable azimuth/elevation. That is the honest path if
