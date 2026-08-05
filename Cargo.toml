@@ -9,6 +9,23 @@ license = "GPL-3.0-only"
 name = "steelvoicemix"
 path = "src/main.rs"
 
+# Lint policy lives here rather than only in the CI command line, so a
+# plain `cargo clippy` (and rust-analyzer, if you point it at clippy)
+# reproduces what CI enforces instead of you finding out after a push.
+#
+# Deliberately clippy-only and deliberately NOT `[lints.rust]`: these are
+# tool lints that rustc ignores, so `cargo build` and `cargo run` are
+# unaffected and an unused variable never blocks you mid-iteration. CI
+# additionally passes `-D warnings`, which does promote rustc's own
+# warnings — that stays a CI-side gate on purpose.
+#
+# Default group only. `pedantic`/`nursery` are opinionated and partly
+# unfinished; the default set is already tuned to "probably a bug or
+# genuinely worse code". priority = -1 so individual `allow`s added
+# below would win over the group.
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
 [dependencies]
 hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }
 serde = { version = "1", features = ["derive"] }

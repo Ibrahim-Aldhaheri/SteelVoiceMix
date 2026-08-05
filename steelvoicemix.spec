@@ -7,7 +7,7 @@ License:        GPL-3.0-only
 URL:            https://github.com/Ibrahim-Aldhaheri/SteelVoiceMix
 Source0:        {{{ git_dir_pack }}}
 
-BuildRequires:  rust >= 1.70
+BuildRequires:  rust >= 1.74
 BuildRequires:  cargo
 BuildRequires:  hidapi-devel
 BuildRequires:  libusb1-devel

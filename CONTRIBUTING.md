@@ -18,7 +18,9 @@ SteelVoiceMix is a personal project — built for **Fedora KDE 44+** running on 
 ## Pull request process
 
 1. **Open the PR against `dev`.** Don't target `main`.
-2. **CI must be green** before review. The `.github/workflows/ci.yml` workflow runs on every PR:
+2. **CI must be green** before review. Run `scripts/check.sh` first — it runs the exact CI gate locally in one command and doesn't stop at the first failure, so you see everything that needs fixing in one pass. (`scripts/check.sh rust` or `… python` for half of it.) `cargo test` passing on its own says nothing about whether CI will go green; the clippy step is separate and easy to forget.
+
+   The `.github/workflows/ci.yml` workflow runs on every PR:
    - `cargo build --release --locked` + `cargo test --locked --all-targets` + `cargo clippy --all-targets --no-deps --locked -- -D warnings`
    - `python3 -m py_compile` over every `.py` in the repo
    - XML validity check on `gui/translations/*.ts`
@@ -32,13 +34,13 @@ SteelVoiceMix is a personal project — built for **Fedora KDE 44+** running on 
 ### Rust
 
 - `cargo fmt` before committing (CI doesn't enforce this yet, but matches the existing style).
-- Clippy must pass under `-D warnings`. If you genuinely need to suppress a lint, do it locally with `#[allow(...)]` and a one-line WHY comment — never blanket-allow.
+- Clippy must pass under `-D warnings`. The default lint group is set to `deny` in `Cargo.toml` under `[lints.clippy]`, so a plain `cargo clippy` reproduces CI without remembering the flag — and because those are tool lints, `cargo build`/`cargo run` are unaffected and never block you mid-iteration. If you genuinely need to suppress a lint, do it locally with `#[allow(...)]` and a one-line WHY comment — never blanket-allow.
 - Keep `unsafe` out of the daemon. None today.
-- Tests live next to the code (`#[cfg(test)] mod tests`). 58 daemon tests run on every PR; add new ones for any new daemon command, opcode, or state-machine branch.
+- Tests live next to the code (`#[cfg(test)] mod tests`). 75 daemon tests run on every PR; add new ones for any new daemon command, opcode, or state-machine branch.
 
 ### Python (GUI)
 
-- No runtime test suite (UI is hard to test without a display); CI just checks `py_compile`.
+- There **is** a runtime test suite: 43 tests under `tests/`, run headless via `QT_QPA_PLATFORM=offscreen` with a stubbed daemon client, wired into CI as the "Python + GUI tests" job. It covers layout, widget wiring, and which commands get emitted — not real audio or DSP.
 - Match the existing `gui/widgets.py` patterns — `card()`, `mode_picker()`, `bind_debounced_slider()`, `labelled_toggle()` — instead of building from scratch. Saves layout drift.
 - Always wrap user-facing strings in `self.tr("...")`. The Arabic translation file picks them up; non-translated strings ship as English in every locale.
 - Add `log.debug(...)` at decision points (state transitions, command boundaries, watchdog firings). The maintainer iterates against `STEELVOICEMIX_DEBUG=1` traces; missing logs make field bugs hard to diagnose.
