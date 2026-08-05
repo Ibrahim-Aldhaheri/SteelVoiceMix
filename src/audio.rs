@@ -47,6 +47,42 @@ pub const MANAGED_SINK_PREFIX: &str = "Steel";
 /// try to escape, we refuse. This is the enforcement point for the
 /// path whether it arrived over the IPC socket, from daemon.json, or
 /// from a running-chain rewire.
+/// Decide what to add and what to remove so the live link graph matches
+/// `expected`. Split out from `check_links_alive` because the rest of
+/// that function is `pw-link` shelling and can't be unit-tested.
+///
+/// The removal rule is deliberately narrow: an edge is only a candidate
+/// for deletion when its OUTPUT port is one we already claim in
+/// `expected`. That confines pruning to nodes the daemon owns
+/// (`effect_output.Steel*`), so a user's own stream playing straight to
+/// the headset, or anything WirePlumber wires up between unrelated
+/// nodes, is never touched. Within that scope a second destination is
+/// unambiguously wrong: our chains are single-destination by design.
+fn reconcile_links(
+    expected: &[(String, String)],
+    existing: &std::collections::HashSet<(String, String)>,
+) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    let wanted: std::collections::HashSet<&(String, String)> =
+        expected.iter().collect();
+    let owned_outputs: std::collections::HashSet<&str> =
+        expected.iter().map(|(from, _)| from.as_str()).collect();
+
+    let missing: Vec<(String, String)> = expected
+        .iter()
+        .filter(|edge| !existing.contains(*edge))
+        .cloned()
+        .collect();
+    let mut extra: Vec<(String, String)> = existing
+        .iter()
+        .filter(|edge| owned_outputs.contains(edge.0.as_str()) && !wanted.contains(*edge))
+        .cloned()
+        .collect();
+    // HashSet iteration order is not stable; sort so logs and tests are
+    // deterministic.
+    extra.sort();
+    (missing, extra)
+}
+
 fn hrir_path_is_safe(path: &std::path::Path) -> bool {
     match path.to_str() {
         // Non-UTF-8 paths can't be rendered into the config either.
@@ -479,11 +515,9 @@ impl SinkManager {
                 current_out = Some(line.trim().to_string());
             }
         }
+        let (missing, extra) = reconcile_links(&expected, &existing);
         let mut relinked = false;
-        for (from, to) in &expected {
-            if existing.contains(&(from.clone(), to.clone())) {
-                continue;
-            }
+        for (from, to) in &missing {
             warn!("pw-link edge missing — re-establishing {from} → {to}");
             let res = Command::new("pw-link")
                 .args([from, to])
@@ -509,6 +543,32 @@ impl SinkManager {
                     );
                 }
                 Err(e) => warn!("pw-link spawn failed for {from} → {to}: {e}"),
+            }
+        }
+        for (from, to) in &extra {
+            // A second live path out of a node we own is the classic
+            // echo: the same audio arriving twice with different
+            // latency (e.g. an EQ chain still feeding the headset
+            // directly while it also feeds the surround chain). The
+            // watchdog could only ever ADD links before, so once such an
+            // edge appeared nothing removed it — not even a daemon
+            // restart, since whatever created it isn't ours to kill.
+            warn!("pw-link unexpected edge — removing {from} → {to}");
+            let res = Command::new("pw-link")
+                .args(["-d", from, to])
+                .stderr(Stdio::piped())
+                .stdout(Stdio::null())
+                .output();
+            match res {
+                Ok(out) if out.status.success() => {
+                    info!("Unlinked stray {from} → {to}");
+                    relinked = true;
+                }
+                Ok(out) => warn!(
+                    "pw-link -d failed: {from} → {to}: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ),
+                Err(e) => warn!("pw-link -d spawn failed for {from} → {to}: {e}"),
             }
         }
         relinked
@@ -1686,5 +1746,103 @@ fn cleanup_stale_modules() {
                 unload_module(id);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod link_reconcile_tests {
+    use super::reconcile_links;
+    use std::collections::HashSet;
+
+    fn e(from: &str, to: &str) -> (String, String) {
+        (from.to_string(), to.to_string())
+    }
+
+    const HEADSET: &str = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo";
+
+    fn surround_expected() -> Vec<(String, String)> {
+        vec![
+            e("effect_output.SteelSurround:output_FL", &format!("{HEADSET}:playback_FL")),
+            e("effect_output.SteelSurround:output_FR", &format!("{HEADSET}:playback_FR")),
+            e("effect_output.SteelGameEQ:output_FL", "effect_input.SteelSurround:playback_FL"),
+            e("effect_output.SteelGameEQ:output_FR", "effect_input.SteelSurround:playback_FR"),
+        ]
+    }
+
+    #[test]
+    fn healthy_graph_needs_no_changes() {
+        let expected = surround_expected();
+        let existing: HashSet<_> = expected.iter().cloned().collect();
+        let (missing, extra) = reconcile_links(&expected, &existing);
+        assert!(missing.is_empty());
+        assert!(extra.is_empty());
+    }
+
+    #[test]
+    fn severed_edge_is_reported_missing() {
+        let expected = surround_expected();
+        let mut existing: HashSet<_> = expected.iter().cloned().collect();
+        existing.remove(&expected[0]);
+        let (missing, extra) = reconcile_links(&expected, &existing);
+        assert_eq!(missing, vec![expected[0].clone()]);
+        assert!(extra.is_empty());
+    }
+
+    #[test]
+    fn dry_path_alongside_surround_is_pruned() {
+        // The echo shape: the Game EQ chain feeds the surround chain AND
+        // still feeds the headset directly, so the same audio arrives
+        // twice with different latency.
+        let expected = surround_expected();
+        let mut existing: HashSet<_> = expected.iter().cloned().collect();
+        existing.insert(e(
+            "effect_output.SteelGameEQ:output_FL",
+            &format!("{HEADSET}:playback_FL"),
+        ));
+        let (missing, extra) = reconcile_links(&expected, &existing);
+        assert!(missing.is_empty());
+        assert_eq!(
+            extra,
+            vec![e(
+                "effect_output.SteelGameEQ:output_FL",
+                &format!("{HEADSET}:playback_FL")
+            )]
+        );
+    }
+
+    #[test]
+    fn foreign_edges_are_never_pruned() {
+        // Anything whose output port we don't already claim is somebody
+        // else's audio — a browser on the headset, WirePlumber wiring up
+        // unrelated nodes. Pruning those would break the user's sound.
+        let expected = surround_expected();
+        let mut existing: HashSet<_> = expected.iter().cloned().collect();
+        existing.insert(e("firefox:output_FL", &format!("{HEADSET}:playback_FL")));
+        existing.insert(e(
+            "alsa_input.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.mono-fallback:capture_MONO",
+            "capture.SteelMic:input_MONO",
+        ));
+        existing.insert(e("SteelGame:monitor_FL", "input.loopback-6233-15:input_FL"));
+        let (missing, extra) = reconcile_links(&expected, &existing);
+        assert!(missing.is_empty());
+        assert!(extra.is_empty(), "must not prune foreign edges: {extra:?}");
+    }
+
+    #[test]
+    fn stale_target_after_surround_toggles_off_is_pruned() {
+        // Surround off: EQ chains should feed the headset. An edge left
+        // over from when they fed the surround chain is stale.
+        let expected = vec![
+            e("effect_output.SteelGameEQ:output_FL", &format!("{HEADSET}:playback_FL")),
+        ];
+        let mut existing: HashSet<_> = expected.iter().cloned().collect();
+        existing.insert(e(
+            "effect_output.SteelGameEQ:output_FL",
+            "effect_input.SteelSurround:playback_FL",
+        ));
+        let (missing, extra) = reconcile_links(&expected, &existing);
+        assert!(missing.is_empty());
+        assert_eq!(extra.len(), 1);
+        assert_eq!(extra[0].1, "effect_input.SteelSurround:playback_FL");
     }
 }

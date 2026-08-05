@@ -1021,10 +1021,12 @@ impl Mixer {
                         };
                         if relinked {
                             info!(
-                                "Sink-graph link watchdog re-established \
-                                 broken pw-link edges (likely after \
-                                 wireplumber severed them on an idle \
-                                 alsa_output suspend)"
+                                "Sink-graph link watchdog reconciled \
+                                 pw-link edges — re-established links \
+                                 wireplumber severed on an idle \
+                                 alsa_output suspend, and/or removed a \
+                                 stray second path out of a chain we own \
+                                 (see the per-edge lines above)"
                             );
                         }
                         if respawned {

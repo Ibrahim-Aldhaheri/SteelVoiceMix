@@ -197,16 +197,50 @@ filter-chain child it owns and rebuilds them, so the duplicated path
 does not live in daemon-owned state. It survives in PipeWire's / the
 device's view of the graph until the ALSA node is destroyed.
 
-Checked while healthy (no echo present): the graph is clean — exactly
-three `module-loopback`s, one filter-chain child per chain, no duplicate
-or stray links into the headset, one Arctis card with a single active
-output profile. So there is nothing to fix from a healthy snapshot.
+Evidence gathered so far, pre- and post-replug on target:
 
-Next step is a capture taken **while the echo is audible**:
-`/tmp/svm-echo-dump.sh` on the target dumps sinks, sink-inputs, modules,
-filter-chain children, the full link graph and the recent journal;
-`/tmp/svm-healthy-baseline.txt` is the known-good snapshot to diff
-against. Deliberately not guessing at a fix before that diff exists.
+- **Graph structure is identical either side of the replug.** Exactly
+  three `module-loopback`s, one filter-chain child per chain, no
+  duplicate or stray links into the headset, one Arctis card with a
+  single active output profile. The only diff is node ids renumbering.
+- **The chain's binaural output is clean.** Recording
+  `effect_output.SteelSurround` while playing a single-channel burst,
+  pre-replug vs post-replug: peak 0.1848 vs 0.1815, active duration
+  896 ms in both, and the envelope autocorrelation shows no repeat at
+  any lag from 5–400 ms. So no doubled path existed at measurement time.
+
+That means the echo was not reproducing during the measurement window —
+it is intermittent, and both snapshots caught the good state. It does
+**not** identify the cause.
+
+What remains consistent with every symptom (survives a daemon restart,
+dies on a USB replug): a second live path into the headset created by
+something the daemon does not own, so a restart can't clear it but
+destroying the ALSA node does. The link watchdog could only ever *add*
+edges, so nothing removed such a path. It now prunes them — see below.
+Also still possible, and **not** observable from software: something
+downstream of PipeWire entirely (ALSA node state, or the base station's
+own DSP), since the sink monitor taps what PipeWire *sends*, not what
+the deck plays.
+
+### Watchdog now prunes stray edges (candidate fix — NOT confirmed)
+
+`check_links_alive` reconciles in both directions. The removal rule is
+deliberately narrow: an edge is only a deletion candidate when its
+**output port is one the daemon already claims** (`effect_output.Steel*`).
+Within that scope a second destination is unambiguously wrong — our
+chains are single-destination by design — while a user's own stream on
+the headset, the mic capture edge, and anything WirePlumber wires
+between unrelated nodes are never touched. Covered by unit tests
+including a "must not prune foreign edges" case, and dry-run against the
+live target graph: zero adds, zero removals on a healthy system.
+
+This closes a real gap and matches the symptom profile, but it is a
+**candidate**, not a confirmed fix — nothing has yet observed the echo
+in the act. If it recurs, run `/tmp/svm-echo-dump.sh` **while it is
+audible** and diff against `/tmp/svm-after-replug.txt`; the journal will
+also now carry `pw-link unexpected edge — removing …` if the watchdog
+saw and cleared a stray path.
 
 ### Honest future paths (not done, not claimed)
 - **Glitch-free live level:** levels are still applied by regenerating
