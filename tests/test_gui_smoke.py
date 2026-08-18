@@ -7,6 +7,8 @@ pass compilation but fail here.
 from __future__ import annotations
 
 import pytest
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from tests.conftest import pump
 
@@ -47,3 +49,36 @@ def test_nav_has_every_page(window):
     win, _ = window
     assert win.nav.count() == len(PAGES)
     assert set(win._page_index) == set(PAGES)
+
+
+def test_pages_render_with_200_percent_text(qapp, stub_daemon):
+    from gui.main_window import MixerGUI
+
+    original = QFont(qapp.font())
+    enlarged = QFont(original)
+    enlarged.setPointSizeF(max(18.0, original.pointSizeF() * 2.0))
+    qapp.setFont(enlarged)
+    win = MixerGUI()
+    win.resize(1180, 880)
+    win.show()
+    try:
+        for i in range(len(PAGES)):
+            win.nav.setCurrentRow(i)
+            pump(qapp)
+            assert not win.grab().isNull()
+            scroller = win.stack.currentWidget()
+            assert scroller.horizontalScrollBar().maximum() >= 0
+    finally:
+        win.close()
+        qapp.setFont(original)
+        pump(qapp)
+
+
+def test_pages_render_right_to_left(window, qapp):
+    win, _ = window
+    win.setLayoutDirection(Qt.RightToLeft)
+    for i in range(len(PAGES)):
+        win.nav.setCurrentRow(i)
+        pump(qapp)
+        assert not win.grab().isNull()
+    assert win.layoutDirection() == Qt.RightToLeft

@@ -13,6 +13,7 @@ import sys
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("STEELVOICEMIX_STUB_SYSTEM", "1")
 os.environ.setdefault("XDG_RUNTIME_DIR", "/tmp/steelvoicemix-test-runtime")
 os.makedirs(os.environ["XDG_RUNTIME_DIR"], exist_ok=True)
 

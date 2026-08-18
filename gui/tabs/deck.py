@@ -49,7 +49,7 @@ def _help_label(text: str) -> QLabel:
     """Standard small-italic placeholder-coloured help text under a card."""
     lbl = QLabel(text)
     lbl.setWordWrap(True)
-    lbl.setStyleSheet("font-size: 10px; color: palette(placeholder-text);")
+    lbl.setObjectName("help-text")
     return lbl
 
 
@@ -139,7 +139,14 @@ class DeckTab(QWidget):
     def _send(self, cmd: str, **kwargs) -> None:
         """Daemon-command sender that no-ops when the GUI was started
         without a daemon client (test harnesses, headless preview)."""
-        if self._daemon is not None:
+        # Defense in depth: disabled widgets cannot normally emit user
+        # input, but delayed timers or programmatic changes must not cross
+        # the hardware-write gate either. The master opt-in command itself
+        # remains allowed so users can turn the gate both on and off.
+        allowed = cmd == "set-deck-control-enabled" or (
+            self._oled_present and self._deck_control_enabled
+        )
+        if self._daemon is not None and allowed:
             self._daemon.send_command(cmd, **kwargs)
 
     def _bind_unit_slider(

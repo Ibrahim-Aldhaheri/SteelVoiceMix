@@ -143,7 +143,7 @@ class MixerGUI(QMainWindow):
         title.setStyleSheet("font-size: 14px; font-weight: bold;")
         header.addWidget(title)
         header.addStretch(1)
-        self.status_label = QLabel(self.tr("Connecting…"))
+        self.status_label = QLabel(self.tr("Service connecting…"))
         self.status_label.setObjectName("status-pill")
         self.status_label.setProperty("state", "")
         self.status_label.setAlignment(Qt.AlignCenter)
@@ -416,7 +416,7 @@ class MixerGUI(QMainWindow):
         # link; Home's hero is about the *headset*. Same word for two
         # things read as a contradiction, so the pill is scoped in its
         # tooltip and Home never reuses the "connected" phrasing.
-        self._set_status_pill(self.tr("●  Connected"), "ok")
+        self._set_status_pill(self.tr("●  Service ready"), "ok")
         self.status_label.setToolTip(
             self.tr("Background service (steelvoicemix) is running")
         )
@@ -427,7 +427,7 @@ class MixerGUI(QMainWindow):
         self._apply_redirect_on_connect()
 
     def _on_disconnected(self) -> None:
-        self._set_status_pill(self.tr("●  Reconnecting…"), "bad")
+        self._set_status_pill(self.tr("●  Service reconnecting…"), "bad")
         self.status_label.setToolTip(
             self.tr("Trying to reach the background service (steelvoicemix)")
         )

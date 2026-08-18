@@ -17,14 +17,18 @@ Linux ChatMix implementation for the **SteelSeries Arctis Nova Pro Wireless**. U
 
 Brings the headset's ChatMix dial — and a parametric EQ + multi-sink mixer — to Linux without relying on the OEM Windows-only mixer software.
 
-## Screenshots
+## GUI preview capture
 
-<p align="center">
-  <img src="screenshots/main-window.png" alt="Main window — connection status, Game/Chat volumes, battery, and overlay settings" width="420" />
-</p>
-<p align="center">
-  <img src="screenshots/dial-overlay.png" alt="Dial overlay — vertical style, flashes briefly when the hardware dial is turned" width="140" />
-</p>
+The GUI evolves faster than release screenshots. Maintainers can regenerate the
+preview images without a real daemon, headset, desktop, or user configuration:
+
+```bash
+QT_QPA_PLATFORM=offscreen python3 scripts/capture-gui-screenshots.py
+```
+
+The capture script uses a temporary HOME/XDG environment, synthetic public
+product data, a stubbed daemon, and a disabled update check. Review generated
+images before publishing them; never capture a real desktop or device state.
 
 ## Debug Mode
 
@@ -196,12 +200,21 @@ The physical dial on the base station controls the balance between them.
 
 ### GUI
 
-The GUI (`steelvoicemix-gui`) connects to the running daemon and shows:
-- Connection status (connected/disconnected)
-- Game and Chat volume bars (updated in real-time)
-- Battery level and charging status
-- Dial position indicator (Game-heavy, Chat-heavy, or Balanced)
-- Floating overlay on dial turn
+The GUI (`steelvoicemix-gui`) separates the background service connection from
+headset availability, so a running service is never presented as proof that the
+headset is powered on. Its seven focused pages provide:
+
+- Home status, battery, ChatMix balance, configured sound features, and shortcuts
+- Media/HDMI outputs with optional advanced routing and volume controls
+- Per-channel EQ presets and bands, with testing and automation kept secondary
+- Fixed-HRIR virtual-surround setup and honest per-speaker level controls
+- Software microphone processing and listening checks
+- Deck controls protected by an explicit, default-off hardware-write opt-in
+- Two-column settings for appearance, startup, profiles, and maintenance
+
+The floating overlay still appears when the ChatMix dial moves. Secondary help
+and advanced controls use keyboard-accessible disclosures to keep common actions
+prominent without removing expert features.
 
 The window minimizes to the system tray.
 

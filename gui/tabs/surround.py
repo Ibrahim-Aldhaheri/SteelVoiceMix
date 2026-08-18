@@ -104,6 +104,13 @@ class SurroundTab(QWidget):
             None, tech_row, tech_body, intro, toggle_row, self.status_label,
         ))
 
+        self.setup_intro = notice(self.tr(
+            "Set up surround in three short steps: 1) choose a sound profile, "
+            "2) turn on virtual surround, 3) send a 5.1 or 7.1 app to "
+            "SteelSurround. Speaker directions come from the profile and stay fixed."
+        ))
+        layout.addWidget(self.setup_intro)
+
         # --- Sound profile ---
         profile_help = help_text(
             self.tr(
@@ -113,10 +120,13 @@ class SurroundTab(QWidget):
             )
         )
         path_row = QHBoxLayout()
+        path_label = QLabel(self.tr("Selected profile"))
         self.path_edit = QLineEdit()
         self.path_edit.setReadOnly(True)
         self.path_edit.setPlaceholderText(self.tr("No profile selected"))
         self.path_edit.setMinimumWidth(200)
+        path_label.setBuddy(self.path_edit)
+        path_row.addWidget(path_label)
         path_row.addWidget(self.path_edit, 1)
         self.default_btn = QPushButton(self.tr("Use built-in profile"))
         self.default_btn.setProperty("cta", True)
@@ -283,6 +293,7 @@ class SurroundTab(QWidget):
         self.clear_btn.setEnabled(bool(path))
         self.enable_toggle.setEnabled(bool(path))
         self._stage_card.setVisible(bool(path))
+        self.setup_intro.setVisible(not bool(path))
         self.default_btn.setProperty("cta", not bool(path))
         self.default_btn.style().unpolish(self.default_btn)
         self.default_btn.style().polish(self.default_btn)

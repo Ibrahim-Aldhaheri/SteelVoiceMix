@@ -14,23 +14,36 @@ KDE target with real hardware.
   Pro). Anything touching the device or the audio graph is **not**
   verified here.
 
-## UI/UX redesign pass — DONE and verified offscreen
+## UI/UX improvement gate — local contracts and pending Fedora evidence
 
 | Area | Change | Verified how |
 |---|---|---|
-| Home | Rebuilt as a dashboard; resolved the header-vs-body "connected" contradiction; battery-before-presence ordering bug fixed | render + interaction tests |
-| Equalizer | Three sparse cards → one compact toolbar; bands above the fold; delete confirm; emoji-free channel combo | render + interaction tests |
-| Surround | Plain-language rewrite; jargon behind "?"; profile→enable flow | render + interaction tests |
-| Sinks/Deck | Responsive fix (no more clipped controls at min width); emoji cleanup | render at 820/1180/1500 |
-| Settings | Two-column reflow; destructive actions confirm | render |
-| Shell | Real theme icons (Breeze on target); pill-style nav selection; slim scrollbars | render |
-| Tests | 21 offscreen GUI + logic tests, wired into CI ("Python + GUI tests") | pytest |
+| Status semantics | Header names the background service; Home independently reports headset availability; configured effects are shown as “Set up” rather than running while hardware is unavailable | offscreen state-transition tests |
+| Sinks | Media/HDMI remain primary; routing, boost, and redirect controls retain state and commands behind an accessible advanced disclosure | render + interaction tests |
+| Equalizer | Presets and bands remain primary; Test Audio, Listen, and Auto Game-EQ are grouped under Testing & automation | render + interaction tests |
+| Surround | Intentional three-step empty state leads profile → enable → app routing; fixed HRIR directions remain explicit | render + interaction tests |
+| Settings | Existing two-column structure retained; shortcut detail and advanced/maintenance actions are disclosed on demand | render + interaction tests |
+| Accessibility | Higher-contrast help copy, explicit disclosure and glyph-control names, label buddies, focus styling, RTL and enlarged-text render contracts | offscreen pytest; not screen-reader certification |
+| Deck safety | Hardware management remains default-off and controls require both device presence and explicit opt-in | interaction regression test + Rust defaults |
 
-### Needs on-hardware confirmation (Fedora KDE)
+The new offscreen assertions are committed, but this worktree's current Python
+environment does not provide PySide6, so they remain pending execution in the
+GUI CI/Fedora-capable environment. Python syntax, translation XML, the full Rust
+build/test/clippy gate, and Deck's Rust default-off contract are verified here.
+
+### Fedora KDE acceptance still pending
 - Sidebar/nav icons resolve to real Breeze icons (dev box has no icon
   theme, so they fall back to a drawn dot here).
 - Real light/dark system palette via the XDG portal.
-- Actual battery/ChatMix/device events populating the Home hero.
+- Native 200% desktop scaling and long translated-text visual inspection.
+- Arabic/RTL visual ordering with the packaged translation catalogue.
+- Keyboard focus visibility and a targeted Orca/Qt accessibility spot-check.
+- Actual battery/ChatMix/device events populating Home, including service-up /
+  headset-off and reconnect transitions.
+
+These checks are Fedora-pending. Local tests prove widget contracts and command
+wiring only; they do not establish full screen-reader certification or hardware
+behavior.
 
 ## Surround stage editor — IN PROGRESS
 

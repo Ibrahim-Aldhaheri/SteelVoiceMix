@@ -22,7 +22,7 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
 )
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -112,8 +112,7 @@ QLabel#section-title {{
    prefer widgets.help_text() so long paragraphs collapse behind a
    toggle instead of permanently occupying vertical space. */
 QLabel#help-text {{
-    color: palette(placeholder-text);
-    font-size: 11px;
+    color: palette(text);
 }}
 QLabel#field-label {{
     color: palette(text);
@@ -151,6 +150,10 @@ QPushButton:hover {{
 }}
 QPushButton:pressed {{
     background: palette(mid);
+}}
+QPushButton:focus, QComboBox:focus, QLineEdit:focus,
+QCheckBox:focus, QSlider:focus {{
+    border: 2px solid {ACCENT};
 }}
 QPushButton:disabled {{
     color: palette(placeholder-text);
@@ -426,7 +429,15 @@ def collapsible_help(text: str, *, label: str = "") -> tuple[QWidget, QLabel]:
     button.setObjectName("help-toggle")
     button.setCheckable(True)
     button.setCursor(Qt.PointingHandCursor)
-    button.setToolTip(QCoreApplication.translate("widgets", "Show explanation"))
+    show_text = QCoreApplication.translate("widgets", "Show explanation")
+    hide_text = QCoreApplication.translate("widgets", "Hide explanation")
+    button.setToolTip(show_text)
+    button.setAccessibleName(
+        QCoreApplication.translate("widgets", "Explanation for {section}").format(
+            section=label
+        ) if label else show_text
+    )
+    button.setAccessibleDescription(QCoreApplication.translate("widgets", "Collapsed"))
     lay.addWidget(button)
     lay.addStretch(1)
 
@@ -435,8 +446,67 @@ def collapsible_help(text: str, *, label: str = "") -> tuple[QWidget, QLabel]:
     body.setWordWrap(True)
     body.setTextFormat(Qt.PlainText)
     body.setVisible(False)
-    button.toggled.connect(body.setVisible)
+    def set_expanded(expanded: bool) -> None:
+        body.setVisible(expanded)
+        button.setToolTip(hide_text if expanded else show_text)
+        button.setAccessibleDescription(
+            QCoreApplication.translate("widgets", "Expanded") if expanded
+            else QCoreApplication.translate("widgets", "Collapsed")
+        )
+
+    button.toggled.connect(set_expanded)
     return row, body
+
+
+def disclosure(
+    title: str,
+    *items: QWidget | QLayout,
+    description: str = "",
+    expanded: bool = False,
+) -> QFrame:
+    """Card disclosure for secondary controls, preserving child state."""
+    frame = QFrame()
+    frame.setObjectName("card")
+    outer = QVBoxLayout(frame)
+    outer.setContentsMargins(14, 12, 14, 12)
+    outer.setSpacing(8)
+
+    toggle = QPushButton(title)
+    toggle.setCheckable(True)
+    toggle.setChecked(expanded)
+    toggle.setAccessibleName(title)
+    toggle.setAccessibleDescription(
+        QCoreApplication.translate("widgets", "Expanded") if expanded
+        else QCoreApplication.translate("widgets", "Collapsed")
+    )
+    toggle.setStyleSheet("text-align: left; font-weight: bold;")
+    outer.addWidget(toggle)
+
+    body = QWidget()
+    body_layout = QVBoxLayout(body)
+    body_layout.setContentsMargins(0, 4, 0, 0)
+    body_layout.setSpacing(10)
+    if description:
+        body_layout.addWidget(help_text(description))
+    for item in items:
+        if isinstance(item, QLayout):
+            body_layout.addLayout(item)
+        else:
+            body_layout.addWidget(item)
+    body.setVisible(expanded)
+
+    def set_expanded(on: bool) -> None:
+        body.setVisible(on)
+        toggle.setAccessibleDescription(
+            QCoreApplication.translate("widgets", "Expanded") if on
+            else QCoreApplication.translate("widgets", "Collapsed")
+        )
+
+    toggle.toggled.connect(set_expanded)
+    outer.addWidget(body)
+    frame.disclosure_toggle = toggle
+    frame.disclosure_body = body
+    return frame
 
 
 def notice(text: str, *, action: QWidget | None = None) -> QFrame:
@@ -731,6 +801,10 @@ class ToggleSwitch(QCheckBox):
         cy = h / 2.0
         p.setBrush(knob_color)
         p.drawEllipse(QPointF(cx, cy), kr, kr)
+        if self.hasFocus():
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(QColor(ACCENT), 2))
+            p.drawRoundedRect(QRectF(1, 1, w - 2, h - 2), radius, radius)
 
 
 # ------------------------------------------------------- labelled toggle
@@ -908,6 +982,8 @@ def labelled_toggle(
             badge_lbl.setToolTip(tooltip)
         row.addWidget(badge_lbl, 0, alignment=Qt.AlignVCenter)
     toggle = ToggleSwitch()
+    toggle.setAccessibleName(text)
+    label.setBuddy(toggle)
     if tooltip:
         toggle.setToolTip(tooltip)
     row.addWidget(toggle, 0, alignment=Qt.AlignVCenter)

@@ -60,6 +60,7 @@ from ..widgets import (
     themed_icon,
     NoWheelSlider,
     card,
+    disclosure,
     labelled_toggle,
     notice,
 )
@@ -353,6 +354,7 @@ class EqualizerTab(QWidget):
         # Limited to MAX_FAVOURITES_PER_CHANNEL on each channel; trying
         # to add a sixth pops a message asking the user to clear one.
         self.preset_fav_btn = QPushButton("☆")
+        self.preset_fav_btn.setAccessibleName(self.tr("Favourite preset"))
         self.preset_fav_btn.setFixedWidth(36)
         self.preset_fav_btn.setToolTip(
             self.tr("Favourite this preset (up to {n} per channel)").format(
@@ -410,7 +412,7 @@ class EqualizerTab(QWidget):
             self.tr("No favourites yet — tap ★ next to a preset to pin it here.")
         )
         self.favourites_empty_hint.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
         # Favourites live as a compact inline row prefixed with a small
         # "Favourites" caption, not a card of their own.
@@ -498,7 +500,7 @@ class EqualizerTab(QWidget):
             freq_lbl = QLabel("")
             freq_lbl.setAlignment(Qt.AlignCenter)
             freq_lbl.setStyleSheet(
-                "font-size: 9px; color: palette(placeholder-text);"
+                "color: palette(text);"
             )
             self.band_freq_labels.append(freq_lbl)
             band_col.addWidget(freq_lbl)
@@ -519,7 +521,7 @@ class EqualizerTab(QWidget):
             )
         )
         eq_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
         eq_help.setWordWrap(True)
 
@@ -629,6 +631,7 @@ class EqualizerTab(QWidget):
         # Test-audio card ----------------------------------------------
         test_row = QHBoxLayout()
         self.test_audio_combo = NoWheelComboBox()
+        self.test_audio_combo.setAccessibleName(self.tr("Test audio signal"))
         for label, _factory in TEST_AUDIO_CATALOGUE:
             self.test_audio_combo.addItem(self.tr(label))
         self.test_audio_combo.setMinimumWidth(200)
@@ -662,25 +665,33 @@ class EqualizerTab(QWidget):
         )
         test_help.setWordWrap(True)
         test_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
         # Test Audio card — for ear-checking output-channel EQ. We
         # cache the widget so _on_channel_changed can hide it when
         # the user switches to Mic (where Test Audio doesn't make
         # sense — a noise generator wouldn't go through the mic).
         self.test_audio_card = card(self.tr("Test Audio"), test_warn, test_row, test_help)
-        layout.addWidget(self.test_audio_card)
 
         # Hear Yourself card — only visible on the Mic channel.
         # Shares the VoiceTestService with the Microphone tab so
         # toggling either button toggles both.
         self.voice_test_card = self._build_voice_test_card()
-        layout.addWidget(self.voice_test_card)
 
         # Auto Game-EQ card — lives on the EQ page (rather than
         # buried in Settings) so users find it where they manage
         # their EQ.
-        layout.addWidget(self._build_auto_game_card())
+        self.auto_game_card = self._build_auto_game_card()
+        self.testing_disclosure = disclosure(
+            self.tr("Testing & automation"),
+            self.test_audio_card,
+            self.voice_test_card,
+            self.auto_game_card,
+            description=self.tr(
+                "Optional listening checks and automatic game-preset switching."
+            ),
+        )
+        layout.addWidget(self.testing_disclosure)
 
         # Apply initial channel-dependent visibility now that all
         # the channel-conditional cards are constructed.
@@ -708,7 +719,7 @@ class EqualizerTab(QWidget):
         )
         help_lbl.setWordWrap(True)
         help_lbl.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
 
         if self._voice_test is not None:
@@ -829,7 +840,7 @@ class EqualizerTab(QWidget):
         )
         help_lbl.setWordWrap(True)
         help_lbl.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
 
         return card(

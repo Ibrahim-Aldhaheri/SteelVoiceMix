@@ -3,6 +3,8 @@ per-channel digital volume boost."""
 
 from __future__ import annotations
 
+import os
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
@@ -19,6 +21,7 @@ from ..widgets import (
     ToggleSwitch,
     alpha_badge,
     card,
+    disclosure,
     labelled_toggle,
 )
 
@@ -200,6 +203,7 @@ class SinksTab(QWidget):
         media_lbl = QLabel(self.tr("Media"))
         media_lbl.setFixedWidth(80)
         self.media_btn = QPushButton(self.tr("Add Media"))
+        media_lbl.setBuddy(self.media_btn)
         self.media_btn.clicked.connect(self._toggle_media)
         media_row.addWidget(media_lbl)
         self.media_btn.setMinimumWidth(150)
@@ -219,6 +223,7 @@ class SinksTab(QWidget):
             )
         )
         self.hdmi_btn = QPushButton(self.tr("Add HDMI"))
+        hdmi_lbl.setBuddy(self.hdmi_btn)
         self.hdmi_btn.clicked.connect(self._toggle_hdmi)
         hdmi_row.addWidget(hdmi_lbl)
         hdmi_row.addWidget(hdmi_alpha, 0)
@@ -235,7 +240,7 @@ class SinksTab(QWidget):
         )
         sinks_help.setWordWrap(True)
         sinks_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
         sinks_help.setWordWrap(True)
 
@@ -257,7 +262,7 @@ class SinksTab(QWidget):
         )
         self.auto_route_toggle.toggled.connect(self._toggle_auto_route)
 
-        layout.addWidget(card(self.tr("Auto-Routing"), auto_row))
+        auto_card = card(self.tr("Auto-Routing"), auto_row)
 
         # Volume boost card --------------------------------------------
         # One row per output channel. Game/Chat are always available
@@ -277,22 +282,20 @@ class SinksTab(QWidget):
             )
         )
         boost_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
         boost_help.setWordWrap(True)
         # Refresh the boost-row text via tr() — using class-level
         # gettext-style strings here so the section labels stay in
         # one .ts context. (The labels passed into _ChannelBoostRow
         # already came from self.tr() above.)
-        layout.addWidget(
-            card(
+        boost_card = card(
                 self.tr("Volume Boost"),
                 self._boost_rows["game"].layout,
                 self._boost_rows["chat"].layout,
                 self._boost_rows["media"].layout,
                 self._boost_rows["hdmi"].layout,
                 boost_help,
-            )
         )
         self._refresh_boost_avail()
 
@@ -304,7 +307,18 @@ class SinksTab(QWidget):
         # audio doesn't silently die. Targets are chosen from a live
         # `pactl list sinks/sources short` enumeration so the user
         # picks an actual device that exists on their system.
-        layout.addWidget(self._build_redirect_card())
+        redirect_card = self._build_redirect_card()
+        self.advanced_disclosure = disclosure(
+            self.tr("Advanced routing and volume"),
+            auto_card,
+            boost_card,
+            redirect_card,
+            description=self.tr(
+                "Optional automation and amplification. Media and HDMI above "
+                "work without changing these settings."
+            ),
+        )
+        layout.addWidget(self.advanced_disclosure)
 
         layout.addStretch(1)
 
@@ -343,6 +357,8 @@ class SinksTab(QWidget):
                 bool(settings.get(f"redirect_{kind}_enabled", False))
             )
             combo = QComboBox()
+            toggle.setAccessibleName(label)
+            combo.setAccessibleName(label)
             combo.setMinimumWidth(200)
             combo.setEnabled(toggle.isChecked())
             self._populate_redirect_combo(combo, kind, settings)
@@ -374,7 +390,7 @@ class SinksTab(QWidget):
         )
         help_lbl.setWordWrap(True)
         help_lbl.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
 
         refresh_row = QHBoxLayout()
@@ -406,7 +422,7 @@ class SinksTab(QWidget):
         combo.clear()
         combo.addItem(self.tr("(none — keep current default)"), "")
         list_kind = "sinks" if "sink" in kind else "sources"
-        if shutil.which("pactl"):
+        if not os.environ.get("STEELVOICEMIX_STUB_SYSTEM") and shutil.which("pactl"):
             try:
                 r = subprocess.run(
                     ["pactl", "list", list_kind, "short"],

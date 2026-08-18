@@ -253,7 +253,7 @@ class MicrophoneTab(QWidget):
         )
         intro.setWordWrap(True)
         intro.setStyleSheet(
-            "font-size: 11px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
         layout.addWidget(card(self.tr("Microphone Processing"), alpha_row, intro))
 
@@ -352,7 +352,7 @@ class MicrophoneTab(QWidget):
         )
         voice_help.setWordWrap(True)
         voice_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
 
         if _SIDETONE_ENABLED:
@@ -401,7 +401,7 @@ class MicrophoneTab(QWidget):
             )
             sidetone_help.setWordWrap(True)
             sidetone_help.setStyleSheet(
-                "font-size: 10px; color: palette(placeholder-text);"
+                "color: palette(text);"
             )
 
             layout.addWidget(
@@ -432,7 +432,7 @@ class MicrophoneTab(QWidget):
         )
         notes.setWordWrap(True)
         notes.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text); padding-top: 4px;"
+            "color: palette(text); padding-top: 4px;"
         )
         layout.addWidget(notes)
 

@@ -46,12 +46,19 @@ class _StatusPill(QLabel):
 
     def __init__(self, text: str, parent=None):
         super().__init__(text, parent)
+        self._label = text
         self.setAlignment(Qt.AlignCenter)
         self.setTextFormat(Qt.PlainText)
         self.set_active(False)
 
-    def set_active(self, active: bool) -> None:
-        if active:
+    def set_active(self, active: bool, available: bool = True) -> None:
+        self.setText(
+            self.tr("{name}: On").format(name=self._label) if active and available
+            else self.tr("{name}: Set up").format(name=self._label) if active
+            else self.tr("{name}: Off").format(name=self._label)
+        )
+        self.setAccessibleName(self.text())
+        if active and available:
             bg, fg, border = ACCENT, "#0E1A0F", ACCENT
         else:
             bg, fg, border = "transparent", "palette(placeholder-text)", "palette(mid)"
@@ -73,6 +80,8 @@ class HomeTab(QWidget):
         self._daemon = daemon_client
         self._oled_present = False
         self._service_up = False
+        self._hardware_available = False
+        self._feature_states: dict[str, bool] = {}
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -175,8 +184,11 @@ class HomeTab(QWidget):
         wrap = QWidget()
         wrap.setLayout(grid)
         return card(
-            self.tr("Active now"),
-            help_text(self.tr("Green means the effect is running.")),
+            self.tr("Sound features"),
+            help_text(self.tr(
+                "On means available to use now. Set up means enabled, but the "
+                "headset is currently unavailable."
+            )),
             wrap,
         )
 
@@ -220,6 +232,7 @@ class HomeTab(QWidget):
         hero shows the service problem rather than a frozen battery."""
         self._service_up = up
         if not up:
+            self._set_hardware_available(False)
             self._set_hero(
                 WARN,
                 self.tr("Reconnecting to the background service…"),
@@ -245,6 +258,7 @@ class HomeTab(QWidget):
     def on_oled_presence_changed(self, present: bool) -> None:
         self._oled_present = bool(present)
         if not self._oled_present:
+            self._set_hardware_available(False)
             self._set_hero(
                 ERROR,
                 self.tr(
@@ -263,12 +277,15 @@ class HomeTab(QWidget):
         if status in ("charging", "discharging", "normal", ""):
             self._oled_present = True
         if status == "charging":
+            self._set_hardware_available(True)
             self._set_hero(ACCENT, self.tr("Charging"), f"{level}%")
         elif status == "offline":
+            self._set_hardware_available(False)
             self._set_hero(
                 WARN, self.tr("Headset is off — turn it on to use it"), "—"
             )
         else:
+            self._set_hardware_available(True)
             colour = ACCENT if level > 50 else WARN if level > 20 else ERROR
             note = (
                 self.tr("Ready") if level > 50
@@ -280,24 +297,33 @@ class HomeTab(QWidget):
     # ------------------------------------------------------- pill bindings
 
     def on_eq_enabled(self, enabled: bool) -> None:
-        self._pills["eq"].set_active(enabled)
+        self._set_feature("eq", enabled)
 
     def on_surround_enabled(self, enabled: bool) -> None:
-        self._pills["surround"].set_active(enabled)
+        self._set_feature("surround", enabled)
 
     def on_media_enabled(self, enabled: bool) -> None:
-        self._pills["media"].set_active(enabled)
+        self._set_feature("media", enabled)
 
     def on_hdmi_enabled(self, enabled: bool) -> None:
-        self._pills["hdmi"].set_active(enabled)
+        self._set_feature("hdmi", enabled)
 
     def on_mic_state(self, state: dict) -> None:
         gate = bool((state.get("noise_gate") or {}).get("enabled"))
         nr = bool((state.get("noise_reduction") or {}).get("enabled"))
         ai = bool((state.get("ai_noise_cancellation") or {}).get("enabled"))
-        self._pills["mic_gate"].set_active(gate)
-        self._pills["mic_nr"].set_active(nr)
-        self._pills["mic_ai"].set_active(ai)
+        self._set_feature("mic_gate", gate)
+        self._set_feature("mic_nr", nr)
+        self._set_feature("mic_ai", ai)
+
+    def _set_feature(self, key: str, enabled: bool) -> None:
+        self._feature_states[key] = bool(enabled)
+        self._pills[key].set_active(bool(enabled), self._hardware_available)
+
+    def _set_hardware_available(self, available: bool) -> None:
+        self._hardware_available = bool(available) and self._service_up
+        for key, pill in self._pills.items():
+            pill.set_active(self._feature_states.get(key, False), self._hardware_available)
 
     # --------------------------------------------------------- internals
 

@@ -51,6 +51,8 @@ from ..theme import THEME_MODES, apply_theme, normalize_mode
 from ..widgets import (
     POSITION_DISPLAY,
     card,
+    collapsible_help,
+    disclosure,
     labelled_toggle,
     reflow_into_columns,
 )
@@ -101,6 +103,7 @@ class SettingsTab(QWidget):
         pos_lbl = QLabel(self.tr("Position"))
         pos_lbl.setFixedWidth(80)
         self.position_combo = QComboBox()
+        pos_lbl.setBuddy(self.position_combo)
         # Canonical key in itemData (English, used as the persisted
         # value), translated label in itemText (what the user sees).
         # Splitting them this way keeps lookups stable across language
@@ -121,6 +124,7 @@ class SettingsTab(QWidget):
         ori_lbl = QLabel(self.tr("Style"))
         ori_lbl.setFixedWidth(80)
         self.orient_combo = QComboBox()
+        ori_lbl.setBuddy(self.orient_combo)
         for key, display in (("horizontal", "Horizontal"), ("vertical", "Vertical")):
             self.orient_combo.addItem(self.tr(display), key)
         current_ori = normalize_orientation(
@@ -144,6 +148,7 @@ class SettingsTab(QWidget):
         theme_lbl = QLabel(self.tr("Theme"))
         theme_lbl.setFixedWidth(80)
         self.theme_combo = QComboBox()
+        theme_lbl.setBuddy(self.theme_combo)
         for key, display in (
             ("auto", "Auto (system)"),
             ("light", "Light"),
@@ -166,7 +171,7 @@ class SettingsTab(QWidget):
         )
         theme_help.setWordWrap(True)
         theme_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
 
         # Language selector -------------------------------------------
@@ -191,6 +196,7 @@ class SettingsTab(QWidget):
             ),
         )
         self.lang_combo = QComboBox()
+        lang_lbl.setBuddy(self.lang_combo)
         self.lang_combo.addItem(self.tr("System default"), "system")
         for code, label in SUPPORTED_LANGUAGES:
             self.lang_combo.addItem(label, code)
@@ -212,7 +218,7 @@ class SettingsTab(QWidget):
         )
         lang_help.setWordWrap(True)
         lang_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
 
         layout.addWidget(card(
@@ -284,7 +290,7 @@ class SettingsTab(QWidget):
             self._cycle_exclude_checkboxes[sink] = cb
         exclude_row.addStretch(1)
 
-        guide = QLabel(
+        guide_row, guide = collapsible_help(
             self.tr(
                 "<b>How to bind a system-wide shortcut</b><br>"
                 "<b>KDE Plasma:</b> System Settings → Shortcuts → "
@@ -297,17 +303,14 @@ class SettingsTab(QWidget):
                 "<b>Other DEs:</b> the equivalent menu — bind any "
                 "key combo to run that command. Fires while any "
                 "app (game, browser) has focus, unlike Qt shortcuts."
-            )
+            ),
+            label=self.tr("Desktop shortcut steps"),
         )
-        guide.setWordWrap(True)
         guide.setTextFormat(Qt.RichText)
-        guide.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
-        )
 
         layout.addWidget(card(
             self.tr("Default-sink Cycle Shortcut"),
-            cmd_row, exclude_row, guide,
+            cmd_row, exclude_row, guide_row, guide,
         ))
 
         # Notifications card -------------------------------------------
@@ -394,7 +397,7 @@ class SettingsTab(QWidget):
             )
         )
         profile_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
         profile_help.setWordWrap(True)
 
@@ -452,12 +455,12 @@ class SettingsTab(QWidget):
         )
         alpha_help.setWordWrap(True)
         alpha_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
 
         # Title is bolted in via the row above so we pass title=None to
         # card() and add our custom title row as the first child.
-        layout.addWidget(card(None, alpha_title_row, alpha_btns, alpha_help))
+        alpha_card = card(None, alpha_title_row, alpha_btns, alpha_help)
 
         # Help / Report issue card -----------------------------------
         help_row = QHBoxLayout()
@@ -482,9 +485,9 @@ class SettingsTab(QWidget):
         )
         help_text.setWordWrap(True)
         help_text.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
-        layout.addWidget(card(self.tr("Report Issue"), help_row, help_text))
+        report_card = card(self.tr("Report Issue"), help_row, help_text)
 
         # Reset card --------------------------------------------------
         reset_row = QHBoxLayout()
@@ -511,10 +514,20 @@ class SettingsTab(QWidget):
         )
         reset_help.setWordWrap(True)
         reset_help.setStyleSheet(
-            "font-size: 10px; color: palette(placeholder-text);"
+            "color: palette(text);"
         )
 
-        layout.addWidget(card(self.tr("Reset"), reset_row, reset_help))
+        reset_card = card(self.tr("Reset"), reset_row, reset_help)
+        self.maintenance_disclosure = disclosure(
+            self.tr("Advanced & maintenance"),
+            alpha_card,
+            report_card,
+            reset_card,
+            description=self.tr(
+                "Release-channel tools, diagnostics, and reset actions."
+            ),
+        )
+        layout.addWidget(self.maintenance_disclosure)
 
         # Settings is a set of independent groups with no reading order,
         # so it reflows into two columns. Single-column meant scrolling
