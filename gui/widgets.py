@@ -627,6 +627,30 @@ def app_icon() -> QIcon:
     return QIcon.fromTheme(APP_ICON, QIcon.fromTheme(APP_ICON_FALLBACK))
 
 
+def _palette_tinted_icon(source: QIcon, normal: QColor) -> QIcon:
+    """Return deterministic Normal/Selected variants for a theme icon.
+
+    Kept separate from theme lookup so its contrast contract can be tested
+    with a synthetic icon on runners that do not install Breeze/Adwaita.
+    """
+    def tinted(colour: QColor) -> QPixmap:
+        pm = source.pixmap(QSize(22, 22))
+        out = QPixmap(pm.size())
+        out.fill(Qt.transparent)
+        painter = QPainter(out)
+        painter.drawPixmap(0, 0, pm)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(out.rect(), colour)
+        painter.end()
+        return out
+
+    icon = QIcon()
+    icon.addPixmap(tinted(normal), QIcon.Normal, QIcon.Off)
+    icon.addPixmap(tinted(QColor(ON_ACCENT)), QIcon.Selected, QIcon.Off)
+    icon.addPixmap(tinted(normal), QIcon.Active, QIcon.Off)
+    return icon
+
+
 def themed_icon(*names: str) -> QIcon:
     """First icon-theme name that resolves, else a drawn placeholder.
 
@@ -648,23 +672,7 @@ def themed_icon(*names: str) -> QIcon:
                 app.palette().color(QPalette.Text)
                 if app is not None else QColor("#202124")
             )
-
-            def tinted(colour: QColor) -> QPixmap:
-                pm = source.pixmap(QSize(22, 22))
-                out = QPixmap(pm.size())
-                out.fill(Qt.transparent)
-                painter = QPainter(out)
-                painter.drawPixmap(0, 0, pm)
-                painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-                painter.fillRect(out.rect(), colour)
-                painter.end()
-                return out
-
-            icon = QIcon()
-            icon.addPixmap(tinted(normal), QIcon.Normal, QIcon.Off)
-            icon.addPixmap(tinted(QColor(ON_ACCENT)), QIcon.Selected, QIcon.Off)
-            icon.addPixmap(tinted(normal), QIcon.Active, QIcon.Off)
-            return icon
+            return _palette_tinted_icon(source, normal)
     pm = QPixmap(20, 20)
     pm.fill(Qt.transparent)
     painter = QPainter(pm)

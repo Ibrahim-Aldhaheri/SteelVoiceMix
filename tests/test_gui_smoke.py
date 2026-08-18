@@ -84,27 +84,19 @@ def test_pages_render_right_to_left(window, qapp):
     assert win.layoutDirection() == Qt.RightToLeft
 
 
-@pytest.mark.parametrize(
-    ("theme", "minimum", "maximum"),
-    [("light", 0, 100), ("dark", 150, 255)],
-)
-def test_themed_icons_follow_text_contrast(qapp, theme, minimum, maximum):
-    from PySide6.QtGui import QIcon
-    from gui.theme import apply_theme
-    from gui.widgets import themed_icon
+@pytest.mark.parametrize("normal", ["#1c1c20", "#e8e8eb"])
+def test_resolved_theme_icons_use_requested_contrast(qapp, normal):
+    from PySide6.QtGui import QColor, QIcon, QPixmap
+    from gui.widgets import ON_ACCENT, _palette_tinted_icon
 
-    apply_theme(theme)
-    image = themed_icon("audio-volume-high").pixmap(
-        22, 22, QIcon.Normal, QIcon.Off
-    ).toImage()
-    luminances = []
-    for y in range(image.height()):
-        for x in range(image.width()):
-            colour = image.pixelColor(x, y)
-            if colour.alpha() > 32:
-                luminances.append(
-                    (colour.red() + colour.green() + colour.blue()) / 3
-                )
-    assert luminances
-    mean = sum(luminances) / len(luminances)
-    assert minimum <= mean <= maximum
+    source_pm = QPixmap(22, 22)
+    source_pm.fill(QColor("white"))
+    icon = _palette_tinted_icon(QIcon(source_pm), QColor(normal))
+
+    for mode, expected in (
+        (QIcon.Normal, QColor(normal)),
+        (QIcon.Active, QColor(normal)),
+        (QIcon.Selected, QColor(ON_ACCENT)),
+    ):
+        image = icon.pixmap(22, 22, mode, QIcon.Off).toImage()
+        assert image.pixelColor(11, 11) == expected
