@@ -22,9 +22,10 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
 )
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QApplication,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -41,6 +42,7 @@ from PySide6.QtWidgets import (
 
 APP_ICON = "steelvoicemix"
 APP_ICON_FALLBACK = "audio-headset"
+THEME_ICON_ROLE = int(Qt.UserRole) + 77
 
 # Single accent colour used for active states, the sidebar selection
 # stripe, and the connection-status pill. Kept as a constant rather
@@ -333,6 +335,7 @@ def quick_action(icon_names: tuple[str, ...], title: str, subtitle: str):
     button = QPushButton()
     button.setCursor(Qt.PointingHandCursor)
     button.setIcon(themed_icon(*icon_names))
+    button.setProperty("themeIconNames", list(icon_names))
     button.setIconSize(QSize(22, 22))
     button.setText(f"  {title}\n  {subtitle}")
     button.setStyleSheet(
@@ -638,8 +641,29 @@ def themed_icon(*names: str) -> QIcon:
     missing icon degrades to something deliberate.
     """
     for name in names:
-        icon = QIcon.fromTheme(name)
-        if not icon.isNull() and icon.availableSizes():
+        source = QIcon.fromTheme(name)
+        if not source.isNull() and source.availableSizes():
+            app = QApplication.instance()
+            normal = (
+                app.palette().color(QPalette.Text)
+                if app is not None else QColor("#202124")
+            )
+
+            def tinted(colour: QColor) -> QPixmap:
+                pm = source.pixmap(QSize(22, 22))
+                out = QPixmap(pm.size())
+                out.fill(Qt.transparent)
+                painter = QPainter(out)
+                painter.drawPixmap(0, 0, pm)
+                painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+                painter.fillRect(out.rect(), colour)
+                painter.end()
+                return out
+
+            icon = QIcon()
+            icon.addPixmap(tinted(normal), QIcon.Normal, QIcon.Off)
+            icon.addPixmap(tinted(QColor(ON_ACCENT)), QIcon.Selected, QIcon.Off)
+            icon.addPixmap(tinted(normal), QIcon.Active, QIcon.Off)
             return icon
     pm = QPixmap(20, 20)
     pm.fill(Qt.transparent)

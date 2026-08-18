@@ -82,3 +82,29 @@ def test_pages_render_right_to_left(window, qapp):
         pump(qapp)
         assert not win.grab().isNull()
     assert win.layoutDirection() == Qt.RightToLeft
+
+
+@pytest.mark.parametrize(
+    ("theme", "minimum", "maximum"),
+    [("light", 0, 100), ("dark", 150, 255)],
+)
+def test_themed_icons_follow_text_contrast(qapp, theme, minimum, maximum):
+    from PySide6.QtGui import QIcon
+    from gui.theme import apply_theme
+    from gui.widgets import themed_icon
+
+    apply_theme(theme)
+    image = themed_icon("audio-volume-high").pixmap(
+        22, 22, QIcon.Normal, QIcon.Off
+    ).toImage()
+    luminances = []
+    for y in range(image.height()):
+        for x in range(image.width()):
+            colour = image.pixelColor(x, y)
+            if colour.alpha() > 32:
+                luminances.append(
+                    (colour.red() + colour.green() + colour.blue()) / 3
+                )
+    assert luminances
+    mean = sum(luminances) / len(luminances)
+    assert minimum <= mean <= maximum

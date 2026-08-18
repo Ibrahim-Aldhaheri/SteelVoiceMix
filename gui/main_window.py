@@ -54,7 +54,7 @@ from .tabs.settings import SettingsTab
 from .tabs.sinks import SinksTab
 from .tabs.surround import SurroundTab
 from .update_checker import UpdateChecker
-from .widgets import GLOBAL_QSS, app_icon, themed_icon
+from .widgets import GLOBAL_QSS, THEME_ICON_ROLE, app_icon, themed_icon
 
 log = logging.getLogger(__name__)
 
@@ -228,6 +228,7 @@ class MixerGUI(QMainWindow):
             self._page_index[key] = row
             item = QListWidgetItem(label)
             item.setIcon(themed_icon(*icon_names))
+            item.setData(THEME_ICON_ROLE, list(icon_names))
             self.nav.addItem(item)
             # Each tab page goes into a scroll area — Qt's QStackedWidget
             # gives every page the same fixed slot, and tabs vary widely

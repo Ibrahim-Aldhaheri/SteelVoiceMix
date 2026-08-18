@@ -30,11 +30,13 @@ def main() -> int:
 
         from PySide6.QtWidgets import QApplication
         import gui.daemon_client as dc
+        import gui.game_eq as ge
         import gui.update_checker as uc
 
         dc.DaemonClient.run = lambda self: None
         dc.DaemonClient.send_command = lambda self, cmd, **kwargs: None
         dc.DaemonClient.stop = lambda self: None
+        ge.GameWatcher.start = lambda self: None
         uc.UpdateChecker.start = lambda self, *args, **kwargs: None
 
         from gui.main_window import MixerGUI

@@ -131,6 +131,23 @@ def _refresh_stylesheets(app: QApplication) -> None:
         s.unpolish(w)
         s.polish(w)
 
+    # The offscreen SVG engine does not palette-tint Breeze theme icons;
+    # rebuild our variants after a theme change so dark-mode glyphs stay
+    # visible and selected sidebar icons contrast with the green pill.
+    from PySide6.QtWidgets import QListWidget
+    from .widgets import THEME_ICON_ROLE, themed_icon
+
+    for widget in app.allWidgets():
+        names = widget.property("themeIconNames")
+        if names and hasattr(widget, "setIcon"):
+            widget.setIcon(themed_icon(*names))
+        if isinstance(widget, QListWidget):
+            for row in range(widget.count()):
+                item = widget.item(row)
+                item_names = item.data(THEME_ICON_ROLE)
+                if item_names:
+                    item.setIcon(themed_icon(*item_names))
+
 
 def normalize_mode(value: str) -> ThemeMode:
     v = (value or "").strip().lower()

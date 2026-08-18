@@ -68,6 +68,9 @@ def stub_daemon(monkeypatch):
     )
     monkeypatch.setattr(dc.DaemonClient, "stop", lambda self: None)
 
+    import gui.game_eq as ge
+    monkeypatch.setattr(ge.GameWatcher, "start", lambda self: None)
+
     import gui.update_checker as uc
     monkeypatch.setattr(uc.UpdateChecker, "start", lambda self, *a, **k: None)
     return sent

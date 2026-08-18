@@ -96,6 +96,8 @@ def test_eq_channel_combo_has_no_emoji(window):
 
 def test_testing_disclosure_preserves_state(window, qapp):
     win, _ = window
+    win.nav.setCurrentRow(win._page_index["equalizer"])
+    pump(qapp)
     eq = win.eq_tab
     assert not eq.testing_disclosure.disclosure_body.isVisible()
     eq.testing_disclosure.disclosure_toggle.click()
@@ -146,6 +148,8 @@ def test_sink_toggle_sends_command(window, qapp):
 
 def test_sinks_advanced_controls_are_discoverable_and_collapsed(window, qapp):
     win, _ = window
+    win.nav.setCurrentRow(win._page_index["sinks"])
+    pump(qapp)
     disclosure = win.sinks_tab.advanced_disclosure
     assert disclosure.disclosure_toggle.accessibleName() == "Advanced routing and volume"
     assert not disclosure.disclosure_body.isVisible()

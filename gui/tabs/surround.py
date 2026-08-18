@@ -201,6 +201,7 @@ class SurroundTab(QWidget):
         self.solo_btn.toggled.connect(self._on_solo_toggled)
         self.test_btn = QPushButton(self.tr("Test"))
         self.test_btn.setIcon(themed_icon("media-playback-start"))
+        self.test_btn.setProperty("themeIconNames", ["media-playback-start"])
         self.test_btn.clicked.connect(self._on_test)
         btn_row.addWidget(self.mute_btn)
         btn_row.addWidget(self.solo_btn)

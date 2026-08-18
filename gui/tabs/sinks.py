@@ -193,6 +193,16 @@ class SinksTab(QWidget):
         self._daemon = daemon_client
         self._media_enabled = False
         self._hdmi_enabled = False
+        self._media_reenable_timer = QTimer(self)
+        self._media_reenable_timer.setSingleShot(True)
+        self._media_reenable_timer.timeout.connect(
+            lambda: self.media_btn.setEnabled(True)
+        )
+        self._hdmi_reenable_timer = QTimer(self)
+        self._hdmi_reenable_timer.setSingleShot(True)
+        self._hdmi_reenable_timer.timeout.connect(
+            lambda: self.hdmi_btn.setEnabled(True)
+        )
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -533,13 +543,13 @@ class SinksTab(QWidget):
         # Disable the button until the daemon confirms the change so quick
         # double-clicks don't queue conflicting commands.
         self.media_btn.setEnabled(False)
-        QTimer.singleShot(600, lambda: self.media_btn.setEnabled(True))
+        self._media_reenable_timer.start(600)
 
     def _toggle_hdmi(self) -> None:
         cmd = "remove-hdmi-sink" if self._hdmi_enabled else "add-hdmi-sink"
         self._daemon.send_command(cmd)
         self.hdmi_btn.setEnabled(False)
-        QTimer.singleShot(600, lambda: self.hdmi_btn.setEnabled(True))
+        self._hdmi_reenable_timer.start(600)
 
     def _toggle_auto_route(self, checked: bool) -> None:
         self._daemon.send_command(

@@ -26,24 +26,24 @@ KDE target with real hardware.
 | Accessibility | Higher-contrast help copy, explicit disclosure and glyph-control names, label buddies, focus styling, RTL and enlarged-text render contracts | offscreen pytest; not screen-reader certification |
 | Deck safety | Hardware management remains default-off and controls require both device presence and explicit opt-in | interaction regression test + Rust defaults |
 
-The new offscreen assertions are committed, but this worktree's current Python
-environment does not provide PySide6, so they remain pending execution in the
-GUI CI/Fedora-capable environment. Python syntax, translation XML, the full Rust
-build/test/clippy gate, and Deck's Rust default-off contract are verified here.
+The repository offscreen assertions are committed. The headless Ubuntu checkout
+does not provide PySide6, so `scripts/check.sh` reports that pytest portion as a
+documented skip there. A separate isolated Fedora 44 KDE acceptance run used the
+system PySide6 with a temporary HOME/config/runtime, stubbed daemon/update/game
+watcher paths, the Breeze Qt style, and no live audio or device access.
 
-### Fedora KDE acceptance still pending
-- Sidebar/nav icons resolve to real Breeze icons (dev box has no icon
-  theme, so they fall back to a drawn dot here).
-- Real light/dark system palette via the XDG portal.
-- Native 200% desktop scaling and long translated-text visual inspection.
-- Arabic/RTL visual ordering with the packaged translation catalogue.
-- Keyboard focus visibility and a targeted Orca/Qt accessibility spot-check.
-- Actual battery/ChatMix/device events populating Home, including service-up /
-  headset-off and reconnect transitions.
+### Fedora KDE isolated acceptance
+- **Verified:** Breeze style/icon resolution and icon contrast in light/dark.
+- **Verified:** every page at 820 and 1180 logical pixels with actual 2× Qt
+  scaling, including reachable scroll overflow.
+- **Verified:** Arabic/RTL mirroring with expanded long text, keyboard focus and
+  Space activation of disclosures, and key accessible-name/state contracts.
+- **Verified:** synthetic service-ready/headset-off semantics and Deck controls
+  default-off/disabled with no hardware authorization.
 
-These checks are Fedora-pending. Local tests prove widget contracts and command
-wiring only; they do not establish full screen-reader certification or hardware
-behavior.
+This is a strong isolated UI acceptance, not full screen-reader certification.
+Live daemon, PipeWire, HID, headset, and Deck behavior were deliberately outside
+this UX gate and were not exercised.
 
 ## Surround stage editor — IN PROGRESS
 
