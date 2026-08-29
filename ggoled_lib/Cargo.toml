@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
-bit-vec = "0.9"
+bit-vec = "0.10"
 hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }
 log = "0.4"
 rusb = "0.9"
