@@ -38,7 +38,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
       # taiki-e/install-action fetches a prebuilt cargo-audit binary
       # instead of compiling it from source — ~5 seconds vs several minutes.
-      - uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2
+      - uses: taiki-e/install-action@742a3317eac7bd62f91cd888b4eead5e784ba833 # v2
         with:
           tool: cargo-audit
       - name: cargo audit
