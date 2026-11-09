@@ -1,0 +1,76 @@
+{
+  "name": "Wardogs",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 45.0,
+      "q": 1.0,
+      "gain": 6.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 120.0,
+      "q": 2.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 260.0,
+      "q": 1.0,
+      "gain": 7.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 420.0,
+      "q": 8.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1000.0,
+      "q": 1.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2200.0,
+      "q": 2.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 3200.0,
+      "q": 2.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 4900.0,
+      "q": 5.0,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 12000.0,
+      "q": 2.0,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 17000.0,
+      "q": 4.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}
