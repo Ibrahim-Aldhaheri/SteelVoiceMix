@@ -1,0 +1,76 @@
+{
+  "name": "How to fish",
+  "channel": "game",
+  "bands": [
+    {
+      "freq": 80.0,
+      "q": 0.707,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 140.0,
+      "q": 4.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 183.0,
+      "q": 4.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 250.0,
+      "q": 5.0,
+      "gain": 3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 350.0,
+      "q": 3.0,
+      "gain": 5.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 480.0,
+      "q": 3.0,
+      "gain": -3.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 750.0,
+      "q": 4.0,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 1500.0,
+      "q": 3.0,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 2500.0,
+      "q": 1.0,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    },
+    {
+      "freq": 7000.0,
+      "q": 2.0,
+      "gain": 4.0,
+      "type": "peaking",
+      "enabled": true
+    }
+  ]
+}
